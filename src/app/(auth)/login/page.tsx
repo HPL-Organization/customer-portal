@@ -1,8 +1,10 @@
 "use client";
 
+import { Suspense, useState } from "react";
 import { createBrowserClient } from "@supabase/ssr";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
+
+export const dynamic = "force-dynamic";
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -12,6 +14,20 @@ const supabase = createBrowserClient(
 type Mode = "signin" | "signup";
 
 export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen grid place-items-center px-4 py-12 bg-neutral-50">
+          <div className="text-sm text-neutral-600">Loading…</div>
+        </main>
+      }
+    >
+      <LoginInner />
+    </Suspense>
+  );
+}
+
+function LoginInner() {
   const router = useRouter();
   const sp = useSearchParams();
   const next = sp.get("next") || "/";
@@ -52,7 +68,6 @@ export default function LoginPage() {
       password,
     });
     setLoading(false);
-
     if (error) return setErrorMsg(error.message);
 
     await provisionAndRedirect();
@@ -67,21 +82,16 @@ export default function LoginPage() {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      // If email confirmations are enabled, user confirms then returns here
       options: { emailRedirectTo: `${window.location.origin}${next}` },
     });
 
     setLoading(false);
-
     if (error) return setErrorMsg(error.message);
 
     if (!data.session) {
-      // Email confirmations ON: wait for user to confirm
       setInfoMsg("Check your email to confirm your account, then sign in.");
       return;
     }
-
-    // Auto-confirm ON: map & redirect right away
     await provisionAndRedirect();
   }
 
@@ -96,7 +106,6 @@ export default function LoginPage() {
     });
 
     setLoading(false);
-
     if (error) return setErrorMsg(error.message);
     setInfoMsg("Magic link sent. Check your inbox.");
   }
@@ -112,7 +121,6 @@ export default function LoginPage() {
     });
 
     setLoading(false);
-
     if (error) return setErrorMsg(error.message);
     setInfoMsg("Password reset email sent.");
   }
