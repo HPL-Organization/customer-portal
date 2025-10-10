@@ -1,0 +1,474 @@
+"use client";
+
+import React, { useState, useEffect } from "react";
+import { toast } from "react-toastify";
+import {
+  Checkbox,
+  FormControlLabel,
+  Backdrop,
+  CircularProgress,
+  LinearProgress,
+  Box,
+} from "@mui/material";
+
+import InputField from "@/components/UI/inputField";
+import Button from "@/components/UI/button";
+import GoogleMapsLoader from "@/components/google/GoogleMapsLoader";
+import AddressAutocomplete from "@/components/google/AddressAutocomplete";
+import { useCustomerBootstrap } from "@/components/providers/CustomerBootstrap";
+import ProfileSkeleton from "@/components/skeletons/ProfileSkeleton";
+
+const InfoTab = () => {
+  const { hsId: contactId, initialized, loading } = useCustomerBootstrap();
+  const [contactLoading, setContactLoading] = useState(true);
+
+  const [shippingVerified, setShippingVerified] = useState(false);
+  const [billingVerified, setBillingVerified] = useState(false);
+
+  const HUBSPOT_FLAG_PROPS = {
+    shipping: "hpl_shipping_check",
+    billing: "hpl_billing_check",
+  };
+  const toHSText = (v: boolean) => (v ? "true" : "false");
+  const fromHSText = (v: unknown) => {
+    const s = String(v ?? "")
+      .trim()
+      .toLowerCase();
+    return s === "true" || s === "yes" || s === "1";
+  };
+
+  const [formData, setFormData] = useState({
+    firstName: "",
+    middleName: "",
+    lastName: "",
+    email: "",
+    phone: "",
+    mobile: "",
+    shipping: {
+      address1: "",
+      address2: "",
+      city: "",
+      state: "",
+      zip: "",
+      country: "",
+    },
+    billing: {
+      address1: "",
+      address2: "",
+      city: "",
+      state: "",
+      zip: "",
+      country: "",
+    },
+    sameAsShipping: false,
+  });
+
+  // Backdrop loader state
+  const [saving, setSaving] = useState(false);
+  const [loaderIdx, setLoaderIdx] = useState(0);
+  const [loaderMsgs, setLoaderMsgs] = useState<string[]>([
+    "Saving your information…",
+    "Finishing up…",
+  ]);
+  const timeoutRef = React.useRef<number | null>(null);
+
+  // Smoothly animate the loader message while saving
+  useEffect(() => {
+    if (!saving) return;
+    setLoaderIdx(0);
+    const step = (i: number) => {
+      if (i >= loaderMsgs.length - 1) return;
+      timeoutRef.current = window.setTimeout(() => {
+        setLoaderIdx(i + 1);
+        step(i + 1);
+      }, 1200);
+    };
+    step(0);
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+    };
+  }, [saving, loaderMsgs]);
+
+  // HubSpot contact fetch
+  useEffect(() => {
+    if (!contactId) return;
+    (async () => {
+      setContactLoading(true);
+      try {
+        const res = await fetch(`/api/hubspot/contact?contactId=${contactId}`, {
+          cache: "no-store",
+        });
+        const data = await res.json();
+        if (!data?.properties) return;
+
+        setFormData((prev) => ({
+          ...prev,
+          firstName: data.properties.firstname || "",
+          middleName: data.properties.middle_name || "",
+          lastName: data.properties.lastname || "",
+          email: data.properties.email || "",
+          phone: data.properties.phone || "",
+          mobile: data.properties.mobilephone || "",
+          shipping: {
+            ...prev.shipping,
+            address1: data.properties.shipping_address || "",
+            address2: data.properties.shipping_address_line_2 || "",
+            city: data.properties.shipping_city || "",
+            state: data.properties.shipping_state_region || "",
+            zip: data.properties.shipping_postalcode || "",
+            country: data.properties.shipping_country_region || "",
+          },
+          billing: {
+            ...prev.billing,
+            address1: data.properties.address || "",
+            address2: data.properties.address_line_2 || "",
+            city: data.properties.city || "",
+            state: data.properties.state || "",
+            zip: data.properties.zip || "",
+            country: data.properties.country || "",
+          },
+        }));
+
+        setShippingVerified(
+          fromHSText(data.properties?.[HUBSPOT_FLAG_PROPS.shipping])
+        );
+        setBillingVerified(
+          fromHSText(data.properties?.[HUBSPOT_FLAG_PROPS.billing])
+        );
+      } catch (err) {
+        toast.error("Failed to fetch contact.");
+        console.error("Failed to fetch contact", err);
+      } finally {
+        setContactLoading(false);
+      }
+    })();
+  }, [contactId]);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleAddressChange = (
+    type: "shipping" | "billing",
+    field: string,
+    value: string
+  ) => {
+    setFormData((prev) => ({
+      ...prev,
+      [type]: { ...prev[type], [field]: value },
+    }));
+  };
+
+  /** Save to HubSpot — returns boolean so the combined save can decide to continue */
+  const saveHubSpot = async (): Promise<boolean> => {
+    if (!contactId) {
+      toast.error("Contact ID not available.");
+      return false;
+    }
+
+    const updatePayload = {
+      contactId,
+      update: {
+        firstname: formData.firstName,
+        middle_name: formData.middleName,
+        lastname: formData.lastName,
+        email: formData.email,
+        phone: formData.phone,
+        mobilephone: formData.mobile,
+        shipping_address: formData.shipping.address1,
+        shipping_address_line_2: formData.shipping.address2,
+        shipping_city: formData.shipping.city,
+        shipping_state_region: formData.shipping.state,
+        shipping_postalcode: formData.shipping.zip,
+        shipping_country_region: formData.shipping.country,
+        address: formData.billing.address1,
+        address_line_2: formData.billing.address2,
+        city: formData.billing.city,
+        state: formData.billing.state,
+        zip: formData.billing.zip,
+        country: formData.billing.country,
+        [HUBSPOT_FLAG_PROPS.shipping]: toHSText(shippingVerified),
+        [HUBSPOT_FLAG_PROPS.billing]: toHSText(billingVerified),
+      },
+    };
+
+    try {
+      const res = await fetch("/api/hubspot/contact", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updatePayload),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.error || "Failed to update contact.");
+        return false;
+      }
+      toast.success("Contact updated successfully!");
+      return true;
+    } catch (error) {
+      toast.error("Something went wrong while saving.");
+      console.error("Update error:", error);
+      return false;
+    }
+  };
+
+  /** Save to NetSuite; if controlBackdrop=false, it won't toggle the Backdrop itself */
+  const saveNetSuite = async (controlBackdrop: boolean = true) => {
+    if (!contactId) {
+      toast.error("Contact ID not available.");
+      return;
+    }
+
+    if (controlBackdrop) {
+      setLoaderMsgs(["Saving your information…", "Finishing up…"]);
+      setSaving(true);
+    }
+
+    const netsuitePayload = {
+      id: contactId,
+      firstName: formData.firstName,
+      middleName: formData.middleName,
+      lastName: formData.lastName,
+      email: formData.email,
+      phone: formData.phone,
+      mobile: formData.mobile,
+      billingAddress1: formData.billing.address1,
+      billingAddress2: formData.billing.address2,
+      billingCity: formData.billing.city,
+      billingState: formData.billing.state,
+      billingZip: formData.billing.zip,
+      billingCountry: formData.billing.country,
+      shippingAddress1: formData.shipping.address1,
+      shippingAddress2: formData.shipping.address2,
+      shippingCity: formData.shipping.city,
+      shippingState: formData.shipping.state,
+      shippingZip: formData.shipping.zip,
+      shippingCountry: formData.shipping.country,
+    };
+
+    try {
+      const res = await fetch("/api/netsuite/create-customer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(netsuitePayload),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toast.error(`NetSuite failed: ${err.error || res.statusText}`);
+        return;
+      }
+
+      toast.success("Contact sent to NetSuite!");
+    } catch (error) {
+      console.error("NetSuite Save Error:", error);
+      toast.error("Something went wrong while saving to NetSuite.");
+    } finally {
+      if (controlBackdrop) setSaving(false);
+    }
+  };
+
+  /** Single Save click: show loader immediately, save HS, then NS; keep the same messages  */
+  const handleSaveAll = async () => {
+    // Start the backdrop right away with your copy
+    setLoaderMsgs(["Saving your information…", "Finishing up…"]);
+    setSaving(true);
+
+    const ok = await saveHubSpot();
+
+    if (!ok) {
+      setSaving(false);
+      return;
+    }
+
+    // reset the message cycle for the NetSuite phase (same copy, per request)
+    setLoaderMsgs(["Saving your information…", "Finishing up…"]);
+    setLoaderIdx(0);
+
+    await saveNetSuite(false); // don't toggle backdrop inside
+    setSaving(false);
+  };
+
+  return (
+    <>
+      {!initialized || loading || contactLoading ? (
+        <ProfileSkeleton />
+      ) : (
+        <div className="mx-auto max-w-6xl p-6 md:p-8">
+          {/* Header (greeting removed) */}
+          <div className="mb-4 flex items-center justify-between">
+            <h1 className="text-2xl font-bold text-slate-900">General Info</h1>
+          </div>
+
+          {/* Single Save button */}
+          <div className="mb-2 flex justify-end">
+            <Button onClick={handleSaveAll} className="px-3 py-1 text-sm">
+              Save
+            </Button>
+          </div>
+
+          {/* Top 3-col grid */}
+          <div className="mb-8 grid grid-cols-1 gap-4 text-black md:grid-cols-3">
+            <InputField
+              label="First Name"
+              name="firstName"
+              value={formData.firstName}
+              onChange={handleChange}
+            />
+            <InputField
+              label="Middle Name"
+              name="middleName"
+              value={formData.middleName}
+              onChange={handleChange}
+            />
+            <InputField
+              label="Last Name"
+              name="lastName"
+              value={formData.lastName}
+              onChange={handleChange}
+            />
+            <InputField
+              label="Email"
+              name="email"
+              value={formData.email}
+              onChange={handleChange}
+            />
+            <InputField
+              label="Phone"
+              name="phone"
+              value={formData.phone}
+              onChange={handleChange}
+            />
+            <InputField
+              label="Mobile"
+              name="mobile"
+              value={formData.mobile}
+              onChange={handleChange}
+            />
+          </div>
+
+          {/* Shipping */}
+          <div className="mb-2 flex items-center justify-between">
+            <label className="mb-1 block text-gray-700">
+              <span className="font-bold text-blue-500">Google</span> Shipping
+              Address Lookup
+            </label>
+            <FormControlLabel
+              control={<Checkbox checked={shippingVerified} disabled />}
+              label="Verified via Google"
+            />
+          </div>
+          <div className="mb-4">
+            <GoogleMapsLoader>
+              <AddressAutocomplete
+                onAddressSelect={(p: any) => {
+                  handleAddressChange("shipping", "address1", p.address1);
+                  handleAddressChange("shipping", "city", p.city);
+                  handleAddressChange("shipping", "state", p.state);
+                  handleAddressChange("shipping", "zip", p.zip);
+                  handleAddressChange("shipping", "country", p.country);
+                  setShippingVerified(true);
+                }}
+              />
+            </GoogleMapsLoader>
+          </div>
+
+          <h2 className="mb-2 text-lg font-semibold text-black">
+            Shipping Address
+          </h2>
+          <div className="mb-6 grid grid-cols-1 gap-4 text-black md:grid-cols-2">
+            {["address1", "city", "address2", "state", "zip", "country"].map(
+              (field) => (
+                <InputField
+                  key={field}
+                  label={field.charAt(0).toUpperCase() + field.slice(1)}
+                  value={(formData.shipping as any)[field]}
+                  onChange={(e: any) =>
+                    handleAddressChange("shipping", field, e.target.value)
+                  }
+                />
+              )
+            )}
+          </div>
+
+          {/* Billing */}
+          <div className="mb-2 flex items-center justify-between">
+            <label className="mb-1 block text-gray-700">
+              <span className="font-bold text-blue-500">Google</span> Billing
+              Address Lookup
+            </label>
+            <FormControlLabel
+              control={<Checkbox checked={billingVerified} disabled />}
+              label="Verified via Google"
+            />
+          </div>
+          <div className="mb-4">
+            <GoogleMapsLoader>
+              <AddressAutocomplete
+                onAddressSelect={(p: any) => {
+                  handleAddressChange("billing", "address1", p.address1);
+                  handleAddressChange("billing", "city", p.city);
+                  handleAddressChange("billing", "state", p.state);
+                  handleAddressChange("billing", "zip", p.zip);
+                  handleAddressChange("billing", "country", p.country);
+                  setBillingVerified(true);
+                }}
+              />
+            </GoogleMapsLoader>
+          </div>
+
+          <h2 className="mb-2 text-lg font-semibold text-black">
+            Billing Address
+          </h2>
+          <div className="mb-6 grid grid-cols-1 gap-4 text-black md:grid-cols-2">
+            {["address1", "city", "address2", "state", "zip", "country"].map(
+              (field) => (
+                <InputField
+                  key={field}
+                  label={field.charAt(0).toUpperCase() + field.slice(1)}
+                  value={(formData.billing as any)[field]}
+                  onChange={(e: any) =>
+                    handleAddressChange("billing", field, e.target.value)
+                  }
+                />
+              )
+            )}
+          </div>
+
+          {/* Optional second Save at bottom */}
+          <div className="flex justify-end">
+            <Button onClick={handleSaveAll} className="px-3 py-1 text-sm">
+              Save
+            </Button>
+          </div>
+
+          {/* Backdrop loader */}
+          <Backdrop
+            open={saving}
+            sx={{
+              color: "#fff",
+              zIndex: (t) => t.zIndex.modal + 1,
+              flexDirection: "column",
+              gap: 2,
+            }}
+          >
+            <CircularProgress />
+            <div className="text-lg font-medium text-white">
+              {loaderMsgs[loaderIdx] ?? "Working…"}
+            </div>
+            <Box sx={{ width: 320 }}>
+              <LinearProgress />
+            </Box>
+          </Backdrop>
+        </div>
+      )}
+    </>
+  );
+};
+
+export default InfoTab;

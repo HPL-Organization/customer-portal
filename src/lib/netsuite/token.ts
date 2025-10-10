@@ -1,0 +1,93 @@
+import axios from "axios";
+import { SignJWT, importPKCS8 } from "jose";
+//import "dotenv/config";
+type NsEnv = "prod" | "sb";
+const NS_ENV: NsEnv =
+  (process.env.NETSUITE_ENV?.toLowerCase() as NsEnv) || "prod";
+const isSB = NS_ENV === "sb";
+console.log("isSB", isSB);
+const NETSUITE_ACCOUNT_ID = isSB
+  ? process.env.NETSUITE_ACCOUNT_ID_SB!
+  : process.env.NETSUITE_ACCOUNT_ID!;
+const CONSUMER_KEY = isSB
+  ? process.env.NETSUITE_CONSUMER_KEY_SB!
+  : process.env.NETSUITE_CONSUMER_KEY!;
+const PRIVATE_KEY_PEM = (
+  isSB
+    ? process.env.NETSUITE_PRIVATE_KEY_SB!
+    : process.env.NETSUITE_PRIVATE_KEY!
+).replace(/\\n/g, "\n");
+const CERTIFICATE_ID = isSB
+  ? process.env.NETSUITE_CERTIFICATE_ID_SB
+  : process.env.NETSUITE_CERTIFICATE_ID;
+
+const TOKEN_URL = `https://${NETSUITE_ACCOUNT_ID}.suitetalk.api.netsuite.com/services/rest/auth/oauth2/v1/token`;
+
+let cachedToken: { value: string; expiresAt: number } | null = null;
+
+export async function getValidToken(): Promise<string> {
+  const now = Date.now();
+
+  if (cachedToken && cachedToken.expiresAt > now + 30_000) {
+    // 30 second safety buffer
+    return cachedToken.value;
+  }
+
+  console.log("Requesting new NetSuite access token...");
+
+  const token = await requestAccessToken();
+
+  // Cache token for ~55 minutes
+  cachedToken = {
+    value: token,
+    expiresAt: now + 55 * 60 * 1000,
+  };
+  //console.log(token);
+  return token;
+}
+
+async function requestAccessToken(): Promise<string> {
+  const now = Math.floor(Date.now() / 1000);
+
+  // Construct JWT payload
+  const payload = {
+    iss: CONSUMER_KEY,
+    scope: ["restlets", "rest_webservices"],
+    aud: TOKEN_URL,
+    iat: now,
+    exp: now + 3600,
+  };
+
+  // Import the private key (must be PKCS8 PEM string)
+  const privateKey = await importPKCS8(PRIVATE_KEY_PEM, "PS256");
+
+  // Build JWT header
+  const jwt = await new SignJWT(payload)
+    .setProtectedHeader({
+      alg: "PS256",
+      typ: "JWT",
+      ...(CERTIFICATE_ID && { kid: CERTIFICATE_ID }),
+    })
+    .sign(privateKey);
+
+  // Send token request
+  const params = new URLSearchParams({
+    grant_type: "client_credentials",
+    client_assertion_type:
+      "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+    client_assertion: jwt,
+  });
+
+  const res = await axios.post(TOKEN_URL, params.toString(), {
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+  });
+
+  if (!res.data.access_token) {
+    console.error(res.data);
+    throw new Error("Failed to retrieve NetSuite access token.");
+  }
+
+  return res.data.access_token;
+}
