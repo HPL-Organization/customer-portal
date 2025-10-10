@@ -35,21 +35,29 @@ function LoginInner() {
   const [mode, setMode] = useState<Mode>("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+
+  const [firstName, setFirstName] = useState("");
+  const [middleName, setMiddleName] = useState("");
+  const [lastName, setLastName] = useState("");
+
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [infoMsg, setInfoMsg] = useState<string | null>(null);
 
   async function provisionAndRedirect() {
     await supabase.auth.getSession();
-
     let nsId: string | null = null;
     try {
-      const r = await fetch("/api/auth/provision", { method: "POST" });
+      const r = await fetch("/api/auth/provision", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ firstName, middleName, lastName }),
+      });
       const j = await r.json();
       nsId = j?.nsId ?? null;
     } catch {}
-
-    const url = new URL(next, window.location.origin);
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    const url = new URL(next, origin || "http://localhost");
     if (nsId) {
       url.searchParams.set("nsId", nsId);
       localStorage.setItem("nsId", nsId);
@@ -63,13 +71,14 @@ function LoginInner() {
     setInfoMsg(null);
     setLoading(true);
 
+    const emailClean = email.trim().toLowerCase();
     const { error } = await supabase.auth.signInWithPassword({
-      email,
+      email: emailClean,
       password,
     });
+
     setLoading(false);
     if (error) return setErrorMsg(error.message);
-
     await provisionAndRedirect();
   }
 
@@ -79,10 +88,23 @@ function LoginInner() {
     setInfoMsg(null);
     setLoading(true);
 
+    const emailClean = email.trim().toLowerCase();
+    const emailRedirectTo =
+      typeof window !== "undefined"
+        ? `${window.location.origin}/callback?next=${encodeURIComponent(next)}`
+        : undefined;
+
     const { data, error } = await supabase.auth.signUp({
-      email,
+      email: emailClean,
       password,
-      options: { emailRedirectTo: `${window.location.origin}${next}` },
+      options: {
+        emailRedirectTo,
+        data: {
+          first_name: firstName,
+          middle_name: middleName,
+          last_name: lastName,
+        },
+      },
     });
 
     setLoading(false);
@@ -99,10 +121,15 @@ function LoginInner() {
     setErrorMsg(null);
     setInfoMsg(null);
     setLoading(true);
+    const emailClean = email.trim().toLowerCase();
+    const emailRedirectTo =
+      typeof window !== "undefined"
+        ? `${window.location.origin}/callback?next=${encodeURIComponent(next)}`
+        : undefined;
 
     const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: `${window.location.origin}${next}` },
+      email: emailClean,
+      options: { emailRedirectTo },
     });
 
     setLoading(false);
@@ -116,9 +143,12 @@ function LoginInner() {
     setInfoMsg(null);
     setLoading(true);
 
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/login`,
-    });
+    const origin =
+      typeof window !== "undefined" ? window.location.origin : undefined;
+    const { error } = await supabase.auth.resetPasswordForEmail(
+      email.trim().toLowerCase(),
+      { redirectTo: origin ? `${origin}/login` : undefined }
+    );
 
     setLoading(false);
     if (error) return setErrorMsg(error.message);
@@ -127,7 +157,7 @@ function LoginInner() {
 
   return (
     <main className="min-h-screen grid place-items-center px-4 py-12 bg-neutral-50">
-      <div className="w-full max-w-md rounded-2xl border bg-white p-6 shadow-sm">
+      <div className="w-full max-w-md rounded-2xl border bg-white p-6 shadow-sm text-black">
         <div className="mb-5 flex items-center justify-between">
           <h1 className="text-xl font-semibold">
             {mode === "signin" ? "Sign in" : "Create account"}
@@ -148,6 +178,46 @@ function LoginInner() {
           onSubmit={mode === "signin" ? onSignin : onSignup}
           className="space-y-3"
         >
+          {mode === "signup" && (
+            <>
+              <label className="block">
+                <span className="mb-1 block text-sm text-neutral-700">
+                  First name
+                </span>
+                <input
+                  required
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-black/10"
+                  placeholder="Jane"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-sm text-neutral-700">
+                  Middle name (optional)
+                </span>
+                <input
+                  value={middleName}
+                  onChange={(e) => setMiddleName(e.target.value)}
+                  className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-black/10"
+                  placeholder="A."
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-sm text-neutral-700">
+                  Last name
+                </span>
+                <input
+                  required
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-black/10"
+                  placeholder="Doe"
+                />
+              </label>
+            </>
+          )}
+
           <label className="block">
             <span className="mb-1 block text-sm text-neutral-700">Email</span>
             <input
