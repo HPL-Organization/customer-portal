@@ -78,8 +78,14 @@ export async function POST(req: NextRequest) {
   });
 
   if (!r.ok) {
+    const txt = await r.text().catch(() => "");
     return NextResponse.json(
-      { nsId: null, error: "netsuite-create-failed" },
+      {
+        nsId: null,
+        error: "netsuite-create-failed",
+        step: "netsuite",
+        details: txt.slice(0, 500),
+      },
       { status: 200 }
     );
   }
@@ -93,21 +99,24 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { error: upsertErr } = await admin
-    .from("profiles")
-    .upsert(
-      {
-        user_id: user.id,
-        email: emailLC,
-        role: "customer",
-        netsuite_customer_id: nsIdNum,
-      },
-      { onConflict: "email" }
-    );
+  const { error: upsertErr } = await admin.from("profiles").upsert(
+    {
+      user_id: user.id,
+      email: emailLC,
+      role: "customer",
+      netsuite_customer_id: nsIdNum,
+    },
+    { onConflict: "email" }
+  );
 
   if (upsertErr) {
     return NextResponse.json(
-      { nsId: null, error: "profile-upsert-failed" },
+      {
+        nsId: null,
+        error: "profile-upsert-failed",
+        step: "profiles",
+        details: upsertErr.message || String(upsertErr),
+      },
       { status: 200 }
     );
   }

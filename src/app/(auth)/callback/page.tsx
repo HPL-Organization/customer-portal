@@ -67,6 +67,17 @@ function Inner() {
         const r = await fetch("/api/auth/provision", { method: "POST" });
         const j: any = await r.json().catch(() => ({}));
 
+        if (j?.error) {
+          console.error("Provision failed:", j);
+          setPhase("error");
+          setDetail(
+            j?.step === "netsuite"
+              ? "We couldn't create your NetSuite record. Please try again or contact support."
+              : "We couldn't finish linking your account. Please try again."
+          );
+          return;
+        }
+
         const nsId: string | null = j?.nsId ?? null;
         const mode: string | null = j?.mode ?? null; // optional: "existing" | "claimed" | "created"
 
