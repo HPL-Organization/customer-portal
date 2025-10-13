@@ -20,7 +20,9 @@ import ProfileSkeleton from "@/components/skeletons/ProfileSkeleton";
 
 const InfoTab = () => {
   const { hsId: contactId, initialized, loading } = useCustomerBootstrap();
-  const [contactLoading, setContactLoading] = useState(true);
+
+  const [contactLoading, setContactLoading] = useState(false);
+  const [hasHubSpot, setHasHubSpot] = useState<boolean | null>(null);
 
   const [shippingVerified, setShippingVerified] = useState(false);
   const [billingVerified, setBillingVerified] = useState(false);
@@ -63,7 +65,6 @@ const InfoTab = () => {
     sameAsShipping: false,
   });
 
-  // Backdrop loader state
   const [saving, setSaving] = useState(false);
   const [loaderIdx, setLoaderIdx] = useState(0);
   const [loaderMsgs, setLoaderMsgs] = useState<string[]>([
@@ -72,7 +73,6 @@ const InfoTab = () => {
   ]);
   const timeoutRef = React.useRef<number | null>(null);
 
-  // Smoothly animate the loader message while saving
   useEffect(() => {
     if (!saving) return;
     setLoaderIdx(0);
@@ -92,17 +92,34 @@ const InfoTab = () => {
     };
   }, [saving, loaderMsgs]);
 
-  // HubSpot contact fetch
   useEffect(() => {
-    if (!contactId) return;
+    if (!initialized || loading) return;
+
+    if (!contactId) {
+      setHasHubSpot(false);
+      setContactLoading(false);
+      return;
+    }
+
     (async () => {
       setContactLoading(true);
       try {
         const res = await fetch(`/api/hubspot/contact?contactId=${contactId}`, {
           cache: "no-store",
         });
+
+        if (res.status === 404) {
+          setHasHubSpot(false);
+          return;
+        }
+
         const data = await res.json();
-        if (!data?.properties) return;
+        if (!data?.properties) {
+          setHasHubSpot(false);
+          return;
+        }
+
+        setHasHubSpot(true);
 
         setFormData((prev) => ({
           ...prev,
@@ -141,11 +158,12 @@ const InfoTab = () => {
       } catch (err) {
         toast.error("Failed to fetch contact.");
         console.error("Failed to fetch contact", err);
+        setHasHubSpot(false);
       } finally {
         setContactLoading(false);
       }
     })();
-  }, [contactId]);
+  }, [initialized, loading, contactId]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -163,8 +181,9 @@ const InfoTab = () => {
     }));
   };
 
-  /** Save to HubSpot — returns boolean so the combined save can decide to continue */
   const saveHubSpot = async (): Promise<boolean> => {
+    if (!hasHubSpot) return true;
+
     if (!contactId) {
       toast.error("Contact ID not available.");
       return false;
@@ -217,20 +236,13 @@ const InfoTab = () => {
     }
   };
 
-  /** Save to NetSuite; if controlBackdrop=false, it won't toggle the Backdrop itself */
   const saveNetSuite = async (controlBackdrop: boolean = true) => {
-    if (!contactId) {
-      toast.error("Contact ID not available.");
-      return;
-    }
-
     if (controlBackdrop) {
       setLoaderMsgs(["Saving your information…", "Finishing up…"]);
       setSaving(true);
     }
 
-    const netsuitePayload = {
-      id: contactId,
+    const netsuitePayload: any = {
       firstName: formData.firstName,
       middleName: formData.middleName,
       lastName: formData.lastName,
@@ -250,6 +262,8 @@ const InfoTab = () => {
       shippingZip: formData.shipping.zip,
       shippingCountry: formData.shipping.country,
     };
+
+    if (contactId) netsuitePayload.hsContactId = contactId;
 
     try {
       const res = await fetch("/api/netsuite/create-customer", {
@@ -273,9 +287,7 @@ const InfoTab = () => {
     }
   };
 
-  /** Single Save click: show loader immediately, save HS, then NS; keep the same messages  */
   const handleSaveAll = async () => {
-    // Start the backdrop right away with your copy
     setLoaderMsgs(["Saving your information…", "Finishing up…"]);
     setSaving(true);
 
@@ -286,33 +298,42 @@ const InfoTab = () => {
       return;
     }
 
-    // reset the message cycle for the NetSuite phase (same copy, per request)
     setLoaderMsgs(["Saving your information…", "Finishing up…"]);
     setLoaderIdx(0);
 
-    await saveNetSuite(false); // don't toggle backdrop inside
+    await saveNetSuite(false);
     setSaving(false);
   };
 
   return (
     <>
-      {!initialized || loading || contactLoading ? (
+      {!initialized || loading ? (
         <ProfileSkeleton />
       ) : (
         <div className="mx-auto max-w-6xl p-6 md:p-8">
-          {/* Header (greeting removed) */}
+          {contactLoading && (
+            <Box sx={{ mb: 2 }}>
+              <LinearProgress />
+            </Box>
+          )}
+
+          {hasHubSpot === false && (
+            <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              No HubSpot contact found. You can still save this info to
+              NetSuite.
+            </div>
+          )}
+
           <div className="mb-4 flex items-center justify-between">
             <h1 className="text-2xl font-bold text-slate-900">General Info</h1>
           </div>
 
-          {/* Single Save button */}
           <div className="mb-2 flex justify-end">
             <Button onClick={handleSaveAll} className="px-3 py-1 text-sm">
               Save
             </Button>
           </div>
 
-          {/* Top 3-col grid */}
           <div className="mb-8 grid grid-cols-1 gap-4 text-black md:grid-cols-3">
             <InputField
               label="First Name"
@@ -352,7 +373,6 @@ const InfoTab = () => {
             />
           </div>
 
-          {/* Shipping */}
           <div className="mb-2 flex items-center justify-between">
             <label className="mb-1 block text-gray-700">
               <span className="font-bold text-blue-500">Google</span> Shipping
@@ -396,7 +416,6 @@ const InfoTab = () => {
             )}
           </div>
 
-          {/* Billing */}
           <div className="mb-2 flex items-center justify-between">
             <label className="mb-1 block text-gray-700">
               <span className="font-bold text-blue-500">Google</span> Billing
@@ -440,14 +459,12 @@ const InfoTab = () => {
             )}
           </div>
 
-          {/* Optional second Save at bottom */}
           <div className="flex justify-end">
             <Button onClick={handleSaveAll} className="px-3 py-1 text-sm">
               Save
             </Button>
           </div>
 
-          {/* Backdrop loader */}
           <Backdrop
             open={saving}
             sx={{
