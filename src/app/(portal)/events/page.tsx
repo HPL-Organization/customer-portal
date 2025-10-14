@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "react-toastify";
 import {
   Bell,
@@ -9,11 +9,26 @@ import {
   MessageSquare,
   Search,
   Check,
-  Sparkles,
   RefreshCw,
+  Save,
 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useCustomerBootstrap } from "@/components/providers/CustomerBootstrap";
+
+import {
+  Backdrop,
+  CircularProgress,
+  Typography,
+  Box,
+  Portal,
+  LinearProgress,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button,
+  Divider,
+} from "@mui/material";
 
 type Channel = "email" | "sms";
 type Item = {
@@ -228,6 +243,85 @@ export default function EventsPreferencesPage() {
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loadingEvents, setLoadingEvents] = useState(false);
+
+  const allowNextNavRef = useRef(false);
+  const [navOpen, setNavOpen] = useState(false);
+  const navHrefRef = useRef<string | null>(null);
+  const navKindRef = useRef<"href" | "back" | null>(null);
+
+  useEffect(() => {
+    const isSameOrigin = (href: string) => {
+      try {
+        const u = new URL(href, window.location.href);
+        return u.origin === window.location.origin;
+      } catch {
+        return false;
+      }
+    };
+    const isInternalPath = (href: string) => {
+      try {
+        const u = new URL(href, window.location.href);
+        return isSameOrigin(href) && u.pathname !== window.location.pathname;
+      } catch {
+        return false;
+      }
+    };
+    const openPrompt = (kind: "href" | "back", href: string | null) => {
+      navKindRef.current = kind;
+      navHrefRef.current = href;
+      setNavOpen(true);
+    };
+    const handleClick = (e: MouseEvent) => {
+      if (!dirty || allowNextNavRef.current) return;
+      if (e.defaultPrevented) return;
+      if (e.button !== 0) return;
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      let el = e.target as HTMLElement | null;
+      while (el && el !== document.body) {
+        if (el instanceof HTMLAnchorElement && el.href) {
+          if (
+            !el.target &&
+            isInternalPath(el.href) &&
+            !el.href.startsWith("mailto:") &&
+            !el.href.startsWith("tel:")
+          ) {
+            e.preventDefault();
+            openPrompt("href", el.href);
+            return;
+          }
+          break;
+        }
+        el = el.parentElement;
+      }
+    };
+    const handlePopState = () => {
+      if (!dirty || allowNextNavRef.current) return;
+      history.pushState(null, "", window.location.href);
+      openPrompt("back", null);
+    };
+    document.addEventListener("click", handleClick, true);
+    window.addEventListener("popstate", handlePopState);
+    return () => {
+      document.removeEventListener("click", handleClick, true);
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, [dirty]);
+
+  const proceedNavigation = () => {
+    allowNextNavRef.current = true;
+    setNavOpen(false);
+    if (navKindRef.current === "href" && navHrefRef.current) {
+      window.location.href = navHrefRef.current;
+    } else if (navKindRef.current === "back") {
+      history.back();
+    }
+  };
+
+  const cancelNavigation = () => {
+    setNavOpen(false);
+    navKindRef.current = null;
+    navHrefRef.current = null;
+  };
 
   async function loadEventTypes() {
     setLoadingEvents(true);
@@ -447,6 +541,9 @@ export default function EventsPreferencesPage() {
       toast.error(e?.message || "Failed to save preferences.");
     } finally {
       setSaving(false);
+      allowNextNavRef.current = false;
+      navKindRef.current = null;
+      navHrefRef.current = null;
     }
   }
 
@@ -480,6 +577,18 @@ export default function EventsPreferencesPage() {
               className={`h-4 w-4 ${loadingEvents ? "animate-spin" : ""}`}
             />
             Refresh
+          </button>
+          <button
+            disabled={!dirty || saving}
+            onClick={onSave}
+            className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white shadow-sm transition ${
+              !dirty || saving
+                ? "cursor-not-allowed bg-slate-300"
+                : "bg-red-600 hover:bg-red-700"
+            }`}
+          >
+            <Save className="h-4 w-4" />
+            {saving ? "Saving…" : "Save"}
           </button>
         </div>
       </div>
@@ -563,20 +672,14 @@ export default function EventsPreferencesPage() {
       </div>
 
       <aside className="relative mt-8 hidden lg:block">
-        <div className="sticky top-10 mt-8 space-y-4">
+        <div className="sticky top-10 mt-8">
           <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="mb-3 flex items-center gap-2">
-              <Sparkles className="h-5 w-5 text-red-600" />
-              <h3 className="text-base font-semibold text-slate-900">
-                Review & Save
-              </h3>
-            </div>
             <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
               <div className="text-sm">
                 <div className="flex items-center justify-between">
                   <span className="text-slate-600">Subscribed</span>
                   <span className="font-semibold text-slate-900">
-                    {totals.sub}
+                    {totals.sub} / {totals.all}
                   </span>
                 </div>
               </div>
@@ -603,7 +706,7 @@ export default function EventsPreferencesPage() {
         </div>
       </aside>
 
-      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-20 mx-auto block max-w-7xl px-4 pb-6 lg:hidden">
+      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 mx-auto block max-w-7xl px-4 pb-6 lg:hidden">
         <div className="pointer-events-auto flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-lg">
           <div className="text-xs">
             <div className="font-semibold text-slate-900">
@@ -624,13 +727,107 @@ export default function EventsPreferencesPage() {
             className={`h-10 rounded-lg px-5 text-sm font-semibold text-white ${
               !dirty || saving
                 ? "cursor-not-allowed bg-slate-300"
-                : "bg-red-600"
+                : "bg-red-600 hover:bg-red-700"
             }`}
           >
             {saving ? "Saving…" : "Save"}
           </button>
         </div>
       </div>
+
+      <Portal>
+        <Backdrop
+          open={saving}
+          sx={{
+            color: "#fff",
+            zIndex: 2147483647,
+            flexDirection: "column",
+            gap: 2,
+          }}
+        >
+          <CircularProgress />
+          <Typography sx={{ fontWeight: 600 }}>
+            Saving your preferences…
+          </Typography>
+          <Box sx={{ width: 320, mt: 1 }}>
+            <LinearProgress />
+          </Box>
+        </Backdrop>
+      </Portal>
+
+      <Dialog
+        open={navOpen}
+        onClose={cancelNavigation}
+        aria-labelledby="unsaved-dialog-title"
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            width: 520,
+            maxWidth: "90vw",
+            boxShadow:
+              "0 10px 30px rgba(2,6,23,0.25), 0 1px 0 rgba(2,6,23,0.05)",
+          },
+        }}
+      >
+        <DialogTitle id="unsaved-dialog-title" sx={{ pb: 1 }}>
+          <Box className="flex items-center gap-3">
+            <Box
+              sx={{
+                width: 36,
+                height: 36,
+                borderRadius: "9999px",
+                backgroundColor: "#fee2e2",
+                display: "grid",
+                placeItems: "center",
+              }}
+            >
+              <Save className="h-4 w-4" color="#b91c1c" />
+            </Box>
+            <Box>
+              <Typography sx={{ fontWeight: 700, fontSize: 18 }}>
+                Leave without saving?
+              </Typography>
+              <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
+                You have unsaved changes on this page.
+              </Typography>
+            </Box>
+          </Box>
+        </DialogTitle>
+        <DialogContent sx={{ pt: 1 }}>
+          <Box className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <Typography sx={{ fontSize: 13, color: "text.secondary" }}>
+              If you leave now, your changes will be discarded. To keep them,
+              click Save first.
+            </Typography>
+          </Box>
+        </DialogContent>
+        <Divider />
+        <DialogActions sx={{ px: 3, py: 2, gap: 1.5 }}>
+          <Button
+            onClick={cancelNavigation}
+            variant="outlined"
+            sx={{
+              textTransform: "none",
+              borderRadius: 2,
+              borderColor: "rgba(100,116,139,0.4)",
+            }}
+          >
+            Stay on this page
+          </Button>
+          <Button
+            onClick={proceedNavigation}
+            variant="contained"
+            sx={{
+              textTransform: "none",
+              borderRadius: 2,
+              backgroundColor: "#dc2626",
+              "&:hover": { backgroundColor: "#b91c1c" },
+            }}
+          >
+            Discard & leave
+          </Button>
+        </DialogActions>
+      </Dialog>
     </div>
   );
 }

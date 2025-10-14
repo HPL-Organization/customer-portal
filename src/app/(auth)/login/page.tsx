@@ -43,8 +43,14 @@ function LoginInner() {
   const [lastName, setLastName] = useState("");
 
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [infoMsg, setInfoMsg] = useState<string | null>(null);
+  const [confirmBannerEmail, setConfirmBannerEmail] = useState<string | null>(
+    null
+  );
+  const [resending, setResending] = useState(false);
+  const [resendMsg, setResendMsg] = useState<string | null>(null);
 
   async function provisionAndRedirect() {
     await supabase.auth.getSession();
@@ -62,7 +68,7 @@ function LoginInner() {
     const url = new URL(next, origin || "http://localhost");
     if (nsId) {
       url.searchParams.set("nsId", nsId);
-      localStorage.setItem("nsId", nsId);
+      if (typeof window !== "undefined") localStorage.setItem("nsId", nsId);
     }
     router.replace(url.pathname + url.search);
   }
@@ -71,6 +77,7 @@ function LoginInner() {
     e.preventDefault();
     setErrorMsg(null);
     setInfoMsg(null);
+    setConfirmBannerEmail(null);
     setLoading(true);
 
     const emailClean = email.trim().toLowerCase();
@@ -88,6 +95,7 @@ function LoginInner() {
     e.preventDefault();
     setErrorMsg(null);
     setInfoMsg(null);
+    setResendMsg(null);
     setLoading(true);
 
     const emailClean = email.trim().toLowerCase();
@@ -113,7 +121,8 @@ function LoginInner() {
     if (error) return setErrorMsg(error.message);
 
     if (!data.session) {
-      setInfoMsg("Check your email to confirm your account, then sign in.");
+      setConfirmBannerEmail(emailClean);
+      setInfoMsg(null);
       return;
     }
     await provisionAndRedirect();
@@ -122,6 +131,7 @@ function LoginInner() {
   async function sendMagicLink() {
     setErrorMsg(null);
     setInfoMsg(null);
+    setConfirmBannerEmail(null);
     setLoading(true);
     const emailClean = email.trim().toLowerCase();
     const emailRedirectTo =
@@ -143,6 +153,7 @@ function LoginInner() {
     if (!email) return setErrorMsg("Enter your email first.");
     setErrorMsg(null);
     setInfoMsg(null);
+    setConfirmBannerEmail(null);
     setLoading(true);
 
     const origin =
@@ -156,6 +167,63 @@ function LoginInner() {
     if (error) return setErrorMsg(error.message);
     setInfoMsg("Password reset email sent.");
   }
+
+  async function continueWithGoogle() {
+    try {
+      setGoogleLoading(true);
+      setErrorMsg(null);
+      const origin =
+        typeof window !== "undefined" ? window.location.origin : "";
+      const prefill =
+        mode === "signup"
+          ? btoa(JSON.stringify({ firstName, middleName, lastName }))
+          : "";
+      if (prefill && typeof window !== "undefined") {
+        sessionStorage.setItem("name_prefill", prefill);
+      }
+      await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: `${origin}/callback?next=${encodeURIComponent(next)}${
+            prefill ? `&prefill=${encodeURIComponent(prefill)}` : ""
+          }`,
+        },
+      });
+    } catch (e: any) {
+      setErrorMsg(e?.message || "Google sign-in failed");
+      setGoogleLoading(false);
+    }
+  }
+
+  async function resendConfirmation() {
+    if (!confirmBannerEmail) return;
+    try {
+      setResending(true);
+      setResendMsg(null);
+      const { error } = await supabase.auth.resend({
+        type: "signup",
+        email: confirmBannerEmail,
+      } as any);
+      setResending(false);
+      if (error) return setResendMsg(error.message);
+      setResendMsg("Confirmation email re-sent.");
+    } catch (e: any) {
+      setResending(false);
+      setResendMsg(e?.message || "Could not resend. Try again shortly.");
+    }
+  }
+
+  function copyEmail() {
+    if (!confirmBannerEmail) return;
+    try {
+      navigator.clipboard.writeText(confirmBannerEmail);
+      setResendMsg("Email copied to clipboard.");
+    } catch {}
+  }
+
+  const googleDisabled =
+    googleLoading ||
+    (mode === "signup" && (!firstName.trim() || !lastName.trim()));
 
   return (
     <main className="relative min-h-screen w-full overflow-hidden bg-[radial-gradient(1200px_600px_at_10%_-10%,#1e293b_20%,transparent_60%),radial-gradient(1200px_600px_at_110%_10%,#0f766e_10%,transparent_60%),linear-gradient(180deg,#0b0f14,60%,#0b0f14)]">
@@ -229,6 +297,7 @@ function LoginInner() {
                     setMode("signin");
                     setErrorMsg(null);
                     setInfoMsg(null);
+                    setConfirmBannerEmail(null);
                   }}
                   className={`rounded-lg px-3 py-1 text-xs transition ${
                     mode === "signin"
@@ -243,6 +312,7 @@ function LoginInner() {
                     setMode("signup");
                     setErrorMsg(null);
                     setInfoMsg(null);
+                    setConfirmBannerEmail(null);
                   }}
                   className={`rounded-lg px-3 py-1 text-xs transition ${
                     mode === "signup"
@@ -250,10 +320,83 @@ function LoginInner() {
                       : "text-white/70 hover:text-white"
                   }`}
                 >
-                  Create
+                  Sign Up
                 </button>
               </div>
             </div>
+
+            {confirmBannerEmail && (
+              <div className="mb-6 rounded-2xl border border-amber-300/40 bg-amber-400/15 p-4 ring-1 ring-amber-300/30">
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 h-3 w-3 animate-pulse rounded-full bg-amber-300" />
+                  <div className="flex-1">
+                    <div className="text-sm font-semibold text-amber-100">
+                      Confirm your email to finish sign-up
+                    </div>
+                    <div className="mt-1 text-xs text-amber-50/90">
+                      We sent a confirmation link to
+                    </div>
+                    <div className="mt-2 rounded-lg bg-black/20 px-2 py-1 text-xs font-mono text-amber-50">
+                      {confirmBannerEmail}
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      <button
+                        onClick={resendConfirmation}
+                        disabled={resending}
+                        className="rounded-lg bg-amber-200 px-3 py-2 text-xs font-medium text-neutral-900 hover:bg-amber-100 disabled:opacity-60"
+                      >
+                        {resending ? "Resending…" : "Resend email"}
+                      </button>
+                      <button
+                        onClick={copyEmail}
+                        className="rounded-lg border border-amber-300/50 bg-transparent px-3 py-2 text-xs font-medium text-amber-100 hover:bg-amber-300/10"
+                      >
+                        Copy email
+                      </button>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-amber-100/90">
+                      <a
+                        className="underline underline-offset-4 hover:text-white"
+                        href="https://mail.google.com/"
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Open Gmail
+                      </a>
+                      <span>·</span>
+                      <a
+                        className="underline underline-offset-4 hover:text-white"
+                        href="https://outlook.live.com/mail/"
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Open Outlook
+                      </a>
+                      <span>·</span>
+                      <a
+                        className="underline underline-offset-4 hover:text-white"
+                        href="https://mail.yahoo.com/"
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Open Yahoo Mail
+                      </a>
+                    </div>
+                    {resendMsg && (
+                      <div className="mt-3 rounded-md border border-amber-300/40 bg-amber-300/10 px-2 py-1 text-[11px] text-amber-50">
+                        {resendMsg}
+                      </div>
+                    )}
+                    <button
+                      onClick={() => setConfirmBannerEmail(null)}
+                      className="mt-4 text-[11px] text-amber-200 underline underline-offset-4 hover:text-white"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <form
               onSubmit={mode === "signin" ? onSignin : onSignup}
@@ -441,6 +584,34 @@ function LoginInner() {
                 </span>
               </button>
             </form>
+
+            <div className="my-4 grid grid-cols-[1fr_auto_1fr] items-center gap-3 text-xs text-white/60">
+              <div className="h-px w-full bg-white/10" />
+              <span>or</span>
+              <div className="h-px w-full bg-white/10" />
+            </div>
+
+            <button
+              onClick={continueWithGoogle}
+              disabled={googleDisabled}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-white/90 px-4 py-2.5 text-sm font-medium text-neutral-900 ring-1 ring-white/30 transition hover:bg-white disabled:opacity-60"
+            >
+              {googleLoading ? (
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-neutral-400 border-t-neutral-900" />
+              ) : (
+                <svg viewBox="0 0 24 24" className="h-4 w-4">
+                  <path
+                    fill="#EA4335"
+                    d="M12 11.8v3.9h6.5c-.3 1.9-2.1 5.5-6.5 5.5-3.9 0-7.1-3.2-7.1-7.1S8.1 7 12 7c2.2 0 3.7.9 4.6 1.8l3.1-3.1C18.2 3.8 15.4 2.5 12 2.5 6.8 2.5 2.5 6.8 2.5 12S6.8 21.5 12 21.5c6.9 0 9.5-4.8 9.5-7.3 0-.5 0-.9-.1-1.3H12z"
+                  />
+                </svg>
+              )}
+              <span>
+                {mode === "signup"
+                  ? "Continue with Google"
+                  : "Sign in with Google"}
+              </span>
+            </button>
 
             <div className="mt-6 space-y-3 text-sm">
               <button

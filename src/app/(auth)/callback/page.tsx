@@ -1,4 +1,3 @@
-// src/app/callback/page.tsx
 "use client";
 
 import { Suspense, useEffect, useMemo, useState } from "react";
@@ -35,6 +34,7 @@ function Inner() {
   const router = useRouter();
   const sp = useSearchParams();
   const next = sp.get("next") || "/";
+  const prefillParam = sp.get("prefill") || "";
   const [phase, setPhase] = useState<Phase>("checking");
   const [detail, setDetail] = useState<string>(
     "Searching to see if you exist in our records…"
@@ -60,15 +60,38 @@ function Inner() {
       try {
         await supabase.auth.getSession();
 
+        let names = { firstName: "", middleName: "", lastName: "" };
+        const raw =
+          prefillParam ||
+          (typeof window !== "undefined"
+            ? sessionStorage.getItem("name_prefill") || ""
+            : "");
+        if (raw) {
+          try {
+            const d = JSON.parse(atob(raw));
+            names = {
+              firstName: (d.firstName || "").toString(),
+              middleName: (d.middleName || "").toString(),
+              lastName: (d.lastName || "").toString(),
+            };
+          } catch {}
+        }
+
         setPhase("checking");
         setDetail("Searching to see if you exist in our records…");
         await sleep(450);
 
-        const r = await fetch("/api/auth/provision", { method: "POST" });
+        const r = await fetch("/api/auth/provision", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(names),
+        });
         const j: any = await r.json().catch(() => ({}));
 
+        if (typeof window !== "undefined")
+          sessionStorage.removeItem("name_prefill");
+
         if (j?.error) {
-          console.error("Provision failed:", j);
           setPhase("error");
           setDetail(
             j?.step === "netsuite"
@@ -79,7 +102,7 @@ function Inner() {
         }
 
         const nsId: string | null = j?.nsId ?? null;
-        const mode: string | null = j?.mode ?? null; // optional: "existing" | "claimed" | "created"
+        const mode: string | null = j?.mode ?? null;
 
         if (mode === "existing" || mode === "claimed") {
           setPhase("found");
@@ -102,7 +125,7 @@ function Inner() {
         const url = new URL(next, window.location.origin);
         if (nsId) {
           url.searchParams.set("nsId", nsId);
-          localStorage.setItem("nsId", nsId);
+          if (typeof window !== "undefined") localStorage.setItem("nsId", nsId);
         }
 
         setPhase("redirecting");
@@ -115,7 +138,7 @@ function Inner() {
         setDetail(e?.message || "Please try signing in again.");
       }
     })();
-  }, [router, next]);
+  }, [router, next, prefillParam]);
 
   return (
     <main className="min-h-screen grid place-items-center bg-gradient-to-br from-sky-50 via-white to-emerald-50 px-6 py-16">
