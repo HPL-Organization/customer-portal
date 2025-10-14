@@ -386,9 +386,9 @@ export default function InvoicesPage() {
           onChange={(_, v) => setTab(v)}
           aria-label="billing tabs"
         >
-          <Tab label="Open Invoices" value={0} />
-          <Tab label="Closed Invoices" value={1} />
-          <Tab label="Deposits" value={2} />
+          <Tab label="Unpaid Invoices" value={0} />
+          <Tab label="Paid Invoices" value={1} />
+          <Tab label="Credits/Deposits" value={2} />
         </Tabs>
 
         {tab !== 2 && (
