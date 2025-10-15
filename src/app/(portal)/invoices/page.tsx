@@ -21,6 +21,7 @@ import {
   Box,
 } from "@mui/material";
 
+/* ---------- helpers ---------- */
 type SortKey = "trandate" | "tranId" | "amountRemaining" | "total";
 
 function fmt(n: number) {
@@ -50,6 +51,7 @@ function decorateInvoices(list: Invoice[]): Invoice[] {
   });
 }
 
+/* ---------- page ---------- */
 export default function InvoicesPage() {
   const router = useRouter();
   const sp = useSearchParams();
@@ -77,10 +79,7 @@ export default function InvoicesPage() {
   const [sortDir, setSortDir] = React.useState<"asc" | "desc">("desc");
 
   const data = React.useMemo(
-    () => ({
-      invoices: cachedInvoices ?? [],
-      deposits: cachedDeposits ?? [],
-    }),
+    () => ({ invoices: cachedInvoices ?? [], deposits: cachedDeposits ?? [] }),
     [cachedInvoices, cachedDeposits]
   );
 
@@ -350,45 +349,64 @@ export default function InvoicesPage() {
 
   return (
     <div className="mx-auto max-w-6xl p-6 md:p-8">
+      {/* Header */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-bold text-slate-900">Billing</h1>
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-[#17152A]">
+            View and pay invoices
+          </h1>
+          <div className="mt-2 h-[3px] w-24 rounded-full bg-gradient-to-r from-[#8C0F0F] to-[#E01C24]" />
+        </div>
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
-          <Chip
-            size="small"
-            label={`Open Balance: ${fmt(openBalance)}`}
-            variant="outlined"
-            sx={{ borderRadius: "10px", "& .MuiChip-label": { px: 1.25 } }}
-          />
-          <Chip
-            size="small"
-            label={`Open: ${openInvoices.length}`}
-            variant="outlined"
-            sx={{ borderRadius: "10px", "& .MuiChip-label": { px: 1.25 } }}
-          />
-          <Chip
-            size="small"
-            label={`Closed: ${closedInvoices.length}`}
-            variant="outlined"
-            sx={{ borderRadius: "10px", "& .MuiChip-label": { px: 1.25 } }}
-          />
-          <Chip
-            size="small"
-            label={`Deposits: ${data.deposits.length}`}
-            variant="outlined"
-            sx={{ borderRadius: "10px", "& .MuiChip-label": { px: 1.25 } }}
-          />
+          {[
+            { label: `Open Balance: ${fmt(openBalance)}` },
+            { label: `Open: ${openInvoices.length}` },
+            { label: `Paid: ${closedInvoices.length}` },
+            { label: `Deposits: ${data.deposits.length}` },
+          ].map((c, i) => (
+            <Chip
+              key={i}
+              size="small"
+              label={c.label}
+              variant="outlined"
+              sx={{
+                borderRadius: "10px",
+                borderColor: "#BFBFBF",
+                color: "#17152A",
+                bgcolor: "#FFFFEC",
+                "& .MuiChip-label": { px: 1.25 },
+              }}
+            />
+          ))}
         </div>
       </div>
 
+      {/* Tabs + Filters */}
       <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <Tabs
           value={tab}
           onChange={(_, v) => setTab(v)}
           aria-label="billing tabs"
+          sx={{
+            minHeight: 0,
+            "& .MuiTab-root": {
+              minHeight: 0,
+              textTransform: "none",
+              fontWeight: 600,
+              color: "#17152A",
+              opacity: 0.7,
+            },
+            "& .Mui-selected": { color: "#17152A", opacity: 1 },
+            "& .MuiTabs-indicator": {
+              height: 3,
+              borderRadius: 2,
+              background: "linear-gradient(90deg,#8C0F0F,#E01C24)",
+            },
+          }}
         >
           <Tab label="Unpaid Invoices" value={0} />
           <Tab label="Paid Invoices" value={1} />
-          <Tab label="Credits/Deposits" value={2} />
+          <Tab label="Credits / Deposits" value={2} />
         </Tabs>
 
         {tab !== 2 && (
@@ -397,13 +415,13 @@ export default function InvoicesPage() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search invoice #, SO #, SKU, or display name…"
-              className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 shadow-sm outline-none placeholder:text-slate-400 md:w-72"
+              className="h-9 w-full rounded-xl border border-[#BFBFBF] bg-white px-3 text-sm text-[#17152A] shadow-sm outline-none placeholder:text-[#17152A]/45 focus:ring-2 focus:ring-[#8C0F0F]/30 md:w-80"
             />
             <div className="flex items-center gap-2">
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value as SortKey)}
-                className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm text-slate-700 shadow-sm"
+                className="h-9 rounded-xl border border-[#BFBFBF] bg-white px-2 text-sm text-[#17152A] shadow-sm focus:ring-2 focus:ring-[#8C0F0F]/30"
               >
                 <option value="trandate">Date</option>
                 <option value="tranId">Invoice #</option>
@@ -413,7 +431,7 @@ export default function InvoicesPage() {
               <select
                 value={sortDir}
                 onChange={(e) => setSortDir(e.target.value as "asc" | "desc")}
-                className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm text-slate-700 shadow-sm"
+                className="h-9 rounded-xl border border-[#BFBFBF] bg-white px-2 text-sm text-[#17152A] shadow-sm focus:ring-2 focus:ring-[#8C0F0F]/30"
               >
                 <option value="desc">Desc</option>
                 <option value="asc">Asc</option>
@@ -423,6 +441,7 @@ export default function InvoicesPage() {
         )}
       </div>
 
+      {/* Tables */}
       {tab === 0 && (
         <InvoicesTable
           loading={billingLoading || !initialized}
@@ -453,6 +472,7 @@ export default function InvoicesPage() {
         onSubmit={submitPayment}
       />
 
+      {/* Loading overlay */}
       <Portal>
         <Backdrop
           open={billingLoading || !initialized}

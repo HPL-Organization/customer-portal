@@ -17,7 +17,7 @@ export default function Button({
   ...rest
 }: ButtonProps) {
   const base =
-    "inline-flex items-center justify-center rounded-lg font-medium transition focus:outline-none focus:ring-2 focus:ring-offset-1";
+    "inline-flex items-center justify-center rounded-xl font-medium transition-colors select-none shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[#8C0F0F]/30 disabled:cursor-not-allowed";
   const sizes = {
     sm: "px-3 py-1.5 text-sm",
     md: "px-4 py-2 text-sm",
@@ -25,11 +25,10 @@ export default function Button({
   } as const;
   const variants = {
     primary:
-      "bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500 disabled:bg-blue-300",
+      "bg-[#8C0F0F] text-white hover:bg-[#E01C24] disabled:bg-[#8C0F0F]/40",
     outline:
-      "border border-slate-300 text-slate-800 hover:bg-slate-50 focus:ring-slate-400 disabled:text-slate-400",
-    ghost:
-      "text-slate-700 hover:bg-slate-100 focus:ring-slate-400 disabled:text-slate-400",
+      "border border-[#BFBFBF] text-[#17152A] hover:bg-[#FFFFEC] disabled:text-[#17152A]/40 disabled:border-[#BFBFBF]/60",
+    ghost: "text-[#17152A] hover:bg-black/5 disabled:text-[#17152A]/40",
   } as const;
 
   return (

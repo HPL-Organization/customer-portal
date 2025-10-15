@@ -14,6 +14,6 @@ export const NAV_ITEMS = [
   { href: "/payment", label: "Payment Methods", icon: CreditCard },
   { href: "/invoices", label: "View & Pay Invoices", icon: ReceiptText },
   { href: "/orderTracking", label: "Order Tracking", icon: Truck },
-  { href: "/events", label: "Subscribed Events", icon: CalendarDays },
-  { href: "/communication", label: "Communication Preferences", icon: Mail },
+  // { href: "/events", label: "Subscribed Events", icon: CalendarDays },
+  // { href: "/communication", label: "Communication Preferences", icon: Mail },
 ] as const;

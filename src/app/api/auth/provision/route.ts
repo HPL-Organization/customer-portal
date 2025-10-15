@@ -128,17 +128,15 @@ export async function POST(req: NextRequest) {
       middleName || undefined
     );
 
-    const { error: upsertErr } = await admin
-      .from("profiles")
-      .upsert(
-        {
-          user_id: user.id,
-          email: emailLC,
-          role: "customer",
-          netsuite_customer_id: nsIdNum,
-        },
-        { onConflict: "email" }
-      );
+    const { error: upsertErr } = await admin.from("profiles").upsert(
+      {
+        user_id: user.id,
+        email: emailLC,
+        role: "customer",
+        netsuite_customer_id: nsIdNum,
+      },
+      { onConflict: "email" }
+    );
     if (upsertErr) {
       return NextResponse.json(
         {

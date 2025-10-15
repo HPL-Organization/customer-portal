@@ -183,7 +183,6 @@ const InfoTab = () => {
 
   const saveHubSpot = async (): Promise<boolean> => {
     if (!hasHubSpot) return true;
-
     if (!contactId) {
       toast.error("Contact ID not available.");
       return false;
@@ -292,7 +291,6 @@ const InfoTab = () => {
     setSaving(true);
 
     const ok = await saveHubSpot();
-
     if (!ok) {
       setSaving(false);
       return;
@@ -310,7 +308,7 @@ const InfoTab = () => {
       {!initialized || loading ? (
         <ProfileSkeleton />
       ) : (
-        <div className="mx-auto max-w-6xl p-6 md:p-8">
+        <div className="mx-auto max-w-5xl p-6 md:p-8">
           {contactLoading && (
             <Box sx={{ mb: 2 }}>
               <LinearProgress />
@@ -318,149 +316,164 @@ const InfoTab = () => {
           )}
 
           {hasHubSpot === false && (
-            <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-              No HubSpot contact found. You can still save this info to
-              NetSuite.
+            <div className="mb-3 rounded-xl border border-[#BFBFBF]/60 bg-white px-3 py-2 text-sm text-[#17152A] shadow-sm">
+              New to HPL? You can enter all your billing and shipping
+              information here
             </div>
           )}
 
-          <div className="mb-4 flex items-center justify-between">
-            <h1 className="text-2xl font-bold text-slate-900">General Info</h1>
-          </div>
-
-          <div className="mb-2 flex justify-end">
-            <Button onClick={handleSaveAll} className="px-3 py-1 text-sm">
+          <div className="mb-5 flex items-center justify-between">
+            <div>
+              <h1 className="mt-2 text-2xl font-bold tracking-tight text-[#17152A]">
+                My Info
+              </h1>
+              <div className="mt-3 h-[3px] w-24 rounded-full bg-gradient-to-r from-[#8C0F0F] to-[#E01C24]" />
+            </div>
+            <Button
+              onClick={handleSaveAll}
+              className="px-4 py-2 text-sm rounded-xl bg-[#8C0F0F] text-white hover:bg-[#E01C24] shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8C0F0F]/30"
+            >
               Save
             </Button>
           </div>
 
-          <div className="mb-8 grid grid-cols-1 gap-4 text-black md:grid-cols-3">
-            <InputField
-              label="First Name"
-              name="firstName"
-              value={formData.firstName}
-              onChange={handleChange}
-            />
-            <InputField
-              label="Middle Name"
-              name="middleName"
-              value={formData.middleName}
-              onChange={handleChange}
-            />
-            <InputField
-              label="Last Name"
-              name="lastName"
-              value={formData.lastName}
-              onChange={handleChange}
-            />
-            <InputField
-              label="Email"
-              name="email"
-              value={formData.email}
-              onChange={handleChange}
-            />
-            <InputField
-              label="Phone"
-              name="phone"
-              value={formData.phone}
-              onChange={handleChange}
-            />
-            <InputField
-              label="Mobile"
-              name="mobile"
-              value={formData.mobile}
-              onChange={handleChange}
-            />
-          </div>
-
-          <div className="mb-2 flex items-center justify-between">
-            <label className="mb-1 block text-gray-700">
-              <span className="font-bold text-blue-500">Google</span> Shipping
-              Address Lookup
-            </label>
-            <FormControlLabel
-              control={<Checkbox checked={shippingVerified} disabled />}
-              label="Verified via Google"
-            />
-          </div>
-          <div className="mb-4">
-            <GoogleMapsLoader>
-              <AddressAutocomplete
-                onAddressSelect={(p: any) => {
-                  handleAddressChange("shipping", "address1", p.address1);
-                  handleAddressChange("shipping", "city", p.city);
-                  handleAddressChange("shipping", "state", p.state);
-                  handleAddressChange("shipping", "zip", p.zip);
-                  handleAddressChange("shipping", "country", p.country);
-                  setShippingVerified(true);
-                }}
+          <section className="mb-8 rounded-2xl border border-[#BFBFBF]/60 bg-white p-4 shadow-sm">
+            <h2 className="mb-4 text-lg font-semibold text-[#17152A]">
+              Contact Details
+            </h2>
+            <div className="grid grid-cols-1 gap-4 text-black md:grid-cols-3">
+              <InputField
+                label="First Name"
+                name="firstName"
+                value={formData.firstName}
+                onChange={handleChange}
               />
-            </GoogleMapsLoader>
-          </div>
-
-          <h2 className="mb-2 text-lg font-semibold text-black">
-            Shipping Address
-          </h2>
-          <div className="mb-6 grid grid-cols-1 gap-4 text-black md:grid-cols-2">
-            {["address1", "city", "address2", "state", "zip", "country"].map(
-              (field) => (
-                <InputField
-                  key={field}
-                  label={field.charAt(0).toUpperCase() + field.slice(1)}
-                  value={(formData.shipping as any)[field]}
-                  onChange={(e: any) =>
-                    handleAddressChange("shipping", field, e.target.value)
-                  }
-                />
-              )
-            )}
-          </div>
-
-          <div className="mb-2 flex items-center justify-between">
-            <label className="mb-1 block text-gray-700">
-              <span className="font-bold text-blue-500">Google</span> Billing
-              Address Lookup
-            </label>
-            <FormControlLabel
-              control={<Checkbox checked={billingVerified} disabled />}
-              label="Verified via Google"
-            />
-          </div>
-          <div className="mb-4">
-            <GoogleMapsLoader>
-              <AddressAutocomplete
-                onAddressSelect={(p: any) => {
-                  handleAddressChange("billing", "address1", p.address1);
-                  handleAddressChange("billing", "city", p.city);
-                  handleAddressChange("billing", "state", p.state);
-                  handleAddressChange("billing", "zip", p.zip);
-                  handleAddressChange("billing", "country", p.country);
-                  setBillingVerified(true);
-                }}
+              <InputField
+                label="Middle Name"
+                name="middleName"
+                value={formData.middleName}
+                onChange={handleChange}
               />
-            </GoogleMapsLoader>
-          </div>
+              <InputField
+                label="Last Name"
+                name="lastName"
+                value={formData.lastName}
+                onChange={handleChange}
+              />
+              <InputField
+                label="Email"
+                name="email"
+                value={formData.email}
+                onChange={handleChange}
+              />
+              <InputField
+                label="Phone"
+                name="phone"
+                value={formData.phone}
+                onChange={handleChange}
+              />
+              <InputField
+                label="Mobile"
+                name="mobile"
+                value={formData.mobile}
+                onChange={handleChange}
+              />
+            </div>
+          </section>
 
-          <h2 className="mb-2 text-lg font-semibold text-black">
-            Billing Address
-          </h2>
-          <div className="mb-6 grid grid-cols-1 gap-4 text-black md:grid-cols-2">
-            {["address1", "city", "address2", "state", "zip", "country"].map(
-              (field) => (
-                <InputField
-                  key={field}
-                  label={field.charAt(0).toUpperCase() + field.slice(1)}
-                  value={(formData.billing as any)[field]}
-                  onChange={(e: any) =>
-                    handleAddressChange("billing", field, e.target.value)
-                  }
+          <section className="mb-8 rounded-2xl border border-[#BFBFBF]/60 bg-white p-4 shadow-sm">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="inline-flex items-center gap-2 rounded-full border border-[#8C0F0F]/30 bg-[#8C0F0F]/10 px-3 py-1 text-[11px] font-medium text-[#8C0F0F]">
+                Google Shipping Address Lookup
+              </span>
+              <FormControlLabel
+                control={<Checkbox checked={shippingVerified} disabled />}
+                label="Verified via Google"
+              />
+            </div>
+            <div className="mb-4">
+              <GoogleMapsLoader>
+                <AddressAutocomplete
+                  onAddressSelect={(p: any) => {
+                    handleAddressChange("shipping", "address1", p.address1);
+                    handleAddressChange("shipping", "city", p.city);
+                    handleAddressChange("shipping", "state", p.state);
+                    handleAddressChange("shipping", "zip", p.zip);
+                    handleAddressChange("shipping", "country", p.country);
+                    setShippingVerified(true);
+                  }}
                 />
-              )
-            )}
-          </div>
+              </GoogleMapsLoader>
+            </div>
+
+            <h2 className="mb-2 text-lg font-semibold text-[#17152A]">
+              Shipping Address
+            </h2>
+            <div className="grid grid-cols-1 gap-4 text-black md:grid-cols-2">
+              {["address1", "city", "address2", "state", "zip", "country"].map(
+                (field) => (
+                  <InputField
+                    key={field}
+                    label={field.charAt(0).toUpperCase() + field.slice(1)}
+                    value={(formData.shipping as any)[field]}
+                    onChange={(e: any) =>
+                      handleAddressChange("shipping", field, e.target.value)
+                    }
+                  />
+                )
+              )}
+            </div>
+          </section>
+
+          <section className="mb-8 rounded-2xl border border-[#BFBFBF]/60 bg-white p-4 shadow-sm">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="inline-flex items-center gap-2 rounded-full border border-[#8C0F0F]/30 bg-[#8C0F0F]/10 px-3 py-1 text-[11px] font-medium text-[#8C0F0F]">
+                Google Billing Address Lookup
+              </span>
+              <FormControlLabel
+                control={<Checkbox checked={billingVerified} disabled />}
+                label="Verified via Google"
+              />
+            </div>
+            <div className="mb-4">
+              <GoogleMapsLoader>
+                <AddressAutocomplete
+                  onAddressSelect={(p: any) => {
+                    handleAddressChange("billing", "address1", p.address1);
+                    handleAddressChange("billing", "city", p.city);
+                    handleAddressChange("billing", "state", p.state);
+                    handleAddressChange("billing", "zip", p.zip);
+                    handleAddressChange("billing", "country", p.country);
+                    setBillingVerified(true);
+                  }}
+                />
+              </GoogleMapsLoader>
+            </div>
+
+            <h2 className="mb-2 text-lg font-semibold text-[#17152A]">
+              Billing Address
+            </h2>
+            <div className="grid grid-cols-1 gap-4 text-black md:grid-cols-2">
+              {["address1", "city", "address2", "state", "zip", "country"].map(
+                (field) => (
+                  <InputField
+                    key={field}
+                    label={field.charAt(0).toUpperCase() + field.slice(1)}
+                    value={(formData.billing as any)[field]}
+                    onChange={(e: any) =>
+                      handleAddressChange("billing", field, e.target.value)
+                    }
+                  />
+                )
+              )}
+            </div>
+          </section>
 
           <div className="flex justify-end">
-            <Button onClick={handleSaveAll} className="px-3 py-1 text-sm">
+            <Button
+              onClick={handleSaveAll}
+              className="px-4 py-2 text-sm rounded-xl bg-[#8C0F0F] text-white hover:bg-[#E01C24] shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8C0F0F]/30"
+            >
               Save
             </Button>
           </div>

@@ -40,16 +40,17 @@ import {
 import { useCustomerBootstrap } from "@/components/providers/CustomerBootstrap";
 import { usePaymentMethods } from "@/components/providers/PaymentMethodsProvider";
 
+/* ---------- VersaPay globals ---------- */
 declare global {
   interface Window {
     versapay?: any;
     __VP_ADD_METHOD_LOCK__?: boolean;
   }
 }
-
 const DELETE_DISABLED_MSG =
   "Must keep one payment method on file to remove- +xxxxxxxxxx example@example.com";
 
+/* ---------- Helpers ---------- */
 type PaymentMethod = ReturnType<typeof mapShape> extends infer T ? never : any;
 
 function pmLabel(pm: any) {
@@ -93,6 +94,7 @@ function mapShape(it: any, idx: number) {
   return { id, type, brand, last4, exp, name, isDefault, tokenFamilyLabel };
 }
 
+/* ---------- API calls ---------- */
 async function createPaymentMethod(
   customerInternalId: number,
   payload: {
@@ -202,6 +204,7 @@ async function makePaymentDefault(
   return data as { success: boolean; action?: string };
 }
 
+/* ---------- UI blocks ---------- */
 function PaymentMethodCard({
   pm,
   onDelete,
@@ -216,11 +219,11 @@ function PaymentMethodCard({
   deleteTooltip?: string;
 }) {
   return (
-    <Card className="shadow-sm hover:shadow-md transition-shadow rounded-2xl">
+    <Card className="rounded-2xl border border-[#BFBFBF]/60 shadow-sm transition-shadow hover:shadow-md">
       <CardHeader
         title={
-          <div className="flex items-center gap-2 text-base font-medium">
-            <span className="inline-flex items-center justify-center rounded-full bg-gray-100 w-9 h-9">
+          <div className="flex items-center gap-2 text-base font-medium text-[#17152A]">
+            <span className="inline-flex items-center justify-center rounded-full bg-[#8C0F0F]/10 w-9 h-9 text-[#8C0F0F]">
               {typeIcon(pm, "w-5 h-5")}
             </span>
             <span className="truncate">{pmLabel(pm)}</span>
@@ -234,10 +237,14 @@ function PaymentMethodCard({
             ) : null}
           </div>
         }
-        subheader={pm.name || pm.tokenFamilyLabel || undefined}
+        subheader={
+          <span className="text-sm text-[#17152A]/70">
+            {pm.name || pm.tokenFamilyLabel || undefined}
+          </span>
+        }
       />
       <CardContent className="pt-0">
-        <div className="flex flex-wrap items-center gap-2 text-sm text-gray-500">
+        <div className="flex flex-wrap items-center gap-2 text-sm text-[#17152A]/70">
           {pm.tokenFamilyLabel ? (
             <Chip size="small" variant="outlined" label={pm.tokenFamilyLabel} />
           ) : null}
@@ -255,25 +262,30 @@ function PaymentMethodCard({
       </CardContent>
       <Divider />
       <CardActions className="flex justify-between">
-        <div className="flex items-center gap-1">
-          <Tooltip
-            title={
-              pm.isDefault ? "This is already the default" : "Make Default"
-            }
-          >
-            <span>
-              <MUIButton
-                size="small"
-                variant="outlined"
-                onClick={() => onMakeDefault(pm)}
-                disabled={pm.isDefault}
-                sx={{ textTransform: "none" }}
-              >
-                Make Default
-              </MUIButton>
-            </span>
-          </Tooltip>
-        </div>
+        <Tooltip
+          title={pm.isDefault ? "This is already the default" : "Make Default"}
+        >
+          <span>
+            <MUIButton
+              size="small"
+              variant="outlined"
+              onClick={() => onMakeDefault(pm)}
+              disabled={pm.isDefault}
+              sx={{
+                textTransform: "none",
+                borderColor: "#BFBFBF",
+                color: "#17152A",
+                "&:hover": {
+                  backgroundColor: "#FFFFEC",
+                  borderColor: "#BFBFBF",
+                },
+                "&.Mui-disabled": { color: "rgba(23,21,42,0.4)" },
+              }}
+            >
+              Make Default
+            </MUIButton>
+          </span>
+        </Tooltip>
 
         <Tooltip title={disableDelete ? deleteTooltip || "Remove" : "Remove"}>
           <span
@@ -286,11 +298,15 @@ function PaymentMethodCard({
             }}
           >
             <IconButton
-              color="error"
               onClick={() => onDelete(pm)}
               disabled={!!disableDelete}
               aria-label="Remove payment method"
               tabIndex={disableDelete ? -1 : 0}
+              sx={{
+                color: "#8C0F0F",
+                "&:hover": { backgroundColor: "rgba(140,15,15,0.08)" },
+                "&.Mui-disabled": { color: "rgba(140,15,15,0.35)" },
+              }}
             >
               <Trash2 className="w-5 h-5" />
             </IconButton>
@@ -303,27 +319,37 @@ function PaymentMethodCard({
 
 function EmptyState({ onAdd }: { onAdd: () => void }) {
   return (
-    <div className="flex flex-col items-center justify-center text-center border rounded-2xl p-10 bg-white">
-      <div className="rounded-full bg-gray-100 p-4 mb-4">
+    <div className="flex flex-col items-center justify-center text-center border border-[#BFBFBF]/60 rounded-2xl p-10 bg-white shadow-sm">
+      <div className="rounded-full bg-[#8C0F0F]/10 text-[#8C0F0F] p-4 mb-4">
         <CreditCard className="w-7 h-7" />
       </div>
-      <h3 className="text-lg font-semibold">No payment methods yet</h3>
-      <p className="text-gray-500 mt-1 max-w-md">
-        Save a tokenized card or bank account to quickly pay invoices and
-        deposits on this portal.
+      <h3 className="text-lg font-semibold text-[#17152A]">
+        No payment methods yet
+      </h3>
+      <p className="text-[#17152A]/70 mt-1 max-w-md">
+        Save a your credit card securely to quickly pay invoices and deposits on
+        this portal.
       </p>
-      <MUIButton
+      {/* <MUIButton
         className="mt-4"
         variant="contained"
         startIcon={<Plus />}
         onClick={onAdd}
+        sx={{
+          textTransform: "none",
+          backgroundColor: "#8C0F0F",
+          "&:hover": { backgroundColor: "#E01C24" },
+          borderRadius: "0.75rem",
+          boxShadow: "none",
+        }}
       >
         Add payment method
-      </MUIButton>
+      </MUIButton> */}
     </div>
   );
 }
 
+/* ---------- Add Method Dialog ---------- */
 function AddMethodDialog({
   open,
   onClose,
@@ -363,10 +389,7 @@ function AddMethodDialog({
       VP_ACTIVE = { key: 0, sid: null, handled: false };
       return;
     }
-
-    if (window.__VP_ADD_METHOD_LOCK__) {
-      return;
-    }
+    if (window.__VP_ADD_METHOD_LOCK__) return;
     window.__VP_ADD_METHOD_LOCK__ = true;
 
     let cancelled = false;
@@ -621,20 +644,29 @@ function AddMethodDialog({
 
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
-      <DialogTitle className="flex items-center gap-2">
-        <Plus className="w-5 h-5" /> Add payment method
+      <DialogTitle className="flex items-center gap-2 text-[#17152A]">
+        <Plus className="w-5 h-5 text-[#8C0F0F]" /> Add payment method
       </DialogTitle>
 
       <DialogContent className="space-y-4">
-        <Alert severity="info" icon={<ShieldCheck className="w-5 h-5" />}>
+        <Alert
+          severity="info"
+          icon={<ShieldCheck className="w-5 h-5" />}
+          sx={{
+            borderRadius: 2,
+            bgcolor: "rgba(140,15,15,0.06)",
+            color: "#17152A",
+            "& .MuiAlert-icon": { color: "#8C0F0F" },
+          }}
+        >
           Enter card details in the secure VersaPay frame. We only store a
           token.
         </Alert>
 
-        <div className="relative z-[1402] rounded-xl border border-gray-200 bg-white p-4 sm:p-5 shadow-sm">
+        <div className="relative z-[1402] rounded-xl border border-[#BFBFBF]/60 bg-white p-4 sm:p-5 shadow-sm">
           {processing && (
             <div className="absolute top-3 right-3 pointer-events-none z-[1404]">
-              <div className="flex items-center gap-2 bg-white/90 text-gray-700 text-xs px-2 py-1 rounded-full shadow">
+              <div className="flex items-center gap-2 bg-white/90 text-[#17152A] text-xs px-2 py-1 rounded-full shadow">
                 <CircularProgress size={14} />
                 <span>{token ? "Saving…" : "Processing…"}</span>
               </div>
@@ -643,7 +675,7 @@ function AddMethodDialog({
           <div className="relative" style={{ height: IFRAME_HOST_HEIGHT }}>
             {frameLoading && (
               <div className="absolute inset-0 flex items-center justify-center">
-                <div className="flex flex-col items-center gap-3 text-gray-600">
+                <div className="flex flex-col items-center gap-3 text-[#17152A]/70">
                   <CircularProgress />
                   <span className="text-sm">Loading secure payment frame…</span>
                 </div>
@@ -685,29 +717,42 @@ function AddMethodDialog({
         </div>
       </DialogContent>
 
-      <DialogActions>
-        <MUIButton onClick={onClose} disabled={processing}>
+      <DialogActions sx={{ px: 3, pb: 2 }}>
+        <MUIButton
+          onClick={onClose}
+          disabled={processing}
+          sx={{ textTransform: "none" }}
+        >
           Cancel
         </MUIButton>
         <MUIButton
           onClick={handleSave}
           disabled={processing || frameLoading}
           variant="contained"
+          sx={{
+            textTransform: "none",
+            backgroundColor: "#8C0F0F",
+            "&:hover": { backgroundColor: "#E01C24" },
+            borderRadius: "0.75rem",
+            boxShadow: "none",
+          }}
         >
-          {token ? "Save method" : "Tokenize & save"}
+          {token ? "Save method" : "Save"}
         </MUIButton>
       </DialogActions>
 
       <Backdrop open={processing} sx={{ zIndex: 1400 }}>
         <div className="flex items-center gap-3 bg-white/85 rounded-full px-3 py-2 shadow">
           <CircularProgress size={20} />
-          <span className="text-sm">{token ? "Saving…" : "Processing…"}</span>
+          <span className="text-sm text-[#17152A]">
+            {token ? "Saving…" : "Processing…"}
+          </span>
         </div>
       </Backdrop>
 
       {processing && (
         <div className="fixed inset-0 z-[1403] pointer-events-none flex items-end justify-center p-4">
-          <div className="flex items-center gap-2 bg-gray-900/80 text-white text-xs px-3 py-2 rounded-full shadow">
+          <div className="flex items-center gap-2 bg-[#17152A]/90 text-white text-xs px-3 py-2 rounded-full shadow">
             <CircularProgress size={16} sx={{ color: "white" }} />
             <span>Complete verification in the frame…</span>
           </div>
@@ -717,6 +762,7 @@ function AddMethodDialog({
   );
 }
 
+/* ---------- Page ---------- */
 export default function PaymentMethodsPage() {
   const bootstrap = useCustomerBootstrap?.();
   const contactId = (bootstrap as any)?.hsId ?? null;
@@ -799,16 +845,21 @@ export default function PaymentMethodsPage() {
   }
 
   return (
-    <div className="min-h-[calc(100vh-56px)] bg-gray-50">
+    <div className="min-h-[calc(100vh-56px)] bg-[#F7F7F9]">
       <div className="mx-auto max-w-5xl px-4 py-6 md:py-8">
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+        {/* Header */}
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <div className="space-y-1">
-            <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-              <WalletCards className="w-6 h-6" /> Payment Methods
+            <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2 text-[#17152A]">
+              <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#8C0F0F]/10 text-[#8C0F0F]">
+                <WalletCards className="w-5 h-5" />
+              </span>
+              Payment Methods
             </h1>
-            <p className="text-sm text-gray-500">
-              Manage tokenized cards and bank accounts for faster checkout.
+            <p className="text-sm text-[#17152A]/70">
+              Manage stored cards for faster checkout.
             </p>
+            <div className="mt-2 h-[3px] w-24 rounded-full bg-gradient-to-r from-[#8C0F0F] to-[#E01C24]" />
           </div>
           <div className="flex items-center gap-2">
             <Tooltip title="Refresh">
@@ -818,6 +869,7 @@ export default function PaymentMethodsPage() {
                     if (!hasCustomerId) return;
                     await refresh();
                   }}
+                  sx={{ color: "#17152A" }}
                 >
                   <RefreshCw className="w-5 h-5" />
                 </IconButton>
@@ -828,16 +880,25 @@ export default function PaymentMethodsPage() {
               startIcon={<Plus />}
               onClick={() => setAddOpen(true)}
               disabled={!hasCustomerId}
+              sx={{
+                textTransform: "none",
+                backgroundColor: "#8C0F0F",
+                "&:hover": { backgroundColor: "#E01C24" },
+                borderRadius: "0.75rem",
+                boxShadow: "none",
+                "&.Mui-disabled": { backgroundColor: "rgba(140,15,15,0.35)" },
+              }}
             >
               Add method
             </MUIButton>
           </div>
         </div>
 
+        {/* Content */}
         {loading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {Array.from({ length: 6 }).map((_, i) => (
-              <Card key={i} className="rounded-2xl">
+              <Card key={i} className="rounded-2xl border border-[#BFBFBF]/60">
                 <CardHeader
                   title={<Skeleton variant="text" width={160} />}
                   subheader={<Skeleton variant="text" width={120} />}
@@ -846,7 +907,7 @@ export default function PaymentMethodsPage() {
                   <Skeleton variant="rounded" height={28} />
                 </CardContent>
                 <CardActions>
-                  <Skeleton variant="rounded" height={36} width={80} />
+                  <Skeleton variant="rounded" height={36} width={100} />
                 </CardActions>
               </Card>
             ))}
@@ -868,13 +929,17 @@ export default function PaymentMethodsPage() {
           </div>
         )}
 
-        <div className="mt-10 text-center text-sm text-gray-500">
-          <Link href="/" className="underline hover:text-gray-700">
+        <div className="mt-10 text-center text-sm">
+          <Link
+            href="/"
+            className="underline text-[#17152A]/70 hover:text-[#17152A]"
+          >
             ← Back to home
           </Link>
         </div>
       </div>
 
+      {/* Dialog */}
       {hasCustomerId ? (
         <AddMethodDialog
           open={addOpen}
@@ -885,6 +950,7 @@ export default function PaymentMethodsPage() {
         />
       ) : null}
 
+      {/* Fullscreen busy overlay */}
       <Portal>
         <Backdrop
           open={busy}

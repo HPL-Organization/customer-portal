@@ -1,9 +1,14 @@
 // src/app/api/auth/sign-out/route.ts
-import { NextResponse } from "next/server";
+import { NextResponse, NextRequest } from "next/server";
+import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 
-export async function POST(request: Request) {
+export const dynamic = "force-dynamic";
+
+export async function POST(_req: NextRequest) {
   const res = NextResponse.json({ ok: true });
+
+  const cookieStore = await cookies();
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -11,7 +16,7 @@ export async function POST(request: Request) {
     {
       cookies: {
         getAll() {
-          return [];
+          return cookieStore.getAll();
         },
         setAll(cookiesToSet) {
           cookiesToSet.forEach(({ name, value, options }) => {
@@ -22,6 +27,7 @@ export async function POST(request: Request) {
     }
   );
 
-  await supabase.auth.signOut();
+  await supabase.auth.signOut({ scope: "global" });
+  res.headers.set("Cache-Control", "no-store");
   return res;
 }
