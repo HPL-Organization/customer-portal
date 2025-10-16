@@ -91,6 +91,7 @@ function normalizeInvoice(raw: any): Invoice {
     tranId: String(raw.tranId ?? ""),
     trandate: String(raw.trandate ?? raw.tranDate ?? ""),
     total: Number(raw.total ?? 0),
+    taxTotal: Number(raw.taxTotal ?? raw.taxtotal ?? 0),
     amountPaid: Number(raw.amountPaid ?? 0),
     amountRemaining: Number(raw.amountRemaining ?? 0),
     customerId: String(raw.customerId ?? raw.entity?.id ?? ""),

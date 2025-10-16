@@ -135,7 +135,7 @@ export default function Dashboard() {
                       VIP Room
                     </div>
                     <h3 className="mt-4 text-2xl sm:text-3xl font-semibold text-[#17152A]">
-                      No upcoming events yet
+                      (Coming Soon) No upcoming events yet
                     </h3>
                     <p className="mt-2 text-[#17152A]/70">
                       (Coming Soon) When you're subscribed to events, your

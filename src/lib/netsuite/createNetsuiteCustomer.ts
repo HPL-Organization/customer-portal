@@ -270,7 +270,16 @@ function getCountryCode(name: string): string {
 export async function createNetsuiteCustomer(customer: any) {
   const accessToken = await getValidToken();
 
-  const existingId = await findCustomerByHubspotId(customer.id, accessToken);
+  const hubspotId: string | null = customer.hsContactId || customer.id || null;
+
+  let existingId: string | null = null;
+  if (hubspotId) {
+    existingId = await findCustomerByHubspotId(hubspotId, accessToken);
+  }
+  if (!existingId && customer.email) {
+    existingId = await findCustomerByEmail(customer.email, accessToken);
+  }
+
   let billingId: string | null = null;
   let shippingId: string | null = null;
   let billingAddressId: string | null = null;
@@ -282,30 +291,14 @@ export async function createNetsuiteCustomer(customer: any) {
       accessToken
     );
 
-    console.log(
-      "Fetched customerData.addressbook.items:",
-      customerData?.addressbook
-    );
-
     for (const addr of customerData?.addressbook?.items || []) {
-      console.log("Checking address entry:", addr);
-
       if (addr.defaultBilling) {
         billingId = addr.internalId;
         billingAddressId = addr.addressbookaddress?.internalId;
-        console.log("Found default billing address:", {
-          billingId,
-          billingAddressId,
-        });
       }
-
       if (addr.defaultShipping) {
         shippingId = addr.internalId;
         shippingAddressId = addr.addressbookaddress?.internalId;
-        console.log("Found default shipping address:", {
-          shippingId,
-          shippingAddressId,
-        });
       }
     }
   }
@@ -320,7 +313,7 @@ export async function createNetsuiteCustomer(customer: any) {
     firstName: customer.firstName,
     middleName: customer.middleName,
     lastName: customer.lastName,
-    custentityhs_id: customer.id,
+    custentityhs_id: hubspotId || undefined,
     addressbook: {
       replaceAll: true,
       items: [
@@ -366,7 +359,6 @@ export async function createNetsuiteCustomer(customer: any) {
   };
 
   if (existingId) {
-    console.log(`Updating existing customer ${existingId}`);
     const response = await axios.patch(
       `${BASE_URL}/record/v1/customer/${existingId}`,
       payload,
@@ -380,7 +372,6 @@ export async function createNetsuiteCustomer(customer: any) {
     );
     return response.data;
   } else {
-    console.log(`Creating new customer`);
     const response = await axios.post(
       `${BASE_URL}/record/v1/customer`,
       payload,
@@ -396,13 +387,41 @@ export async function createNetsuiteCustomer(customer: any) {
   }
 }
 
+function escapeSqlLiteral(v: string) {
+  return v.replace(/'/g, "''");
+}
+async function findCustomerByEmail(email: string, accessToken: string) {
+  const e = sanitizeSuiteQL(email);
+  const q = `
+    SELECT id FROM customer
+    WHERE email = '${e}' OR entityid = '${e}'
+  `;
+  const resp = await axios.post(
+    `${BASE_URL}/query/v1/suiteql`,
+    { q },
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        Prefer: "transient",
+      },
+    }
+  );
+  const match = resp.data.items?.[0];
+  return match?.id || null;
+}
+function sanitizeSuiteQL(str: string) {
+  return String(str ?? "").replace(/'/g, "''");
+}
+
 //Finding customer through HUBSPOT ID
 
 async function findCustomerByHubspotId(hsId: string, accessToken: string) {
   const suiteQL = `
-  SELECT id FROM customer
-  WHERE custentityhs_id = '${hsId}'
-`;
+    SELECT id FROM customer
+    WHERE custentityhs_id = '${escapeSqlLiteral(hsId)}'
+  `;
 
   const resp = await axios.post(
     `${BASE_URL}/query/v1/suiteql`,

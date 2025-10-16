@@ -19,7 +19,12 @@ import { useCustomerBootstrap } from "@/components/providers/CustomerBootstrap";
 import ProfileSkeleton from "@/components/skeletons/ProfileSkeleton";
 
 const InfoTab = () => {
-  const { hsId: contactId, initialized, loading } = useCustomerBootstrap();
+  const {
+    hsId: contactId,
+    initialized,
+    loading,
+    setHsId,
+  } = useCustomerBootstrap();
 
   const [contactLoading, setContactLoading] = useState(false);
   const [hasHubSpot, setHasHubSpot] = useState<boolean | null>(null);
@@ -181,61 +186,79 @@ const InfoTab = () => {
     }));
   };
 
-  const saveHubSpot = async (): Promise<boolean> => {
-    if (!hasHubSpot) return true;
-    if (!contactId) {
-      toast.error("Contact ID not available.");
-      return false;
-    }
-
-    const updatePayload = {
-      contactId,
-      update: {
-        firstname: formData.firstName,
-        middle_name: formData.middleName,
-        lastname: formData.lastName,
-        email: formData.email,
-        phone: formData.phone,
-        mobilephone: formData.mobile,
-        shipping_address: formData.shipping.address1,
-        shipping_address_line_2: formData.shipping.address2,
-        shipping_city: formData.shipping.city,
-        shipping_state_region: formData.shipping.state,
-        shipping_postalcode: formData.shipping.zip,
-        shipping_country_region: formData.shipping.country,
-        address: formData.billing.address1,
-        address_line_2: formData.billing.address2,
-        city: formData.billing.city,
-        state: formData.billing.state,
-        zip: formData.billing.zip,
-        country: formData.billing.country,
-        [HUBSPOT_FLAG_PROPS.shipping]: toHSText(shippingVerified),
-        [HUBSPOT_FLAG_PROPS.billing]: toHSText(billingVerified),
-      },
+  const saveHubSpot = async (): Promise<{ ok: boolean; hsId?: string }> => {
+    const properties = {
+      firstname: formData.firstName,
+      middle_name: formData.middleName,
+      lastname: formData.lastName,
+      email: formData.email,
+      phone: formData.phone,
+      mobilephone: formData.mobile,
+      shipping_address: formData.shipping.address1,
+      shipping_address_line_2: formData.shipping.address2,
+      shipping_city: formData.shipping.city,
+      shipping_state_region: formData.shipping.state,
+      shipping_postalcode: formData.shipping.zip,
+      shipping_country_region: formData.shipping.country,
+      address: formData.billing.address1,
+      address_line_2: formData.billing.address2,
+      city: formData.billing.city,
+      state: formData.billing.state,
+      zip: formData.billing.zip,
+      country: formData.billing.country,
+      [HUBSPOT_FLAG_PROPS.shipping]: toHSText(shippingVerified),
+      [HUBSPOT_FLAG_PROPS.billing]: toHSText(billingVerified),
     };
 
     try {
-      const res = await fetch("/api/hubspot/contact", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(updatePayload),
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        toast.error(err.error || "Failed to update contact.");
-        return false;
+      if (hasHubSpot && contactId) {
+        const res = await fetch("/api/hubspot/contact", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ contactId, update: properties }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          toast.error(err.error || "Failed to update contact.");
+          return { ok: false };
+        }
+        toast.success("Contact updated successfully!");
+        return { ok: true, hsId: contactId };
+      } else {
+        const res = await fetch("/api/hubspot/contact", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ create: properties }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          toast.error(err.error || "Failed to create HubSpot contact.");
+          return { ok: false };
+        }
+        const created = await res.json();
+        const newId = String(
+          created?.id || created?.vid || created?.contactId || ""
+        ).trim();
+        if (!newId) {
+          toast.error("HubSpot returned no ID.");
+          return { ok: false };
+        }
+        setHsId(newId);
+        setHasHubSpot(true);
+        toast.success("Created HubSpot contact");
+        return { ok: true, hsId: newId };
       }
-      toast.success("Contact updated successfully!");
-      return true;
     } catch (error) {
-      toast.error("Something went wrong while saving.");
-      console.error("Update error:", error);
-      return false;
+      toast.error("Something went wrong while saving to HubSpot.");
+      console.error("HubSpot Save Error:", error);
+      return { ok: false };
     }
   };
 
-  const saveNetSuite = async (controlBackdrop: boolean = true) => {
+  const saveNetSuite = async (
+    controlBackdrop: boolean = true,
+    hsIdOverride?: string
+  ) => {
     if (controlBackdrop) {
       setLoaderMsgs(["Saving your information…", "Finishing up…"]);
       setSaving(true);
@@ -262,7 +285,8 @@ const InfoTab = () => {
       shippingCountry: formData.shipping.country,
     };
 
-    if (contactId) netsuitePayload.hsContactId = contactId;
+    const hsToSend = hsIdOverride || contactId || null;
+    if (hsToSend) netsuitePayload.hsContactId = hsToSend;
 
     try {
       const res = await fetch("/api/netsuite/create-customer", {
@@ -290,8 +314,8 @@ const InfoTab = () => {
     setLoaderMsgs(["Saving your information…", "Finishing up…"]);
     setSaving(true);
 
-    const ok = await saveHubSpot();
-    if (!ok) {
+    const result = await saveHubSpot();
+    if (!result.ok) {
       setSaving(false);
       return;
     }
@@ -299,7 +323,7 @@ const InfoTab = () => {
     setLoaderMsgs(["Saving your information…", "Finishing up…"]);
     setLoaderIdx(0);
 
-    await saveNetSuite(false);
+    await saveNetSuite(false, result.hsId);
     setSaving(false);
   };
 
@@ -405,6 +429,7 @@ const InfoTab = () => {
                 />
               </GoogleMapsLoader>
             </div>
+            <div className="my-4 h-px w-full bg-[#BFBFBF]/60" />
 
             <h2 className="mb-2 text-lg font-semibold text-[#17152A]">
               Shipping Address
@@ -449,6 +474,7 @@ const InfoTab = () => {
                 />
               </GoogleMapsLoader>
             </div>
+            <div className="my-4 h-px w-full bg-[#BFBFBF]/60" />
 
             <h2 className="mb-2 text-lg font-semibold text-[#17152A]">
               Billing Address

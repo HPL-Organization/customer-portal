@@ -98,6 +98,17 @@ function LoginInner() {
     setResendMsg(null);
     setLoading(true);
 
+    if (password.length < 6) {
+      setLoading(false);
+      setErrorMsg("Password must be at least 6 characters.");
+      return;
+    }
+    if (!hasSpecialChar(password)) {
+      setLoading(false);
+      setErrorMsg("Password must include at least one special character.");
+      return;
+    }
+
     const emailClean = email.trim().toLowerCase();
     const emailRedirectTo =
       typeof window !== "undefined"
@@ -160,7 +171,7 @@ function LoginInner() {
       typeof window !== "undefined" ? window.location.origin : undefined;
     const { error } = await supabase.auth.resetPasswordForEmail(
       email.trim().toLowerCase(),
-      { redirectTo: origin ? `${origin}/login` : undefined }
+      { redirectTo: origin ? `${origin}/reset` : undefined }
     );
 
     setLoading(false);
@@ -219,6 +230,9 @@ function LoginInner() {
       navigator.clipboard.writeText(confirmBannerEmail);
       setResendMsg("Email copied to clipboard.");
     } catch {}
+  }
+  function hasSpecialChar(s: string) {
+    return /[^A-Za-z0-9]/.test(s);
   }
 
   const googleDisabled =
@@ -582,6 +596,8 @@ function AuthForm(props: {
             </span>
             <input
               type={showPass ? "text" : "password"}
+              minLength={mode === "signup" ? 6 : undefined}
+              pattern={mode === "signup" ? ".*[^A-Za-z0-9].*" : undefined}
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}

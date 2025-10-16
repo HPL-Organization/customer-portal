@@ -5,12 +5,14 @@ import { Chip, Skeleton, Collapse } from "@mui/material";
 import KeyboardArrowDown from "@mui/icons-material/KeyboardArrowDown";
 import KeyboardArrowUp from "@mui/icons-material/KeyboardArrowUp";
 import PaymentIcon from "@mui/icons-material/Payment";
+import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
 
 export type Invoice = {
   invoiceId: string | number;
   tranId: string;
   trandate: string; // ISO date
   total: number;
+  taxTotal?: number;
   amountPaid: number;
   amountRemaining: number;
   lines: {
@@ -42,6 +44,192 @@ function fdate(d?: string) {
   return d ? new Date(d).toLocaleDateString() : "—";
 }
 
+/* ---------------- PDF helpers  ---------------- */
+
+type Row = {
+  name: string;
+  qty: number;
+  rate: number;
+  amount: number;
+  description: string;
+};
+
+function computePdfRows(inv: Invoice): { rows: Row[]; subtotal: number } {
+  const printable = (inv.lines ?? []).filter(isPrintableLine);
+  const rows: Row[] = printable.map((l) => {
+    const qty = Number(l.quantity ?? 0);
+    const rate = Number(l.rate ?? 0);
+    const isDiscount = !(rate > 0);
+    const amount = isDiscount ? rate : qty * rate;
+    return {
+      name: (l.itemName ?? String(l.itemId ?? "")) as string,
+      qty: isDiscount ? 0 : qty,
+      rate,
+      amount,
+      description: (l.description ?? "") as string,
+    };
+  });
+  const subtotal =
+    rows.reduce(
+      (s: number, r: Row) => s + (Number.isFinite(r.amount) ? r.amount : 0),
+      0
+    ) || 0;
+  return { rows, subtotal };
+}
+
+async function buildAndDownloadPdf(
+  inv: Invoice,
+  logoDataUrl?: string | null
+): Promise<void> {
+  const { jsPDF } = await import("jspdf");
+  const doc = new jsPDF({ unit: "pt", format: "letter" });
+
+  const marginX = 54;
+  let cursorY = 60;
+
+  if (logoDataUrl) {
+    try {
+      doc.addImage(logoDataUrl, "PNG", marginX, cursorY - 10, 120, 40);
+    } catch {}
+  }
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(18);
+  doc.text("Invoice", 450, cursorY);
+
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "normal");
+  const dateStr = inv.trandate
+    ? new Date(inv.trandate).toLocaleDateString()
+    : "";
+  const invNo = (inv.tranId || inv.invoiceId || "—") as string;
+  cursorY += 28;
+  doc.text(`Invoice #: ${invNo}`, 450, cursorY);
+  cursorY += 14;
+  if (dateStr) doc.text(`Date: ${dateStr}`, 450, cursorY);
+
+  cursorY += 36;
+  doc.setDrawColor(191, 191, 191);
+  doc.line(marginX, cursorY, 558, cursorY);
+  cursorY += 18;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  const headers = ["Item", "Qty", "Rate", "Amount"];
+  const colX = [marginX, 380, 440, 500];
+  headers.forEach((h, idx) => doc.text(h, colX[idx], cursorY));
+  cursorY += 12;
+  doc.setDrawColor(191, 191, 191);
+  doc.line(marginX, cursorY, 558, cursorY);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  cursorY += 16;
+
+  const { rows, subtotal } = computePdfRows(inv);
+  const lineHeight = 14;
+  const bottomY = 700;
+
+  rows.forEach((r) => {
+    if (cursorY + lineHeight > bottomY) {
+      doc.addPage();
+      cursorY = 60;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      headers.forEach((h, idx) => doc.text(h, colX[idx], cursorY));
+      cursorY += 12;
+      doc.setDrawColor(191, 191, 191);
+      doc.line(marginX, cursorY, 558, cursorY);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      cursorY += 16;
+    }
+
+    const name = r.name || "";
+    const maxNameWidth = colX[1] - colX[0] - 8;
+    const nameLines = doc.splitTextToSize(name, maxNameWidth) as string[];
+    const blockHeight = Math.max(lineHeight, nameLines.length * lineHeight);
+
+    nameLines.forEach((ln, i) =>
+      doc.text(ln, colX[0], cursorY + i * lineHeight)
+    );
+    doc.text(String(r.qty), colX[1], cursorY);
+    doc.text(fmt(r.rate), colX[2], cursorY);
+    doc.text(fmt(r.amount), colX[3], cursorY);
+
+    cursorY += blockHeight;
+  });
+
+  cursorY += 10;
+  doc.setDrawColor(191, 191, 191);
+  doc.line(marginX, cursorY, 558, cursorY);
+  cursorY += 18;
+
+  const tax = Number.isFinite(Number(inv.taxTotal))
+    ? Number(inv.taxTotal)
+    : Math.max(0, Number(inv.total ?? 0) - subtotal);
+  const total = subtotal + tax;
+  const paid = Number(inv.amountPaid || 0);
+  const remaining = Number(inv.amountRemaining || Math.max(total - paid, 0));
+
+  const rightX = 500;
+  const labelX = 400;
+
+  doc.setFont("helvetica", "bold");
+  doc.text("Subtotal:", labelX, cursorY);
+  doc.setFont("helvetica", "normal");
+  doc.text(fmt(subtotal), rightX, cursorY);
+  cursorY += 14;
+
+  doc.setFont("helvetica", "bold");
+  doc.text("Tax:", labelX, cursorY);
+  doc.setFont("helvetica", "normal");
+  doc.text(fmt(tax), rightX, cursorY);
+  cursorY += 14;
+
+  doc.setFont("helvetica", "bold");
+  doc.text("Total:", labelX, cursorY);
+  doc.setFont("helvetica", "normal");
+  doc.text(fmt(total), rightX, cursorY);
+  cursorY += 14;
+
+  doc.setFont("helvetica", "bold");
+  doc.text("Paid:", labelX, cursorY);
+  doc.setFont("helvetica", "normal");
+  doc.text(fmt(paid), rightX, cursorY);
+  cursorY += 14;
+
+  doc.setFont("helvetica", "bold");
+  doc.text("Amount Due:", labelX, cursorY);
+  doc.setFont("helvetica", "normal");
+  doc.text(fmt(remaining), rightX, cursorY);
+
+  cursorY += 40;
+  doc.setDrawColor(191, 191, 191);
+  doc.line(marginX, cursorY, 558, cursorY);
+  cursorY += 18;
+
+  doc.setFont("helvetica", "italic");
+  doc.setFontSize(9);
+  doc.text(
+    "Thank you for your business! Please contact us if you have any questions regarding this invoice.",
+    marginX,
+    cursorY
+  );
+
+  const safeName = String(inv.tranId || inv.invoiceId || "invoice").replace(
+    /[^\w\-]+/g,
+    "_"
+  );
+  doc.save(`${safeName}.pdf`);
+}
+
+function isPrintableLine(l: Invoice["lines"][number]): boolean {
+  const desc = String(l.description ?? "").toLowerCase();
+  return !desc.includes("cost of sales");
+}
+
+/* ---------------- Component ---------------- */
+
 export default function InvoicesTable({
   loading,
   invoices,
@@ -53,6 +241,36 @@ export default function InvoicesTable({
   onPay?: (inv: Invoice) => void;
   variant: "open" | "closed";
 }) {
+  const [logoDataUrl, setLogoDataUrl] = React.useState<string | null>(null);
+  console.log("Inovices:", invoices[0]);
+  React.useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const res = await fetch("/HPL_logo.png");
+        if (!res.ok) throw new Error("logo fetch failed");
+        const blob = await res.blob();
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          if (active) setLogoDataUrl(String(reader.result || ""));
+        };
+        reader.readAsDataURL(blob);
+      } catch {
+        setLogoDataUrl(null);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const onDownload = React.useCallback(
+    async (inv: Invoice) => {
+      await buildAndDownloadPdf(inv, logoDataUrl);
+    },
+    [logoDataUrl]
+  );
+
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
       {/* Desktop (md+) */}
@@ -60,7 +278,12 @@ export default function InvoicesTable({
         {loading ? (
           <SkeletonTable />
         ) : (
-          <DesktopTable invoices={invoices} onPay={onPay} variant={variant} />
+          <DesktopTable
+            invoices={invoices}
+            onPay={onPay}
+            onDownload={onDownload}
+            variant={variant}
+          />
         )}
       </div>
 
@@ -69,7 +292,12 @@ export default function InvoicesTable({
         {loading ? (
           <MobileSkeleton />
         ) : (
-          <MobileList invoices={invoices} onPay={onPay} variant={variant} />
+          <MobileList
+            invoices={invoices}
+            onPay={onPay}
+            onDownload={onDownload}
+            variant={variant}
+          />
         )}
       </div>
     </div>
@@ -83,10 +311,12 @@ export default function InvoicesTable({
 function DesktopTable({
   invoices,
   onPay,
+  onDownload,
   variant,
 }: {
   invoices: Invoice[];
   onPay?: (inv: Invoice) => void;
+  onDownload: (inv: Invoice) => void;
   variant: "open" | "closed";
 }) {
   return (
@@ -97,7 +327,8 @@ function DesktopTable({
         <col className="w-[14%]" />
         <col className="w-[14%]" />
         <col className="w-[14%]" />
-        <col className="w-[16%]" />
+        <col className="w-[14%]" />
+        <col className="w-[12%]" />
         <col className="w-[16%]" />
       </colgroup>
 
@@ -110,6 +341,7 @@ function DesktopTable({
           <th className="px-4 py-3 text-right">Paid</th>
           <th className="px-4 py-3 text-right">Remaining</th>
           <th className="px-4 py-3">Status</th>
+          <th className="px-4 py-3 text-right">Actions</th>
         </tr>
       </thead>
 
@@ -127,6 +359,7 @@ function DesktopTable({
               inv={inv}
               canPay={variant === "open" && inv.amountRemaining > 0}
               onPay={onPay}
+              onDownload={onDownload}
             />
           ))
         )}
@@ -139,12 +372,14 @@ function DesktopRow({
   inv,
   canPay,
   onPay,
+  onDownload,
 }: {
   inv: Invoice;
   canPay: boolean;
   onPay?: (inv: Invoice) => void;
+  onDownload: (inv: Invoice) => void;
 }) {
-  const [open, setOpen] = React.useState(false);
+  const [open, setOpen] = React.useState<boolean>(false);
   const hasBalance = inv.amountRemaining > 0;
   const panelId = `invoice-details-${inv.invoiceId}`;
 
@@ -185,30 +420,42 @@ function DesktopRow({
             {fmt(inv.amountRemaining)}
           </span>
         </td>
-        <td className="px-4 py-3">
-          <div className="flex items-center justify-between gap-2">
-            <Chip
-              size="small"
-              label={hasBalance ? "Open" : "Closed"}
-              color={hasBalance ? "warning" : "success"}
-              variant={hasBalance ? "outlined" : "filled"}
-              sx={{ borderRadius: "10px" }}
-            />
+        <td className="px-4 py-3 align-middle">
+          <Chip
+            size="small"
+            label={hasBalance ? "Unpaid" : "Paid"}
+            color={hasBalance ? "warning" : "success"}
+            variant={hasBalance ? "outlined" : "filled"}
+            sx={{ borderRadius: "10px" }}
+          />
+        </td>
+
+        <td className="px-4 py-3 align-middle">
+          <div className="flex items-center justify-end gap-2 whitespace-nowrap">
             {canPay && onPay && (
               <button
                 onClick={() => onPay(inv)}
                 className="inline-flex h-8 items-center gap-1 rounded-lg bg-blue-600 px-3 text-xs font-medium text-white shadow-sm hover:bg-blue-700"
               >
                 <PaymentIcon fontSize="inherit" />
-                Pay
+                <span className="hidden xl:inline">Pay</span>
               </button>
             )}
+            <button
+              onClick={() => onDownload(inv)}
+              className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 bg-[#FFFFEC] px-3 text-xs font-semibold text-slate-800 hover:bg-[#FFF9D7]"
+              title="Download PDF"
+              aria-label="Download PDF"
+            >
+              <PictureAsPdfIcon fontSize="inherit" />
+              <span className="hidden xl:inline">PDF</span>
+            </button>
           </div>
         </td>
       </tr>
 
       <tr className="border-t border-slate-100">
-        <td colSpan={7} className="p-0 align-top">
+        <td colSpan={8} className="p-0 align-top">
           <Collapse in={open} timeout="auto" unmountOnExit>
             <div
               id={panelId}
@@ -230,10 +477,12 @@ function DesktopRow({
 function MobileList({
   invoices,
   onPay,
+  onDownload,
   variant,
 }: {
   invoices: Invoice[];
   onPay?: (inv: Invoice) => void;
+  onDownload: (inv: Invoice) => void;
   variant: "open" | "closed";
 }) {
   if (invoices.length === 0) {
@@ -249,6 +498,7 @@ function MobileList({
           inv={inv}
           canPay={variant === "open" && inv.amountRemaining > 0}
           onPay={onPay}
+          onDownload={onDownload}
         />
       ))}
     </div>
@@ -259,12 +509,14 @@ function MobileCard({
   inv,
   canPay,
   onPay,
+  onDownload,
 }: {
   inv: Invoice;
   canPay: boolean;
   onPay?: (inv: Invoice) => void;
+  onDownload: (inv: Invoice) => void;
 }) {
-  const [open, setOpen] = React.useState(false);
+  const [open, setOpen] = React.useState<boolean>(false);
   const hasBalance = inv.amountRemaining > 0;
   const panelId = `m-invoice-details-${inv.invoiceId}`;
 
@@ -275,7 +527,7 @@ function MobileCard({
           <div className="font-semibold text-slate-900">{inv.tranId}</div>
           <Chip
             size="small"
-            label={hasBalance ? "Open" : "Closed"}
+            label={hasBalance ? "Unpaid" : "Paid"}
             color={hasBalance ? "warning" : "success"}
             variant={hasBalance ? "outlined" : "filled"}
             sx={{ borderRadius: "10px" }}
@@ -296,18 +548,26 @@ function MobileCard({
           />
         </div>
 
-        <div className="flex items-center justify-between">
-          {canPay && onPay ? (
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-2">
+            {canPay && onPay ? (
+              <button
+                onClick={() => onPay(inv)}
+                className="inline-flex h-9 items-center gap-1 rounded-lg bg-blue-600 px-3 text-xs font-medium text-white shadow-sm hover:bg-blue-700 shrink-0"
+              >
+                <PaymentIcon fontSize="inherit" />
+                Pay
+              </button>
+            ) : null}
             <button
-              onClick={() => onPay(inv)}
-              className="inline-flex h-9 items-center gap-1 rounded-lg bg-blue-600 px-3 text-xs font-medium text-white shadow-sm hover:bg-blue-700"
+              onClick={() => onDownload(inv)}
+              className="inline-flex h-9 items-center gap-1 rounded-lg border border-slate-200 bg-[#FFFFEC] px-3 text-xs font-semibold text-slate-800 hover:bg-[#FFF9D7] shrink-0"
+              title="Download PDF"
             >
-              <PaymentIcon fontSize="inherit" />
-              Pay
+              <PictureAsPdfIcon fontSize="inherit" />
+              PDF
             </button>
-          ) : (
-            <div />
-          )}
+          </div>
           <button
             onClick={() => setOpen((s) => !s)}
             className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
@@ -389,7 +649,7 @@ function Details({ inv, mobile = false }: { inv: Invoice; mobile?: boolean }) {
                 </tr>
               </thead>
               <tbody>
-                {(inv.lines ?? []).length === 0 ? (
+                {(inv.lines ?? []).filter(isPrintableLine).length === 0 ? (
                   <tr>
                     <td
                       className="px-3 py-6 text-center text-sm text-slate-500"
@@ -399,34 +659,76 @@ function Details({ inv, mobile = false }: { inv: Invoice; mobile?: boolean }) {
                     </td>
                   </tr>
                 ) : (
-                  inv.lines.map((l, idx) => (
-                    <tr key={idx} className="border-t border-slate-100">
-                      <td className="px-3 py-2 font-medium text-slate-900 break-words">
-                        {l.itemName ?? l.itemId ?? "—"}
-                        {l.description ? (
-                          <div className="text-xs text-slate-500">
-                            {l.description}
-                          </div>
-                        ) : null}
-                      </td>
-                      <td className="px-3 py-2 text-right text-slate-700 whitespace-nowrap">
-                        {l.quantity ?? "—"}
-                      </td>
-                      <td className="px-3 py-2 text-right text-slate-700 whitespace-nowrap">
-                        {fmt(l.rate)}
-                      </td>
-                      <td className="px-3 py-2 text-right font-medium text-slate-900 whitespace-nowrap">
-                        {fmt(l.amount)}
-                      </td>
-                    </tr>
-                  ))
+                  (inv.lines ?? [])
+                    .filter(isPrintableLine)
+                    .map((l, idx: number) => (
+                      <tr key={idx} className="border-t border-slate-100">
+                        <td className="px-3 py-2 font-medium text-slate-900 break-words">
+                          {l.itemName ?? l.itemId ?? "—"}
+                          {l.description ? (
+                            <div className="text-xs text-slate-500">
+                              {l.description}
+                            </div>
+                          ) : null}
+                        </td>
+                        <td className="px-3 py-2 text-right text-slate-700 whitespace-nowrap">
+                          {l.quantity ?? "—"}
+                        </td>
+                        <td className="px-3 py-2 text-right text-slate-700 whitespace-nowrap">
+                          {fmt(l.rate)}
+                        </td>
+                        <td className="px-3 py-2 text-right font-medium text-slate-900 whitespace-nowrap">
+                          {fmt(l.amount)}
+                        </td>
+                      </tr>
+                    ))
                 )}
               </tbody>
             </table>
           </div>
+          {/* tax summary */}
+          <div className="flex justify-end px-3 py-3">
+            {(() => {
+              const printable = (inv.lines ?? []).filter(isPrintableLine);
+              const subtotal =
+                printable.reduce((s, l) => {
+                  const qty = Number(l.quantity ?? 0);
+                  const rate = Number(l.rate ?? 0);
+                  const isDiscount = !(rate > 0);
+                  const amt = isDiscount ? rate : qty * rate;
+                  return s + (Number.isFinite(amt) ? amt : 0);
+                }, 0) || 0;
+              const tax = Number(inv.taxTotal ?? 0);
+              const total = subtotal + tax;
+
+              return (
+                <div className="w-full max-w-[320px] text-sm">
+                  <div className="flex items-center justify-between py-1">
+                    <span className="font-semibold text-slate-600">
+                      Subtotal
+                    </span>
+                    <span className="font-medium text-slate-900">
+                      {fmt(subtotal)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between py-1">
+                    <span className="font-semibold text-slate-600">Tax</span>
+                    <span className="font-medium text-slate-900">
+                      {fmt(tax)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between py-1 border-t border-slate-200 mt-1 pt-2">
+                    <span className="font-semibold text-slate-700">Total</span>
+                    <span className="font-semibold text-slate-900">
+                      {fmt(total)}
+                    </span>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
         </div>
 
-        {/* Related payments */}
         <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
           <div className="border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-600">
             Related Payments
@@ -448,7 +750,7 @@ function Details({ inv, mobile = false }: { inv: Invoice; mobile?: boolean }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {inv.payments.map((p, i) => (
+                  {inv.payments.map((p, i: number) => (
                     <tr key={i} className="border-t border-slate-100">
                       <td className="px-3 py-2">
                         {p.tranId || p.paymentId || "Payment"}
@@ -507,7 +809,7 @@ function SkeletonTable() {
         </tr>
       </thead>
       <tbody>
-        {Array.from({ length: 5 }).map((_, i) => (
+        {Array.from({ length: 5 }).map((_, i: number) => (
           <tr key={i} className="border-t border-slate-100">
             <td className="px-3 py-3">
               <div className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white">
@@ -530,7 +832,7 @@ function SkeletonTable() {
               <Skeleton width={80} />
             </td>
             <td className="px-4 py-3">
-              <Skeleton width={90} height={26} />
+              <Skeleton width={120} height={26} />
             </td>
           </tr>
         ))}
@@ -542,7 +844,7 @@ function SkeletonTable() {
 function MobileSkeleton() {
   return (
     <div className="divide-y divide-slate-100">
-      {Array.from({ length: 3 }).map((_, i) => (
+      {Array.from({ length: 3 }).map((_, i: number) => (
         <div key={i} className="p-4">
           <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="mb-2 flex items-center justify-between">
@@ -556,7 +858,7 @@ function MobileSkeleton() {
               <Skeleton height={52} />
             </div>
             <div className="mt-3 flex items-center justify-between">
-              <Skeleton width={80} height={36} />
+              <Skeleton width={160} height={36} />
               <Skeleton width={110} height={28} />
             </div>
           </div>

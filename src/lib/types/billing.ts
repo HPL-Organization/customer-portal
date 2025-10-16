@@ -19,6 +19,7 @@ export interface Invoice {
   tranId: string;
   trandate: string; // ISO date
   total: number;
+  taxTotal?: number;
   amountPaid: number;
   amountRemaining: number;
   customerId: string;

@@ -235,6 +235,7 @@ export async function GET(req: NextRequest) {
           T.tranid AS tranId,
           T.trandate AS trandate,
           T.total AS total,
+          T.taxtotal AS taxTotal,
           T.entity AS customerId
         FROM transaction T
         WHERE T.type = 'CustInvc' AND T.id IN (${idList})
@@ -311,6 +312,7 @@ export async function GET(req: NextRequest) {
           tranId: h.tranid,
           trandate: h.trandate,
           total: Number(h.total ?? 0),
+          taxTotal: Number(h.taxtotal ?? h.taxTotal ?? 0),
           customerId:
             h.customerid != null ? Number(h.customerid) : customerId ?? null,
         });
@@ -384,6 +386,7 @@ export async function GET(req: NextRequest) {
         tranId: head?.tranId ?? null,
         trandate: head?.trandate ?? null,
         total,
+        taxTotal: Number(head?.taxTotal ?? 0),
         amountPaid,
         amountRemaining,
         customerId: head?.customerId ?? customerId ?? null,
@@ -397,6 +400,7 @@ export async function GET(req: NextRequest) {
     }
 
     const unappliedDeposits = deposits.filter((d) => d.isUnappliedToSO);
+    console.log("Invoices:", invoicesOut[0]);
 
     return new Response(
       JSON.stringify({

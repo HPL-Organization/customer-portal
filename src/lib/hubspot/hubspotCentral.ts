@@ -202,3 +202,56 @@ export async function getShippingMethodOptions(): Promise<any[]> {
     return [];
   }
 }
+async function findContactByEmail(email: string): Promise<any | null> {
+  const res = await hubspot.post(`/crm/v3/objects/contacts/search`, {
+    filterGroups: [
+      { filters: [{ propertyName: "email", operator: "EQ", value: email }] },
+    ],
+    properties: [
+      "firstname",
+      "middle_name",
+      "lastname",
+      "phone",
+      "email",
+      "mobilephone",
+      "address",
+      "address_line_2",
+      "city",
+      "state",
+      "zip",
+      "country",
+      "shipping_address",
+      "shipping_address_line_2",
+      "shipping_city",
+      "shipping_state_region",
+      "shipping_postalcode",
+      "shipping_country_region",
+      "required_shipping_method",
+      "hpl_shipping_check",
+      "hpl_billing_check",
+    ],
+    limit: 1,
+  });
+  return res?.data?.results?.[0] ?? null;
+}
+
+export async function createContact(
+  properties: Record<string, any>
+): Promise<any> {
+  if (!properties?.email) {
+    throw new Error("email is required to create a HubSpot contact");
+  }
+  try {
+    const res = await hubspot.post(`/crm/v3/objects/contacts`, {
+      properties,
+    });
+    return res.data;
+  } catch (e: any) {
+    const status = e?.response?.status;
+    if (status === 409) {
+      const existing = await findContactByEmail(String(properties.email));
+      if (existing) return existing;
+    }
+    throw e;
+  }
+}

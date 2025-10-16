@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { toast } from "react-toastify";
 import {
   Card,
@@ -755,6 +756,7 @@ function AddMethodDialog({
 
 /* ---------- Page ---------- */
 export default function PaymentMethodsPage() {
+  const router = useRouter();
   const bootstrap = useCustomerBootstrap?.();
   const contactId = (bootstrap as any)?.hsId ?? null;
 
@@ -835,10 +837,41 @@ export default function PaymentMethodsPage() {
     }
   }
 
+  async function handleAddMethodClick() {
+    if (!hasCustomerId) return;
+
+    if (!contactId) {
+      toast.warn(
+        "Please add your billing address before adding a payment method"
+      );
+      router.push("/profile?missing=billing");
+      return;
+    }
+
+    try {
+      const res = await fetch(
+        `/api/hubspot/has-billing?contactId=${encodeURIComponent(contactId)}`,
+        { cache: "no-store" }
+      );
+      const data = await res.json();
+
+      if (!res.ok || data?.hasBilling === false) {
+        toast.warn(
+          "Please add your billing address before adding a payment method"
+        );
+        router.push("/profile?missing=billing");
+        return;
+      }
+
+      setAddOpen(true);
+    } catch {
+      setAddOpen(true);
+    }
+  }
+
   return (
     <div className="min-h-[calc(100vh-56px)] bg-[#F7F7F9]">
       <div className="mx-auto max-w-5xl px-4 py-6 md:py-8">
-        {/* Header */}
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <div className="space-y-1">
             <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2 text-[#17152A]">
@@ -867,7 +900,7 @@ export default function PaymentMethodsPage() {
             <MUIButton
               variant="contained"
               startIcon={<Plus />}
-              onClick={() => setAddOpen(true)}
+              onClick={handleAddMethodClick}
               disabled={!hasCustomerId}
               sx={{
                 textTransform: "none",
@@ -883,7 +916,6 @@ export default function PaymentMethodsPage() {
           </div>
         </div>
 
-        {/* Content */}
         {loading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {Array.from({ length: 6 }).map((_, i) => (
@@ -902,7 +934,7 @@ export default function PaymentMethodsPage() {
             ))}
           </div>
         ) : methods.length === 0 ? (
-          <EmptyState onAdd={() => setAddOpen(true)} />
+          <EmptyState onAdd={handleAddMethodClick} />
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {methods.map((pm) => (
@@ -919,7 +951,6 @@ export default function PaymentMethodsPage() {
         )}
       </div>
 
-      {/* Dialog */}
       {hasCustomerId ? (
         <AddMethodDialog
           open={addOpen}
@@ -930,7 +961,6 @@ export default function PaymentMethodsPage() {
         />
       ) : null}
 
-      {/* Fullscreen busy overlay */}
       <Portal>
         <Backdrop
           open={busy}

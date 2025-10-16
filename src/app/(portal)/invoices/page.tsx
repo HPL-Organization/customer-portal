@@ -20,8 +20,9 @@ import {
   Typography,
   Box,
 } from "@mui/material";
+import { motion, AnimatePresence } from "framer-motion";
+import { ArrowUp, ArrowDown } from "lucide-react";
 
-/* ---------- helpers ---------- */
 type SortKey = "trandate" | "tranId" | "amountRemaining" | "total";
 
 function fmt(n: number) {
@@ -42,7 +43,7 @@ function decorateInvoices(list: Invoice[]): Invoice[] {
     const lines =
       (inv.lines || []).map((l) => {
         const sku = l.itemName || (l.itemId != null ? String(l.itemId) : "");
-        const disp = l.itemDisplayName || "";
+        const disp = (l as any).itemDisplayName || "";
         const combined =
           sku && disp && sku !== disp ? `${sku} — ${disp}` : sku || disp || "";
         return { ...l, itemName: combined };
@@ -51,7 +52,76 @@ function decorateInvoices(list: Invoice[]): Invoice[] {
   });
 }
 
-/* ---------- page ---------- */
+function csvEscape(v: any) {
+  const s = v == null ? "" : String(v);
+  return `"${s.replace(/"/g, '""')}"`;
+}
+
+function computeSubtotalFromLines(inv: Invoice) {
+  const printable = (inv.lines ?? []).filter((l) => {
+    const desc = String(l.description ?? "").toLowerCase();
+    return !desc.includes("cost of sales");
+  });
+  return (
+    printable.reduce((sum, l) => {
+      const qty = Number(l.quantity ?? 0);
+      const rate = Number(l.rate ?? 0);
+      const isDiscount = !(rate > 0);
+      const amt = isDiscount ? rate : qty * rate;
+      return sum + (Number.isFinite(amt) ? amt : 0);
+    }, 0) || 0
+  );
+}
+
+function buildInvoicesCsv(allInvoices: Invoice[]) {
+  const header = [
+    "Invoice #",
+    "Date",
+    "Sales Order",
+    "Subtotal",
+    "Tax",
+    "Total",
+    "Paid",
+    "Remaining",
+    "Status",
+  ];
+  const lines = allInvoices.map((inv) => {
+    const dateStr = inv.trandate
+      ? new Date(inv.trandate as any).toLocaleDateString()
+      : "";
+    const subtotal = computeSubtotalFromLines(inv);
+    const tax = Number(inv.taxTotal ?? 0);
+    const total = subtotal + tax;
+    const paid = Number(inv.amountPaid || 0);
+    const remaining = Number(inv.amountRemaining || Math.max(total - paid, 0));
+    const status = remaining > 0 ? "Unpaid" : "Paid";
+    return [
+      csvEscape(inv.tranId || inv.invoiceId || "—"),
+      csvEscape(dateStr),
+      csvEscape(inv.createdFromSoTranId || ""),
+      subtotal.toFixed(2),
+      tax.toFixed(2),
+      total.toFixed(2),
+      paid.toFixed(2),
+      remaining.toFixed(2),
+      csvEscape(status),
+    ].join(",");
+  });
+  return [header.map(csvEscape).join(","), ...lines].join("\r\n");
+}
+
+function downloadCsvFile(filename: string, csv: string) {
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 export default function InvoicesPage() {
   const router = useRouter();
   const sp = useSearchParams();
@@ -119,7 +189,6 @@ export default function InvoicesPage() {
         return name.includes(q) || disp.includes(q) || idStr.includes(q);
       });
     });
-
     const sorted = [...filtered].sort((a, b) => {
       let va: number | string = 0;
       let vb: number | string = 0;
@@ -253,9 +322,7 @@ export default function InvoicesPage() {
       if (!numericInvoiceId || !(Number(amount) > 0)) {
         throw new Error("Invalid amount or invoice.");
       }
-
       const externalId = `HPL_${numericInvoiceId}_${Date.now()}`;
-
       const res = await fetch("/api/netsuite/record-payment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -269,14 +336,12 @@ export default function InvoicesPage() {
           trandate: formatLocalDate(),
         }),
       });
-
       const json = await res.json().catch(() => ({}));
       if (!res.ok || json?.success === false) {
         throw new Error(
           json?.details || json?.error || "Failed to record payment"
         );
       }
-
       toast.success(
         `Payment recorded: ${fmt(Number(amount))} applied to ${invoice.tranId}`
       );
@@ -301,7 +366,6 @@ export default function InvoicesPage() {
     (s, i) => s + Number(i.amountRemaining || 0),
     0
   );
-
   const uiLoading = billingLoading || !initialized;
 
   React.useEffect(() => {
@@ -347,9 +411,274 @@ export default function InvoicesPage() {
     [closedInvoices, query, sortBy, sortDir]
   );
 
+  const [logoDataUrl, setLogoDataUrl] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const res = await fetch("/HPL_logo.png");
+        if (!res.ok) throw new Error("logo fetch failed");
+        const blob = await res.blob();
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          if (active) setLogoDataUrl(String(reader.result || ""));
+        };
+        reader.readAsDataURL(blob);
+      } catch {
+        setLogoDataUrl(null);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  async function downloadInvoicePdf(inv: Invoice) {
+    try {
+      const { jsPDF } = await import("jspdf");
+      const doc = new jsPDF({ unit: "pt", format: "letter" });
+      const marginX = 54;
+      let cursorY = 60;
+      if (logoDataUrl) {
+        try {
+          doc.addImage(logoDataUrl, "PNG", marginX, cursorY - 10, 120, 40);
+        } catch {}
+      }
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(18);
+      doc.text("Invoice", 450, cursorY);
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "normal");
+      const dateStr = inv.trandate
+        ? new Date(inv.trandate as any).toLocaleDateString()
+        : new Date().toLocaleDateString();
+      const invNo = inv.tranId || inv.invoiceId || "—";
+      cursorY += 28;
+      doc.text(`Invoice #: ${invNo}`, 450, cursorY);
+      cursorY += 14;
+      doc.text(`Date: ${dateStr}`, 450, cursorY);
+      if (inv.createdFromSoTranId) {
+        cursorY += 14;
+        doc.text(`SO: ${inv.createdFromSoTranId}`, 450, cursorY);
+      }
+      cursorY += 36;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(12);
+      doc.text("Bill To", marginX, cursorY);
+      doc.text("Ship To", 300, cursorY);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      cursorY += 16;
+      const bill = (inv as any).billTo || {};
+      const ship = (inv as any).shipTo || {};
+      const billLines = [
+        bill.name,
+        bill.address1,
+        bill.address2,
+        [bill.city, bill.state, bill.zip].filter(Boolean).join(", "),
+        bill.country,
+        bill.email,
+        bill.phone,
+      ]
+        .filter((x) => x && String(x).trim())
+        .map(String);
+      const shipLines = [
+        ship.name,
+        ship.address1,
+        ship.address2,
+        [ship.city, ship.state, ship.zip].filter(Boolean).join(", "),
+        ship.country,
+      ]
+        .filter((x) => x && String(x).trim())
+        .map(String);
+      billLines.forEach((line, i) => doc.text(line, marginX, cursorY + 14 * i));
+      shipLines.forEach((line, i) => doc.text(line, 300, cursorY + 14 * i));
+      const addressBlockHeight =
+        Math.max(billLines.length, shipLines.length) * 14;
+      cursorY += addressBlockHeight + 24;
+      doc.setDrawColor(191, 191, 191);
+      doc.line(marginX, cursorY, 558, cursorY);
+      cursorY += 18;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      const headers = ["Item", "Qty", "Rate", "Amount"];
+      const colX = [marginX, 380, 440, 500];
+      headers.forEach((h, idx) => doc.text(h, colX[idx], cursorY));
+      cursorY += 12;
+      doc.setDrawColor(191, 191, 191);
+      doc.line(marginX, cursorY, 558, cursorY);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      cursorY += 16;
+      const rows = (inv.lines || []).map((l) => {
+        const qty = Number(l.quantity || 0);
+        const rate = Number(l.rate || 0);
+        const isDiscount = !(rate > 0);
+        const lineAmount = isDiscount ? rate : qty * rate;
+        return {
+          name: l.itemName || String(l.itemId || ""),
+          qty: isDiscount ? 0 : qty,
+          rate,
+          amount: lineAmount,
+        };
+      });
+      const lineHeight = 14;
+      const bottomY = 700;
+      rows.forEach((r) => {
+        if (cursorY + lineHeight > bottomY) {
+          doc.addPage();
+          cursorY = 60;
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(11);
+          headers.forEach((h, idx) => doc.text(h, colX[idx], cursorY));
+          cursorY += 12;
+          doc.setDrawColor(191, 191, 191);
+          doc.line(marginX, cursorY, 558, cursorY);
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(10);
+          cursorY += 16;
+        }
+        const name = r.name || "";
+        const maxNameWidth = colX[1] - colX[0] - 8;
+        const nameLines = doc.splitTextToSize(name, maxNameWidth) as string[];
+        const blockHeight = Math.max(lineHeight, nameLines.length * lineHeight);
+        nameLines.forEach((ln, i) =>
+          doc.text(ln, colX[0], cursorY + i * lineHeight)
+        );
+        doc.text(String(r.qty), colX[1], cursorY);
+        doc.text(fmt(r.rate), colX[2], cursorY);
+        doc.text(fmt(r.amount), colX[3], cursorY);
+        cursorY += blockHeight;
+      });
+      cursorY += 10;
+      doc.setDrawColor(191, 191, 191);
+      doc.line(marginX, cursorY, 558, cursorY);
+      cursorY += 18;
+      const subtotal =
+        rows.reduce(
+          (s, r) => s + (Number.isFinite(r.amount) ? r.amount : 0),
+          0
+        ) || 0;
+      const tax = Number((inv as any).taxTotal || 0);
+      const total = subtotal + tax;
+      const paid = total - Number(inv.amountRemaining || total);
+      const rightX = 500;
+      const labelX = 400;
+      doc.setFont("helvetica", "bold");
+      doc.text("Subtotal:", labelX, cursorY);
+      doc.setFont("helvetica", "normal");
+      doc.text(fmt(subtotal), rightX, cursorY);
+      cursorY += 14;
+      doc.setFont("helvetica", "bold");
+      doc.text("Tax:", labelX, cursorY);
+      doc.setFont("helvetica", "normal");
+      doc.text(fmt(tax), rightX, cursorY);
+      cursorY += 14;
+      doc.setFont("helvetica", "bold");
+      doc.text("Total:", labelX, cursorY);
+      doc.setFont("helvetica", "normal");
+      doc.text(fmt(total), rightX, cursorY);
+      cursorY += 14;
+      doc.setFont("helvetica", "bold");
+      doc.text("Paid:", labelX, cursorY);
+      doc.setFont("helvetica", "normal");
+      doc.text(fmt(paid), rightX, cursorY);
+      cursorY += 14;
+      doc.setFont("helvetica", "bold");
+      doc.text("Amount Due:", labelX, cursorY);
+      doc.setFont("helvetica", "normal");
+      doc.text(fmt(Number(inv.amountRemaining || 0)), rightX, cursorY);
+      cursorY += 40;
+      doc.setDrawColor(191, 191, 191);
+      doc.line(marginX, cursorY, 558, cursorY);
+      cursorY += 18;
+      doc.setFont("helvetica", "italic");
+      doc.setFontSize(9);
+      doc.text(
+        "Thank you for your business! Please contact us if you have any questions regarding this invoice.",
+        marginX,
+        cursorY
+      );
+      const safeName = String(inv.tranId || inv.invoiceId || "invoice").replace(
+        /[^\w\-]+/g,
+        "_"
+      );
+      doc.save(`${safeName}.pdf`);
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to generate PDF");
+    }
+  }
+
+  const onDownloadAllCsv = React.useCallback(() => {
+    const csv = buildInvoicesCsv(data.invoices || []);
+    const stamp = new Date().toISOString().slice(0, 10);
+    downloadCsvFile(`invoices_${stamp}.csv`, csv);
+  }, [data.invoices]);
+
+  const [burstKey, setBurstKey] = React.useState(0);
+  function handleSortClick() {
+    setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    setBurstKey((k) => k + 1);
+  }
+
+  const IconSwap = (
+    <div className="relative h-4 w-4">
+      <AnimatePresence mode="wait" initial={false}>
+        {sortDir === "asc" ? (
+          <motion.span
+            key="asc"
+            initial={{ opacity: 0, rotate: -90, y: -6 }}
+            animate={{ opacity: 1, rotate: 0, y: 0 }}
+            exit={{ opacity: 0, rotate: 90, y: 6 }}
+            transition={{ duration: 0.12, ease: "circOut" }}
+            className="absolute inset-0 grid place-items-center"
+          >
+            <ArrowUp className="h-4 w-4" />
+          </motion.span>
+        ) : (
+          <motion.span
+            key="desc"
+            initial={{ opacity: 0, rotate: -90, y: -6 }}
+            animate={{ opacity: 1, rotate: 0, y: 0 }}
+            exit={{ opacity: 0, rotate: 90, y: 6 }}
+            transition={{ duration: 0.12, ease: "circOut" }}
+            className="absolute inset-0 grid place-items-center"
+          >
+            <ArrowDown className="h-4 w-4" />
+          </motion.span>
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        <motion.span
+          key={`ping-${burstKey}`}
+          initial={{ scale: 0.8, opacity: 0.25 }}
+          animate={{ scale: 1.35, opacity: 0 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.18, ease: "easeOut" }}
+          className="absolute -inset-2 rounded-full border border-[#8C0F0F]/40"
+        />
+      </AnimatePresence>
+    </div>
+  );
+
+  const SortDirButton = (
+    <motion.button
+      onClick={handleSortClick}
+      whileHover={{ scale: 1.04 }}
+      whileTap={{ scale: 0.92 }}
+      transition={{ duration: 0.08 }}
+      className="h-9 w-9 inline-grid place-items-center rounded-xl border border-[#BFBFBF] bg-white text-[#17152A] shadow-sm hover:bg-[#F8F8F3] focus:outline-none"
+      aria-label={`Toggle sort direction (${sortDir})`}
+      title={`Sort ${sortDir === "asc" ? "ascending" : "descending"}`}
+    >
+      {IconSwap}
+    </motion.button>
+  );
+
   return (
     <div className="mx-auto max-w-6xl p-6 md:p-8">
-      {/* Header */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-[#17152A]">
@@ -381,8 +710,7 @@ export default function InvoicesPage() {
         </div>
       </div>
 
-      {/* Tabs + Filters */}
-      <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+      <div className="mb-5 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
         <Tabs
           value={tab}
           onChange={(_, v) => setTab(v)}
@@ -428,25 +756,27 @@ export default function InvoicesPage() {
                 <option value="amountRemaining">Amount Remaining</option>
                 <option value="total">Total</option>
               </select>
-              <select
-                value={sortDir}
-                onChange={(e) => setSortDir(e.target.value as "asc" | "desc")}
-                className="h-9 rounded-xl border border-[#BFBFBF] bg-white px-2 text-sm text-[#17152A] shadow-sm focus:ring-2 focus:ring-[#8C0F0F]/30"
-              >
-                <option value="desc">Desc</option>
-                <option value="asc">Asc</option>
-              </select>
+
+              {SortDirButton}
             </div>
+
+            <button
+              onClick={onDownloadAllCsv}
+              className="h-9 rounded-xl border border-[#BFBFBF] bg-white px-3 text-sm font-semibold text-[#17152A] shadow-sm hover:bg-[#F8F8F3] ml-0 md:ml-2 shrink-0"
+              title="Download CSV of all invoices"
+            >
+              Download CSV
+            </button>
           </div>
         )}
       </div>
 
-      {/* Tables */}
       {tab === 0 && (
         <InvoicesTable
           loading={billingLoading || !initialized}
           invoices={decoratedOpen}
           onPay={onPay}
+          onDownload={downloadInvoicePdf}
           variant="open"
         />
       )}
@@ -454,6 +784,7 @@ export default function InvoicesPage() {
         <InvoicesTable
           loading={billingLoading || !initialized}
           invoices={decoratedClosed}
+          onDownload={downloadInvoicePdf}
           variant="closed"
         />
       )}
@@ -472,7 +803,6 @@ export default function InvoicesPage() {
         onSubmit={submitPayment}
       />
 
-      {/* Loading overlay */}
       <Portal>
         <Backdrop
           open={billingLoading || !initialized}

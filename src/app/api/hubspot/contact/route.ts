@@ -2,6 +2,7 @@
 import {
   getContactById,
   updateContactById,
+  createContact,
 } from "@/lib/hubspot/hubspotCentral";
 
 export async function GET(req: Request): Promise<Response> {
@@ -42,6 +43,29 @@ export async function PATCH(req: Request): Promise<Response> {
     return new Response(JSON.stringify(result), { status: 200 });
   } catch (err: any) {
     console.error("HubSpot Update Error:", err.message);
+    return new Response(JSON.stringify({ error: err.message }), {
+      status: 500,
+    });
+  }
+}
+
+export async function POST(req: Request): Promise<Response> {
+  const body: any = await req.json();
+  const props = body?.create ?? body;
+
+  if (!props || !props.email) {
+    return new Response(
+      JSON.stringify({ error: "Missing create payload with email" }),
+      {
+        status: 400,
+      }
+    );
+  }
+
+  try {
+    const created = await createContact(props);
+    return new Response(JSON.stringify(created), { status: 201 });
+  } catch (err: any) {
     return new Response(JSON.stringify({ error: err.message }), {
       status: 500,
     });
