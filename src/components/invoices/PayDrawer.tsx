@@ -229,6 +229,7 @@ export default function PayDrawer({
               onChange={(e) => setAmount(parseFloat(e.target.value))}
               fullWidth
               disabled={disabled}
+              sx={{ mb: 2 }}
             />
 
             <div>

@@ -134,9 +134,7 @@ export default function OrderTrackingPage() {
           <h1 className="text-2xl font-bold tracking-tight text-[#17152A]">
             Order Tracking
           </h1>
-          <p className="mt-1 text-sm text-[#17152A]/70">
-            View shipments and tracking numbers linked to your account.
-          </p>
+
           <div className="mt-2 h-[3px] w-24 rounded-full bg-gradient-to-r from-[#8C0F0F] to-[#E01C24]" />
         </div>
 

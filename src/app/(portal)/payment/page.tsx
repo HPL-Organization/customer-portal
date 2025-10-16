@@ -327,8 +327,7 @@ function EmptyState({ onAdd }: { onAdd: () => void }) {
         No payment methods yet
       </h3>
       <p className="text-[#17152A]/70 mt-1 max-w-md">
-        Save a your credit card securely to quickly pay invoices and deposits on
-        this portal.
+        Save your credit card securely to quickly pay invoices on the portal.
       </p>
       {/* <MUIButton
         className="mt-4"
@@ -659,8 +658,8 @@ function AddMethodDialog({
             "& .MuiAlert-icon": { color: "#8C0F0F" },
           }}
         >
-          Enter card details in the secure VersaPay frame. We only store a
-          token.
+          Enter card details below. Your card details will be securely
+          Encrypted.
         </Alert>
 
         <div className="relative z-[1402] rounded-xl border border-[#BFBFBF]/60 bg-white p-4 sm:p-5 shadow-sm">
@@ -692,14 +691,6 @@ function AddMethodDialog({
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <TextField
-            label="Name on card"
-            size="small"
-            fullWidth
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            disabled={processing || frameLoading}
-          />
-          <TextField
             label="Status"
             size="small"
             fullWidth
@@ -710,7 +701,7 @@ function AddMethodDialog({
                 ? "Complete verification in the frame…"
                 : frameLoading
                 ? "Loading frame…"
-                : "Enter in frame"
+                : "Iframe inititalized"
             }
             InputProps={{ readOnly: true }}
           />
@@ -856,9 +847,7 @@ export default function PaymentMethodsPage() {
               </span>
               Payment Methods
             </h1>
-            <p className="text-sm text-[#17152A]/70">
-              Manage stored cards for faster checkout.
-            </p>
+
             <div className="mt-2 h-[3px] w-24 rounded-full bg-gradient-to-r from-[#8C0F0F] to-[#E01C24]" />
           </div>
           <div className="flex items-center gap-2">
@@ -928,15 +917,6 @@ export default function PaymentMethodsPage() {
             ))}
           </div>
         )}
-
-        <div className="mt-10 text-center text-sm">
-          <Link
-            href="/"
-            className="underline text-[#17152A]/70 hover:text-[#17152A]"
-          >
-            ← Back to home
-          </Link>
-        </div>
       </div>
 
       {/* Dialog */}
