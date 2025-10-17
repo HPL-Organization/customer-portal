@@ -22,6 +22,7 @@ export type FulfillmentItem = {
   quantity: number;
   serialNumbers: string[];
   tracking: string;
+  comments: string[];
 };
 
 export type Fulfillment = {
@@ -81,6 +82,9 @@ function normalizeFulfillment(raw: any): Fulfillment {
           ? x.serialNumbers.map((s: any) => String(s))
           : [],
         tracking: String(x?.tracking ?? raw?.tracking ?? ""),
+        comments: Array.isArray(x?.comments)
+          ? x.comments.map((c: any) => String(c))
+          : [],
       }))
     : [];
 

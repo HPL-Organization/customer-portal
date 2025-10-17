@@ -52,6 +52,14 @@ function normLine(raw: any): InvoiceLine {
         : raw.memo != null
         ? String(raw.memo)
         : "",
+    comment:
+      raw.comment != null
+        ? String(raw.comment)
+        : raw.lineComment != null
+        ? String(raw.lineComment)
+        : raw.linecomment != null
+        ? String(raw.linecomment)
+        : null,
   };
   return line as InvoiceLine;
 }

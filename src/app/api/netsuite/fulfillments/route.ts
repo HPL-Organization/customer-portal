@@ -62,16 +62,17 @@ export async function GET(req: NextRequest) {
     const fulfillmentsWithItems = await Promise.all(
       uniqueFulfillments.map(async (ff: any) => {
         const lineItemQuery = `
-          SELECT
-            TL.transaction AS fulfillmentid,
-            I.itemid AS itemsku,
-            I.displayname AS itemdisplayname,
-            TL.quantity,
-            TL.custcol_hpl_serialnumber AS serialnumber
-          FROM transactionline TL
-          INNER JOIN item I ON I.id = TL.item
-          WHERE TL.transaction = ${ff.id}
-        `;
+  SELECT
+    TL.transaction AS fulfillmentid,
+    I.itemid AS itemsku,
+    I.displayname AS itemdisplayname,
+    TL.quantity,
+    TL.custcol_hpl_serialnumber AS serialnumber,
+    TL.custcolns_comment AS comment
+  FROM transactionline TL
+  INNER JOIN item I ON I.id = TL.item
+  WHERE TL.transaction = ${ff.id}
+`;
 
         const lineRes = await axios.post(
           `${BASE_URL}/query/v1/suiteql`,
@@ -171,6 +172,7 @@ export async function GET(req: NextRequest) {
             productName: string;
             quantity: number;
             serialNumbers: string[];
+            comments: string[];
           }
         >();
 
@@ -181,6 +183,7 @@ export async function GET(req: NextRequest) {
             line.SerialNumber ??
             line.custcol_hpl_serialnumber ??
             null;
+          const comment = line.comment ?? line.custcolns_comment ?? null;
 
           if (!grouped.has(key)) {
             grouped.set(key, {
@@ -188,18 +191,15 @@ export async function GET(req: NextRequest) {
               productName: line.itemdisplayname,
               quantity: Math.abs(parseFloat(line.quantity ?? 0)),
               serialNumbers: serial ? [String(serial)] : [],
+              comments: comment ? [String(comment)] : [],
             });
           } else {
             const g = grouped.get(key)!;
             g.quantity += Math.abs(parseFloat(line.quantity ?? 0));
             if (serial) g.serialNumbers.push(String(serial));
+            if (comment) g.comments.push(String(comment));
           }
         }
-
-        const items = Array.from(grouped.values()).map((x) => ({
-          ...x,
-          tracking,
-        }));
 
         // --- Order-first display fields ---
         const orderNumber = normalizeSOTranId(salesOrderTranId);
@@ -207,7 +207,12 @@ export async function GET(req: NextRequest) {
         const number = orderNumber
           ? `${orderNumber} • ${fulfillmentNumber}`
           : fulfillmentNumber;
-
+        const items = Array.from(grouped.values()).map((x) => ({
+          ...x,
+          serialNumbers: Array.from(new Set(x.serialNumbers)),
+          comments: Array.from(new Set(x.comments)),
+          tracking,
+        }));
         return {
           id: ff.id,
           number, // e.g., "SO-521210 • IF-556"

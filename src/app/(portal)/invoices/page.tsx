@@ -185,6 +185,9 @@ export default function InvoicesPage() {
       return (inv.lines || []).some((l) => {
         const name = l.itemName?.toLowerCase() || "";
         const disp = (l as any).itemDisplayName?.toLowerCase?.() || "";
+        const cmt = (l as any).comment
+          ? String((l as any).comment).toLowerCase()
+          : "";
         const idStr = String(l.itemId ?? "");
         return name.includes(q) || disp.includes(q) || idStr.includes(q);
       });

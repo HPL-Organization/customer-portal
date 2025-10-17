@@ -266,7 +266,7 @@ function PaymentMethodCard({
         <Tooltip
           title={pm.isDefault ? "This is already the default" : "Make Default"}
         >
-          <span>
+          <span className="hidden">
             <MUIButton
               size="small"
               variant="outlined"
@@ -330,21 +330,6 @@ function EmptyState({ onAdd }: { onAdd: () => void }) {
       <p className="text-[#17152A]/70 mt-1 max-w-md">
         Save your credit card securely to quickly pay invoices on the portal.
       </p>
-      {/* <MUIButton
-        className="mt-4"
-        variant="contained"
-        startIcon={<Plus />}
-        onClick={onAdd}
-        sx={{
-          textTransform: "none",
-          backgroundColor: "#8C0F0F",
-          "&:hover": { backgroundColor: "#E01C24" },
-          borderRadius: "0.75rem",
-          boxShadow: "none",
-        }}
-      >
-        Add payment method
-      </MUIButton> */}
     </div>
   );
 }
@@ -633,7 +618,7 @@ function AddMethodDialog({
       try {
         await clientRef.current.submitEvents();
       } catch (e: any) {
-        setPendingSaveSafe(true);
+        setPendingSave(true);
         setProcessing(false);
         toast.error(e?.message || "Tokenization failed");
       }

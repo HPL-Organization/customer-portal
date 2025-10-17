@@ -1,4 +1,3 @@
-// in AppSidebar.tsx
 "use client";
 
 import { Menu, X, LogOut } from "lucide-react";
@@ -14,8 +13,55 @@ const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
+function toPossessiveFirst(name: string | null | undefined) {
+  const raw = String(name || "").trim();
+  if (!raw) return null;
+  const first = raw.split(/\s+/)[0];
+  if (!first) return null;
+  const endsWithS = /s$/i.test(first);
+  return endsWithS ? `${first}'` : `${first}'s`;
+}
+
+function extractDisplayName(u: any | null) {
+  if (!u) return null;
+  const md = u.user_metadata || {};
+  const m1 =
+    md.display_name ||
+    md.full_name ||
+    md.name ||
+    md.user_name ||
+    md.given_name ||
+    null;
+  if (m1) return String(m1);
+  const ids: any[] = Array.isArray(u.identities) ? u.identities : [];
+  for (const ident of ids) {
+    const idd = ident?.identity_data || {};
+    const n =
+      idd.given_name ||
+      idd.full_name ||
+      idd.name ||
+      idd.preferred_username ||
+      null;
+    if (n) return String(n);
+  }
+  const email = String(u.email || "").trim();
+  if (email) {
+    const local = email.split("@")[0] || "";
+    if (local) {
+      return local
+        .split(/[._-]+/)
+        .filter(Boolean)
+        .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
+        .join(" ");
+    }
+  }
+  return null;
+}
+
 export default function AppSidebar() {
   const [open, setOpen] = useState(false);
+  const [portalLabel, setPortalLabel] = useState<string | null>(null);
+
   const pathname = usePathname();
   const activeHref = useMemo(() => {
     if (!pathname) return "";
@@ -40,6 +86,32 @@ export default function AppSidebar() {
     };
   }, [open]);
 
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const { data } = await supabase.auth.getUser();
+        const user = data.user || null;
+        const display = extractDisplayName(user);
+        const poss = toPossessiveFirst(display);
+        if (!cancelled) setPortalLabel(poss);
+      } catch {
+        if (!cancelled) setPortalLabel(null);
+      }
+    }
+    load();
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
+      const user = session?.user || null;
+      const display = extractDisplayName(user);
+      const poss = toPossessiveFirst(display);
+      setPortalLabel(poss);
+    });
+    return () => {
+      cancelled = true;
+      sub.subscription.unsubscribe();
+    };
+  }, []);
+
   async function handleLogout() {
     try {
       await supabase.auth.signOut({ scope: "global" });
@@ -63,6 +135,8 @@ export default function AppSidebar() {
     );
   }
 
+  const headerText = portalLabel ? `${portalLabel} Portal` : "Customer Portal";
+
   return (
     <>
       <motion.aside
@@ -83,7 +157,7 @@ export default function AppSidebar() {
             />
             <div className="leading-tight">
               <h1 className="text-[15px] font-extrabold tracking-tight text-neutral-900">
-                Customer Portal
+                {headerText}
               </h1>
               <span className="text-[11px] font-medium text-neutral-700/80">
                 Highland Park Lapidary
@@ -162,9 +236,7 @@ export default function AppSidebar() {
               alt="HPL logo"
               className="h-8 w-8 rounded-full object-contain ring-2 ring-slate-200 shadow"
             />
-            <span className="font-semibold text-neutral-900">
-              Customer Portal
-            </span>
+            <span className="font-semibold text-neutral-900">{headerText}</span>
           </div>
         </div>
 

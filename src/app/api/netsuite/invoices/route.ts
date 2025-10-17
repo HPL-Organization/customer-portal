@@ -242,19 +242,20 @@ export async function GET(req: NextRequest) {
       `;
 
       const linesQ = `
-  SELECT
-    TL.transaction AS invoiceId,
-    I.id AS itemId,
-    I.itemid AS sku,
-    I.displayname AS displayName,
-    NVL(ABS(TL.quantity), 0) AS quantity,
-    TL.rate AS rate,
-    NVL(ABS(TL.amount), 0) AS amount,
-    TL.memo AS description
-  FROM transactionline TL
-  JOIN item I ON I.id = TL.item
-  WHERE TL.transaction IN (${idList})
-`;
+        SELECT
+          TL.transaction AS invoiceId,
+          I.id AS itemId,
+          I.itemid AS sku,
+          I.displayname AS displayName,
+          NVL(ABS(TL.quantity), 0) AS quantity,
+          TL.rate AS rate,
+          NVL(ABS(TL.amount), 0) AS amount,
+          TL.memo AS description,
+          TL.custcolns_comment AS lineComment
+        FROM transactionline TL
+        JOIN item I ON I.id = TL.item
+        WHERE TL.transaction IN (${idList})
+      `;
 
       const paymentsQ = `
         SELECT
@@ -332,6 +333,7 @@ export async function GET(req: NextRequest) {
           rate: Number(r.rate ?? 0),
           amount: Number(r.amount ?? 0),
           description: r.description ?? null,
+          comment: r.linecomment ?? null,
         };
         console.log("Invoice line displayName", {
           invoiceId: invId,

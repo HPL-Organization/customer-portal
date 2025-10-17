@@ -10,7 +10,7 @@ import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
 export type Invoice = {
   invoiceId: string | number;
   tranId: string;
-  trandate: string; // ISO date
+  trandate: string;
   total: number;
   taxTotal?: number;
   amountPaid: number;
@@ -22,12 +22,14 @@ export type Invoice = {
     rate?: number;
     amount?: number;
     description?: string | null;
+    comment?: string | null;
+    itemDisplayName?: string | null;
   }[];
   payments: {
     paymentId?: string | number;
     tranId?: string;
-    date?: string; // older shape
-    paymentDate?: string; // route shape
+    date?: string;
+    paymentDate?: string;
     amount: number;
     status?: string;
     paymentOption?: string;
@@ -44,14 +46,13 @@ function fdate(d?: string) {
   return d ? new Date(d).toLocaleDateString() : "—";
 }
 
-/* ---------------- PDF helpers  ---------------- */
-
 type Row = {
   name: string;
   qty: number;
   rate: number;
   amount: number;
   description: string;
+  detail?: string;
 };
 
 function computePdfRows(inv: Invoice): { rows: Row[]; subtotal: number } {
@@ -63,6 +64,7 @@ function computePdfRows(inv: Invoice): { rows: Row[]; subtotal: number } {
     const amount = isDiscount ? rate : qty * rate;
     return {
       name: (l.itemName ?? String(l.itemId ?? "")) as string,
+      detail: getDetail(l),
       qty: isDiscount ? 0 : qty,
       rate,
       amount,
@@ -77,9 +79,16 @@ function computePdfRows(inv: Invoice): { rows: Row[]; subtotal: number } {
   return { rows, subtotal };
 }
 
+function fitRect(w: number, h: number, maxW: number, maxH: number) {
+  const scale = Math.min(maxW / w, maxH / h, 1);
+  return { w: w * scale, h: h * scale };
+}
+
+type LogoMeta = { url: string; w: number; h: number } | null;
+
 async function buildAndDownloadPdf(
   inv: Invoice,
-  logoDataUrl?: string | null
+  logo?: LogoMeta
 ): Promise<void> {
   const { jsPDF } = await import("jspdf");
   const doc = new jsPDF({ unit: "pt", format: "letter" });
@@ -87,9 +96,10 @@ async function buildAndDownloadPdf(
   const marginX = 54;
   let cursorY = 60;
 
-  if (logoDataUrl) {
+  if (logo?.url && logo.w > 0 && logo.h > 0) {
     try {
-      doc.addImage(logoDataUrl, "PNG", marginX, cursorY - 10, 120, 40);
+      const { w, h } = fitRect(logo.w, logo.h, 140, 48);
+      doc.addImage(logo.url, "PNG", marginX, cursorY - 10, w, h);
     } catch {}
   }
 
@@ -115,10 +125,11 @@ async function buildAndDownloadPdf(
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(11);
-  const headers = ["Item", "Qty", "Rate", "Amount"];
-  const colX = [marginX, 380, 440, 500];
+  const headers = ["Item", "Detail", "Qty", "Rate", "Amount"];
+  const colX = [marginX, 310, 430, 490, 550];
   headers.forEach((h, idx) => doc.text(h, colX[idx], cursorY));
   cursorY += 12;
+
   doc.setDrawColor(191, 191, 191);
   doc.line(marginX, cursorY, 558, cursorY);
   doc.setFont("helvetica", "normal");
@@ -133,6 +144,7 @@ async function buildAndDownloadPdf(
     if (cursorY + lineHeight > bottomY) {
       doc.addPage();
       cursorY = 60;
+
       doc.setFont("helvetica", "bold");
       doc.setFontSize(11);
       headers.forEach((h, idx) => doc.text(h, colX[idx], cursorY));
@@ -144,17 +156,26 @@ async function buildAndDownloadPdf(
       cursorY += 16;
     }
 
-    const name = r.name || "";
-    const maxNameWidth = colX[1] - colX[0] - 8;
-    const nameLines = doc.splitTextToSize(name, maxNameWidth) as string[];
-    const blockHeight = Math.max(lineHeight, nameLines.length * lineHeight);
+    const maxItemW = colX[1] - colX[0] - 8;
+    const maxDetailW = colX[2] - colX[1] - 8;
+    const itemLines = doc.splitTextToSize(r.name || "", maxItemW) as string[];
+    const detailLines = doc.splitTextToSize(
+      r.detail || "",
+      maxDetailW
+    ) as string[];
+    const blockLines = Math.max(itemLines.length, detailLines.length);
+    const blockHeight = Math.max(lineHeight, blockLines * lineHeight);
 
-    nameLines.forEach((ln, i) =>
+    itemLines.forEach((ln, i) =>
       doc.text(ln, colX[0], cursorY + i * lineHeight)
     );
-    doc.text(String(r.qty), colX[1], cursorY);
-    doc.text(fmt(r.rate), colX[2], cursorY);
-    doc.text(fmt(r.amount), colX[3], cursorY);
+    detailLines.forEach((ln, i) =>
+      doc.text(ln, colX[1], cursorY + i * lineHeight)
+    );
+
+    doc.text(String(r.qty), colX[2], cursorY);
+    doc.text(fmt(r.rate), colX[3], cursorY);
+    doc.text(fmt(r.amount), colX[4], cursorY);
 
     cursorY += blockHeight;
   });
@@ -203,6 +224,7 @@ async function buildAndDownloadPdf(
   doc.setFont("helvetica", "normal");
   doc.text(fmt(remaining), rightX, cursorY);
 
+  // Closing
   cursorY += 40;
   doc.setDrawColor(191, 191, 191);
   doc.line(marginX, cursorY, 558, cursorY);
@@ -228,21 +250,18 @@ function isPrintableLine(l: Invoice["lines"][number]): boolean {
   return !desc.includes("cost of sales");
 }
 
-/* ---------------- Component ---------------- */
-
 export default function InvoicesTable({
   loading,
   invoices,
   onPay,
-  variant, // "open" | "closed"
+  variant,
 }: {
   loading: boolean;
   invoices: Invoice[];
   onPay?: (inv: Invoice) => void;
   variant: "open" | "closed";
 }) {
-  const [logoDataUrl, setLogoDataUrl] = React.useState<string | null>(null);
-  console.log("Inovices:", invoices[0]);
+  const [logoMeta, setLogoMeta] = React.useState<LogoMeta>(null);
   React.useEffect(() => {
     let active = true;
     (async () => {
@@ -252,11 +271,22 @@ export default function InvoicesTable({
         const blob = await res.blob();
         const reader = new FileReader();
         reader.onloadend = () => {
-          if (active) setLogoDataUrl(String(reader.result || ""));
+          if (!active) return;
+          const dataUrl = String(reader.result || "");
+          const img = new Image();
+          img.onload = () => {
+            if (active)
+              setLogoMeta({
+                url: dataUrl,
+                w: img.naturalWidth,
+                h: img.naturalHeight,
+              });
+          };
+          img.src = dataUrl;
         };
         reader.readAsDataURL(blob);
       } catch {
-        setLogoDataUrl(null);
+        setLogoMeta(null);
       }
     })();
     return () => {
@@ -266,14 +296,13 @@ export default function InvoicesTable({
 
   const onDownload = React.useCallback(
     async (inv: Invoice) => {
-      await buildAndDownloadPdf(inv, logoDataUrl);
+      await buildAndDownloadPdf(inv, logoMeta);
     },
-    [logoDataUrl]
+    [logoMeta]
   );
 
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-      {/* Desktop (md+) */}
       <div className="hidden md:block">
         {loading ? (
           <SkeletonTable />
@@ -286,8 +315,6 @@ export default function InvoicesTable({
           />
         )}
       </div>
-
-      {/* Mobile */}
       <div className="md:hidden">
         {loading ? (
           <MobileSkeleton />
@@ -303,10 +330,6 @@ export default function InvoicesTable({
     </div>
   );
 }
-
-/* ---------------------------------------------------------------------- */
-/* Desktop table                                                           */
-/* ---------------------------------------------------------------------- */
 
 function DesktopTable({
   invoices,
@@ -470,10 +493,6 @@ function DesktopRow({
   );
 }
 
-/* ---------------------------------------------------------------------- */
-/* Mobile list (cards)                                                     */
-/* ---------------------------------------------------------------------- */
-
 function MobileList({
   invoices,
   onPay,
@@ -621,9 +640,53 @@ function Metric({
   );
 }
 
-/* ---------------------------------------------------------------------- */
-/* Shared details section                                                  */
-/* ---------------------------------------------------------------------- */
+function getDetail(l: Invoice["lines"][number]): string {
+  const c = (l as any).comment;
+  const d = l.description;
+  const disp = (l as any).itemDisplayName;
+  return String((c ?? d ?? disp ?? "") || "");
+}
+
+function SummaryRow({
+  label,
+  value,
+  strong = false,
+  highlight = false,
+}: {
+  label: string;
+  value: string;
+  strong?: boolean;
+  highlight?: boolean;
+}) {
+  return (
+    <div className="flex items-baseline justify-between">
+      <span
+        className={`text-[11px] uppercase tracking-wide ${
+          strong
+            ? "text-slate-700 font-semibold"
+            : "text-slate-500 font-semibold"
+        }`}
+      >
+        {label}
+      </span>
+      {highlight ? (
+        <span className="tabular-nums rounded-lg bg-slate-100 px-2 py-0.5 text-base font-semibold text-slate-900">
+          {value}
+        </span>
+      ) : (
+        <span
+          className={`tabular-nums ${
+            strong
+              ? "text-base font-semibold text-slate-900"
+              : "font-medium text-slate-900"
+          }`}
+        >
+          {value}
+        </span>
+      )}
+    </div>
+  );
+}
 
 function Details({ inv, mobile = false }: { inv: Invoice; mobile?: boolean }) {
   return (
@@ -639,10 +702,19 @@ function Details({ inv, mobile = false }: { inv: Invoice; mobile?: boolean }) {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="min-w-[560px] w-full table-auto text-sm">
+            <table className="min-w-[820px] w-full table-auto text-sm">
+              <colgroup>
+                {/* Item, Detail, Qty, Rate, Amount */}
+                <col className="w-[38%]" />
+                <col className="w-[30%]" />
+                <col className="w-[10%]" />
+                <col className="w-[11%]" />
+                <col className="w-[11%]" />
+              </colgroup>
               <thead className="text-left text-slate-600">
                 <tr>
                   <th className="px-3 py-2">Item</th>
+                  <th className="px-3 py-2">Detail</th>
                   <th className="px-3 py-2 text-right">Qty</th>
                   <th className="px-3 py-2 text-right">Rate</th>
                   <th className="px-3 py-2 text-right">Amount</th>
@@ -653,7 +725,7 @@ function Details({ inv, mobile = false }: { inv: Invoice; mobile?: boolean }) {
                   <tr>
                     <td
                       className="px-3 py-6 text-center text-sm text-slate-500"
-                      colSpan={4}
+                      colSpan={5}
                     >
                       No line items.
                     </td>
@@ -665,11 +737,9 @@ function Details({ inv, mobile = false }: { inv: Invoice; mobile?: boolean }) {
                       <tr key={idx} className="border-t border-slate-100">
                         <td className="px-3 py-2 font-medium text-slate-900 break-words">
                           {l.itemName ?? l.itemId ?? "—"}
-                          {l.description ? (
-                            <div className="text-xs text-slate-500">
-                              {l.description}
-                            </div>
-                          ) : null}
+                        </td>
+                        <td className="px-3 py-2 text-slate-700 break-words">
+                          {getDetail(l) || "—"}
                         </td>
                         <td className="px-3 py-2 text-right text-slate-700 whitespace-nowrap">
                           {l.quantity ?? "—"}
@@ -686,7 +756,7 @@ function Details({ inv, mobile = false }: { inv: Invoice; mobile?: boolean }) {
               </tbody>
             </table>
           </div>
-          {/* tax summary */}
+
           <div className="flex justify-end px-3 py-3">
             {(() => {
               const printable = (inv.lines ?? []).filter(isPrintableLine);
@@ -702,26 +772,19 @@ function Details({ inv, mobile = false }: { inv: Invoice; mobile?: boolean }) {
               const total = subtotal + tax;
 
               return (
-                <div className="w-full max-w-[320px] text-sm">
-                  <div className="flex items-center justify-between py-1">
-                    <span className="font-semibold text-slate-600">
-                      Subtotal
-                    </span>
-                    <span className="font-medium text-slate-900">
-                      {fmt(subtotal)}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between py-1">
-                    <span className="font-semibold text-slate-600">Tax</span>
-                    <span className="font-medium text-slate-900">
-                      {fmt(tax)}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between py-1 border-t border-slate-200 mt-1 pt-2">
-                    <span className="font-semibold text-slate-700">Total</span>
-                    <span className="font-semibold text-slate-900">
-                      {fmt(total)}
-                    </span>
+                <div className="w-full max-w-[360px]">
+                  <div className="rounded-xl border border-slate-200 bg-gradient-to-b from-white to-slate-50/60 p-3 shadow-sm">
+                    <div className="space-y-1.5">
+                      <SummaryRow label="Subtotal" value={fmt(subtotal)} />
+                      <SummaryRow label="Tax" value={fmt(tax)} />
+                      <div className="my-1 border-t border-dashed border-slate-200" />
+                      <SummaryRow
+                        label="Total"
+                        value={fmt(total)}
+                        strong
+                        highlight
+                      />
+                    </div>
                   </div>
                 </div>
               );
@@ -780,10 +843,6 @@ function Details({ inv, mobile = false }: { inv: Invoice; mobile?: boolean }) {
     </>
   );
 }
-
-/* ---------------------------------------------------------------------- */
-/* Skeletons                                                               */
-/* ---------------------------------------------------------------------- */
 
 function SkeletonTable() {
   return (

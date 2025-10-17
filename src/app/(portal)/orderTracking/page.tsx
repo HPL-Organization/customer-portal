@@ -68,35 +68,35 @@ export default function OrderTrackingPage() {
   const filtered = useMemo(() => {
     if (!q.trim()) return fulfillments;
     const needle = q.toLowerCase();
+    const inStr = (s: any) =>
+      String(s ?? "")
+        .toLowerCase()
+        .includes(needle);
+
     return fulfillments.filter((ff) => {
-      const inHeader =
-        (ff.orderNumber || "").toLowerCase().includes(needle) ||
-        String(ff.number || "")
-          .toLowerCase()
-          .includes(needle) ||
-        String(ff.status || "")
-          .toLowerCase()
-          .includes(needle) ||
-        String(ff.shipStatus || "")
-          .toLowerCase()
-          .includes(needle) ||
-        fmtDate(String(ff.shippedAt || ""))
-          .toLowerCase()
-          .includes(needle);
-      if (inHeader) return true;
-      return (ff.items || []).some(
-        (it: any) =>
-          String(it.sku || "")
-            .toLowerCase()
-            .includes(needle) ||
-          String(it.productName || "")
-            .toLowerCase()
-            .includes(needle) ||
-          String(it.quantity || "").includes(needle) ||
-          String(it.tracking || "")
-            .toLowerCase()
-            .includes(needle)
-      );
+      if (
+        inStr(ff.orderNumber) ||
+        inStr(ff.number) ||
+        inStr(ff.status) ||
+        inStr(ff.shipStatus) ||
+        inStr(fmtDate(String(ff.shippedAt || "")))
+      ) {
+        return true;
+      }
+
+      return (ff.items || []).some((it: any) => {
+        const matchesComments =
+          Array.isArray(it.comments) &&
+          it.comments.some((c: string) => inStr(c));
+
+        return (
+          inStr(it.sku) ||
+          inStr(it.productName) ||
+          String(it.quantity ?? "").includes(needle) ||
+          inStr(it.tracking) ||
+          matchesComments
+        );
+      });
     });
   }, [q, fulfillments]);
 
@@ -247,6 +247,7 @@ export default function OrderTrackingPage() {
                           <tr>
                             <Th>SKU</Th>
                             <Th>Product</Th>
+                            <Th>Comments</Th> {/* NEW */}
                             <Th className="text-right">Qty</Th>
                           </tr>
                         </thead>
@@ -261,6 +262,7 @@ export default function OrderTrackingPage() {
                                   {it.sku}
                                 </code>
                               </Td>
+
                               <Td>
                                 <div
                                   className="max-w-[52ch] truncate text-sm text-[#17152A]"
@@ -269,6 +271,26 @@ export default function OrderTrackingPage() {
                                   {it.productName}
                                 </div>
                               </Td>
+
+                              <Td>
+                                {Array.isArray(it.comments) &&
+                                it.comments.length > 0 ? (
+                                  <div className="flex max-w-[60ch] flex-wrap gap-1.5">
+                                    {it.comments.map((c: string, i: number) => (
+                                      <span
+                                        key={`${it.sku}-c-${i}`}
+                                        title={c}
+                                        className="truncate rounded-md border border-[#BFBFBF]/60 bg-[#FFFFEC] px-1.5 py-0.5 text-[12px] text-[#17152A] max-w-[28ch]"
+                                      >
+                                        {c}
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <span className="text-[#17152A]/50">—</span>
+                                )}
+                              </Td>
+
                               <Td className="text-right font-semibold text-[#17152A]">
                                 {it.quantity}
                               </Td>

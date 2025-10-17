@@ -4,6 +4,7 @@ export interface InvoiceLine {
   quantity: number;
   rate: number;
   amount: number;
+  comment?: string | null;
 }
 
 export interface InvoicePayment {
