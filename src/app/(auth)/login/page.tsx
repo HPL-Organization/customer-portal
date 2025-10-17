@@ -695,25 +695,27 @@ function AuthForm(props: {
       </button>
       */}
 
-      <div className="mt-6 space-y-3 text-sm">
-        <button
-          onClick={sendMagicLink}
-          disabled={loading}
-          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-slate-900 transition hover:bg-slate-50 disabled:opacity-60"
-        >
-          Email me a magic link
-        </button>
-        <div className="text-center text-slate-700">
-          Forgot your password?{" "}
+      {mode === "signin" && (
+        <div className="mt-6 space-y-3 text-sm">
           <button
-            onClick={resetPassword}
+            onClick={sendMagicLink}
             disabled={loading}
-            className="underline underline-offset-4 hover:text-slate-900"
+            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-slate-900 transition hover:bg-slate-50 disabled:opacity-60"
           >
-            Send reset email
+            Email me a magic link
           </button>
+          <div className="text-center text-slate-700">
+            Forgot your password?{" "}
+            <button
+              onClick={resetPassword}
+              disabled={loading}
+              className="underline underline-offset-4 hover:text-slate-900"
+            >
+              Send reset email
+            </button>
+          </div>
         </div>
-      </div>
+      )}
     </>
   );
 }
