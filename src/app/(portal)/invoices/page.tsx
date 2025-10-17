@@ -21,7 +21,7 @@ import {
   Box,
 } from "@mui/material";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowUp, ArrowDown } from "lucide-react";
+import { ArrowUp, ArrowDown, Search as SearchIcon } from "lucide-react";
 
 type SortKey = "trandate" | "tranId" | "amountRemaining" | "total";
 
@@ -73,19 +73,35 @@ function computeSubtotalFromLines(inv: Invoice) {
   );
 }
 
+function getLineDetails(l: any, invMemo: string) {
+  const parts = [l?.description, l?.details, l?.comment, l?.comments, l?.memo]
+    .map((x) => (x == null ? "" : String(x).trim()))
+    .filter(Boolean);
+  const unique = Array.from(new Set(parts));
+  const joined = unique.join(" | ");
+  return joined || invMemo;
+}
+
 function buildInvoicesCsv(allInvoices: Invoice[]) {
   const header = [
     "Invoice #",
     "Date",
     "Sales Order",
+    "Status",
     "Subtotal",
     "Tax",
     "Total",
     "Paid",
     "Remaining",
-    "Status",
+    "Line #",
+    "Item",
+    "Details",
+    "Qty",
+    "Rate",
+    "Amount",
   ];
-  const lines = allInvoices.map((inv) => {
+  const rows: string[] = [];
+  for (const inv of allInvoices) {
     const dateStr = inv.trandate
       ? new Date(inv.trandate as any).toLocaleDateString()
       : "";
@@ -95,19 +111,44 @@ function buildInvoicesCsv(allInvoices: Invoice[]) {
     const paid = Number(inv.amountPaid || 0);
     const remaining = Number(inv.amountRemaining || Math.max(total - paid, 0));
     const status = remaining > 0 ? "Unpaid" : "Paid";
-    return [
-      csvEscape(inv.tranId || inv.invoiceId || "—"),
-      csvEscape(dateStr),
-      csvEscape(inv.createdFromSoTranId || ""),
-      subtotal.toFixed(2),
-      tax.toFixed(2),
-      total.toFixed(2),
-      paid.toFixed(2),
-      remaining.toFixed(2),
-      csvEscape(status),
-    ].join(",");
-  });
-  return [header.map(csvEscape).join(","), ...lines].join("\r\n");
+    const invMemo = String(
+      (inv as any).memo ?? (inv as any).message ?? (inv as any).comments ?? ""
+    ).trim();
+    const lineItems = inv.lines && inv.lines.length ? inv.lines : [null as any];
+    let idx = 0;
+    for (const l of lineItems) {
+      idx += 1;
+      const qty = l ? Number(l.quantity || 0) : null;
+      const rate = l ? Number(l.rate || 0) : null;
+      const isDiscount = l ? !(rate! > 0) : false;
+      const lineAmount = l
+        ? isDiscount
+          ? rate
+          : (qty || 0) * (rate || 0)
+        : null;
+      const details = l ? getLineDetails(l, invMemo) : invMemo;
+      rows.push(
+        [
+          csvEscape(inv.tranId || inv.invoiceId || "—"),
+          csvEscape(dateStr),
+          csvEscape(inv.createdFromSoTranId || ""),
+          csvEscape(status),
+          subtotal.toFixed(2),
+          tax.toFixed(2),
+          total.toFixed(2),
+          paid.toFixed(2),
+          remaining.toFixed(2),
+          csvEscape(String(idx)),
+          csvEscape(l ? l.itemName || String(l.itemId || "") : ""),
+          csvEscape(details),
+          l ? String(isDiscount ? 0 : qty || 0) : "",
+          l ? String(rate != null ? rate.toFixed(2) : "") : "",
+          l ? String(lineAmount != null ? lineAmount.toFixed(2) : "") : "",
+        ].join(",")
+      );
+    }
+  }
+  return [header.map(csvEscape).join(","), ...rows].join("\r\n");
 }
 
 function downloadCsvFile(filename: string, csv: string) {
@@ -174,24 +215,47 @@ export default function InvoicesPage() {
 
   function filterSort(list: Invoice[]) {
     const q = query.trim().toLowerCase();
+
     const filtered = list.filter((inv) => {
       if (!q) return true;
-      if (inv.tranId?.toLowerCase().includes(q)) return true;
+
+      const invTran = (inv.tranId || "").toLowerCase();
+      const invSo = (inv.createdFromSoTranId || "").toLowerCase();
+      const invId = String(inv.invoiceId ?? "").toLowerCase();
+      const invMemo = String(
+        (inv as any).memo ?? (inv as any).message ?? (inv as any).comments ?? ""
+      ).toLowerCase();
+
       if (
-        inv.createdFromSoTranId &&
-        inv.createdFromSoTranId.toLowerCase().includes(q)
-      )
+        invTran.includes(q) ||
+        invSo.includes(q) ||
+        invId.includes(q) ||
+        invMemo.includes(q)
+      ) {
         return true;
+      }
+
       return (inv.lines || []).some((l) => {
-        const name = l.itemName?.toLowerCase() || "";
-        const disp = (l as any).itemDisplayName?.toLowerCase?.() || "";
-        const cmt = (l as any).comment
-          ? String((l as any).comment).toLowerCase()
-          : "";
-        const idStr = String(l.itemId ?? "");
-        return name.includes(q) || disp.includes(q) || idStr.includes(q);
+        const name = (l.itemName || "").toLowerCase();
+        const disp = String((l as any).itemDisplayName ?? "").toLowerCase();
+        const desc = String(
+          l.description ?? (l as any).details ?? ""
+        ).toLowerCase();
+        const cmt = String(
+          (l as any).comment ?? (l as any).comments ?? (l as any).memo ?? ""
+        ).toLowerCase();
+        const idStr = String(l.itemId ?? "").toLowerCase();
+
+        return (
+          name.includes(q) ||
+          disp.includes(q) ||
+          desc.includes(q) ||
+          cmt.includes(q) ||
+          idStr.includes(q)
+        );
       });
     });
+
     const sorted = [...filtered].sort((a, b) => {
       let va: number | string = 0;
       let vb: number | string = 0;
@@ -217,6 +281,7 @@ export default function InvoicesPage() {
       if (va > vb) return sortDir === "asc" ? 1 : -1;
       return 0;
     });
+
     return sorted;
   }
 
@@ -235,6 +300,9 @@ export default function InvoicesPage() {
   const isOpeningRef = React.useRef(false);
   const lastPaidIdRef = React.useRef<string | null>(null);
   const redirectOpenedRef = React.useRef(false);
+
+  const searchRef = React.useRef<HTMLInputElement>(null);
+  const [searchBurst, setSearchBurst] = React.useState(0);
 
   const stopAutoPay = React.useCallback(() => {
     setAutoPayActive(false);
@@ -615,7 +683,7 @@ export default function InvoicesPage() {
   }
 
   const onDownloadAllCsv = React.useCallback(() => {
-    const csv = buildInvoicesCsv(data.invoices || []);
+    const csv = buildInvoicesCsv(decorateInvoices(data.invoices || []));
     const stamp = new Date().toISOString().slice(0, 10);
     downloadCsvFile(`invoices_${stamp}.csv`, csv);
   }, [data.invoices]);
@@ -742,12 +810,42 @@ export default function InvoicesPage() {
 
         {tab !== 2 && (
           <div className="flex flex-col gap-2 md:flex-row md:items-center">
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search invoice #, SO #, SKU, or display name…"
-              className="h-9 w-full rounded-xl border border-[#BFBFBF] bg-white px-3 text-sm text-[#17152A] shadow-sm outline-none placeholder:text-[#17152A]/45 focus:ring-2 focus:ring-[#8C0F0F]/30 md:w-80"
-            />
+            <div className="relative">
+              <motion.button
+                type="button"
+                onClick={() => searchRef.current?.focus()}
+                whileHover={{ scale: 1.06 }}
+                whileTap={{ scale: 0.92, rotate: -8 }}
+                transition={{ duration: 0.08 }}
+                className="absolute left-2 top-1/2 -translate-y-1/2 grid h-6 w-6 place-items-center rounded-md"
+                aria-label="Focus search"
+                title="Search"
+              >
+                <SearchIcon className="h-4 w-4 text-[#17152A]/70" />
+                <AnimatePresence>
+                  <motion.span
+                    key={`s-ping-${searchBurst}`}
+                    initial={{ scale: 0.7, opacity: 0.25 }}
+                    animate={{ scale: 1.35, opacity: 0 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.22, ease: "easeOut" }}
+                    className="absolute -inset-2 rounded-full border border-[#8C0F0F]/35"
+                  />
+                </AnimatePresence>
+              </motion.button>
+
+              <input
+                ref={searchRef}
+                value={query}
+                onChange={(e) => {
+                  setQuery(e.target.value);
+                  setSearchBurst((k) => k + 1);
+                }}
+                onFocus={() => setSearchBurst((k) => k + 1)}
+                placeholder="Search"
+                className="h-9 w-full max-w-xs md:w-56 md:max-w-none shrink-0 rounded-xl border border-[#BFBFBF] bg-white pl-9 pr-3 text-sm text-[#17152A] shadow-sm outline-none placeholder:text-[#17152A]/45 focus:ring-2 focus:ring-[#8C0F0F]/30"
+              />
+            </div>
             <div className="flex items-center gap-2">
               <select
                 value={sortBy}

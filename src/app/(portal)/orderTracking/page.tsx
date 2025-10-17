@@ -9,9 +9,9 @@ import {
   Copy,
   CircleAlert,
 } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 import { useOrderTracking } from "@/components/providers/OrderTrackingProvider";
 
-/* ---------- utils ---------- */
 function fmtDate(input: string) {
   const d = new Date(input);
   if (isNaN(d.getTime())) return input;
@@ -36,7 +36,6 @@ function extractFulfillmentTracking(ff: {
   return all.length ? all : ["—"];
 }
 
-/* Brand-tinted status pills */
 const tone: Record<string, string> = {
   Shipped: "bg-emerald-50 text-emerald-700 border-emerald-200",
   Picked: "bg-[#FFFFEC] text-[#17152A] border-[#BFBFBF]",
@@ -60,10 +59,10 @@ function StatusBadge({ label }: { label: string }) {
   );
 }
 
-/* ---------- page ---------- */
 export default function OrderTrackingPage() {
   const { loading, error, fulfillments, refresh } = useOrderTracking();
   const [q, setQ] = useState("");
+  const [openMap, setOpenMap] = useState<Record<string, boolean>>({});
 
   const filtered = useMemo(() => {
     if (!q.trim()) return fulfillments;
@@ -126,39 +125,42 @@ export default function OrderTrackingPage() {
     } catch {}
   }, []);
 
+  const toggleOpen = useCallback((id: string | number) => {
+    const key = String(id);
+    setOpenMap((m) => ({ ...m, [key]: !m[key] }));
+  }, []);
+
   return (
     <div className="mx-auto max-w-6xl px-4 pb-16 pt-8">
-      {/* Header */}
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-[#17152A]">
             Order Tracking
           </h1>
-
           <div className="mt-2 h-[3px] w-24 rounded-full bg-gradient-to-r from-[#8C0F0F] to-[#E01C24]" />
         </div>
 
-        <div className="flex items-center gap-2">
-          <div className="relative">
+        <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:items-center">
+          <div className="relative w-full sm:w-80">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#17152A]/40" />
             <input
               type="text"
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Search IF #, product, tracking, status…"
-              className="w-80 rounded-xl border border-[#BFBFBF] bg-white py-2 pl-9 pr-3 text-sm text-[#17152A] outline-none shadow-sm placeholder:text-[#17152A]/45 focus:ring-2 focus:ring-[#8C0F0F]/25"
+              placeholder="Search"
+              className="w-full rounded-xl border border-[#BFBFBF] bg-white py-2 pl-9 pr-3 text-sm text-[#17152A] outline-none shadow-sm placeholder:text-[#17152A]/45 focus:ring-2 focus:ring-[#8C0F0F]/25"
             />
           </div>
           <button
             onClick={refresh}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-[#BFBFBF] bg-white px-3 py-2 text-sm font-semibold text-[#17152A] shadow-sm transition hover:bg-[#FFFFEC] focus-visible:ring-2 focus-visible:ring-[#8C0F0F]/25"
+            className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-[#BFBFBF] bg-white px-3 py-2 text-sm font-semibold text-[#17152A] shadow-sm transition hover:bg-[#FFFFEC] focus-visible:ring-2 focus-visible:ring-[#8C0F0F]/25 sm:w-auto"
           >
-            <RefreshCw className="h-4 w-4" /> Refresh
+            <RefreshCw className="h-4 w-4" />
+            <span className="hidden xs:inline">Refresh</span>
           </button>
         </div>
       </div>
 
-      {/* Stats */}
       <div className="mb-6 grid gap-3 sm:grid-cols-2">
         <StatCard
           title="Shipments"
@@ -172,7 +174,6 @@ export default function OrderTrackingPage() {
         />
       </div>
 
-      {/* Content */}
       {error ? (
         <ErrorState message={error} onRetry={refresh} />
       ) : loading && fulfillments.length === 0 ? (
@@ -188,13 +189,16 @@ export default function OrderTrackingPage() {
                 .filter(Boolean)
             );
             const tracks = extractFulfillmentTracking(ff);
-            const trackLabel =
-              tracks.length > 1 ? "Tracking Numbers" : "Tracking Number";
+            const key = String(ff.id ?? ff.fulfillmentNumber ?? ff.orderNumber);
+            const isOpen = !!openMap[key];
 
             return (
-              <li key={ff.id}>
-                <div className="rounded-2xl border border-[#BFBFBF]/60 bg-white p-0 shadow-sm">
-                  {/* Card header */}
+              <li key={key}>
+                <motion.div
+                  whileHover={{ y: -1 }}
+                  transition={{ type: "spring", stiffness: 500, damping: 35 }}
+                  className="rounded-2xl border border-[#BFBFBF]/60 bg-white p-0 shadow-sm"
+                >
                   <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#BFBFBF]/60 px-5 py-4">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-sm font-extrabold tracking-tight text-[#17152A]">
@@ -208,106 +212,135 @@ export default function OrderTrackingPage() {
                         {fmtDate(ff.shippedAt)}
                       </span>
                     </div>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-2">
                       {statusPills.map((s) => (
                         <StatusBadge key={s} label={s} />
                       ))}
-                    </div>
-                  </div>
-
-                  {/* Tracking */}
-                  <div className="px-5 pb-5 pt-4">
-                    <div className="text-[11px] font-semibold uppercase tracking-wide text-[#17152A]/60">
-                      {trackLabel}
-                    </div>
-                    <div className="mt-1.5 flex flex-wrap gap-2">
-                      {tracks.map((t) => (
-                        <span
-                          key={t}
-                          className="inline-flex items-center gap-2 rounded-lg bg-[#8C0F0F] px-3 py-1.5 text-sm font-mono font-semibold text-white shadow-sm"
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {tracks.map((t) => (
+                          <span
+                            key={t}
+                            className="inline-flex items-center gap-2 rounded-full bg-[#8C0F0F] px-3 py-1.5 text-xs font-mono font-semibold text-white shadow-sm"
+                          >
+                            {t}
+                            {t !== "—" && (
+                              <button
+                                onClick={() => copy(t)}
+                                className="rounded bg-white/10 p-0.5 hover:bg-white/20"
+                                aria-label="Copy tracking number"
+                              >
+                                <Copy className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                          </span>
+                        ))}
+                        <button
+                          onClick={() => toggleOpen(key)}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-[#BFBFBF] bg-white px-2.5 py-1.5 text-sm font-semibold text-[#17152A] shadow-sm transition hover:bg-[#FFFFEC] focus-visible:ring-2 focus-visible:ring-[#8C0F0F]/25"
                         >
-                          {t}
-                          {t !== "—" && (
-                            <button
-                              onClick={() => copy(t)}
-                              className="rounded bg-white/10 p-0.5 hover:bg-white/20"
-                              aria-label="Copy tracking number"
-                            >
-                              <Copy className="h-3.5 w-3.5" />
-                            </button>
-                          )}
-                        </span>
-                      ))}
-                    </div>
-
-                    {/* Items */}
-                    <div className="mt-4 overflow-hidden rounded-xl border border-[#BFBFBF]/60">
-                      <table className="min-w-full divide-y divide-[#BFBFBF]/60">
-                        <thead className="bg-[#FFFFEC]">
-                          <tr>
-                            <Th>SKU</Th>
-                            <Th>Product</Th>
-                            <Th>Comments</Th> {/* NEW */}
-                            <Th className="text-right">Qty</Th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 bg-white">
-                          {(ff.items || []).map((it: any, idx: number) => (
-                            <tr
-                              key={`${ff.id}-${it.sku}-${idx}`}
-                              className="hover:bg-black/[0.02]"
-                            >
-                              <Td>
-                                <code className="rounded bg-black/[0.06] px-1.5 py-0.5 text-[12px] text-[#17152A]">
-                                  {it.sku}
-                                </code>
-                              </Td>
-
-                              <Td>
-                                <div
-                                  className="max-w-[52ch] truncate text-sm text-[#17152A]"
-                                  title={it.productName}
-                                >
-                                  {it.productName}
-                                </div>
-                              </Td>
-
-                              <Td>
-                                {Array.isArray(it.comments) &&
-                                it.comments.length > 0 ? (
-                                  <div className="flex max-w-[60ch] flex-wrap gap-1.5">
-                                    {it.comments.map((c: string, i: number) => (
-                                      <span
-                                        key={`${it.sku}-c-${i}`}
-                                        title={c}
-                                        className="truncate rounded-md border border-[#BFBFBF]/60 bg-[#FFFFEC] px-1.5 py-0.5 text-[12px] text-[#17152A] max-w-[28ch]"
-                                      >
-                                        {c}
-                                      </span>
-                                    ))}
-                                  </div>
-                                ) : (
-                                  <span className="text-[#17152A]/50">—</span>
-                                )}
-                              </Td>
-
-                              <Td className="text-right font-semibold text-[#17152A]">
-                                {it.quantity}
-                              </Td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                          <span>Items</span>
+                          <motion.span
+                            animate={{ rotate: isOpen ? 180 : 0 }}
+                            transition={{
+                              type: "spring",
+                              stiffness: 500,
+                              damping: 30,
+                            }}
+                            className="inline-block"
+                          >
+                            ▼
+                          </motion.span>
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
+
+                  <div className="px-5 pb-5 pt-4">
+                    <AnimatePresence initial={false}>
+                      {isOpen && (
+                        <motion.div
+                          key="items"
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: "auto", opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{
+                            duration: 0.25,
+                            ease: [0.2, 0.8, 0.2, 1],
+                          }}
+                          className="mt-4 overflow-hidden"
+                        >
+                          <div className="rounded-xl border border-[#BFBFBF]/60 overflow-x-auto">
+                            <table className="min-w-[720px] w-full divide-y divide-[#BFBFBF]/60">
+                              <thead className="bg-[#FFFFEC]">
+                                <tr>
+                                  <Th>SKU</Th>
+                                  <Th>Product</Th>
+                                  <Th>Comments</Th>
+                                  <Th className="text-right">Qty</Th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 bg-white">
+                                {(ff.items || []).map(
+                                  (it: any, idx: number) => (
+                                    <tr
+                                      key={`${key}-${it.sku}-${idx}`}
+                                      className="hover:bg-black/[0.02]"
+                                    >
+                                      <Td>
+                                        <code className="rounded bg-black/[0.06] px-1.5 py-0.5 text-[12px] text-[#17152A]">
+                                          {it.sku}
+                                        </code>
+                                      </Td>
+                                      <Td>
+                                        <div
+                                          className="max-w-[52ch] truncate text-sm text-[#17152A]"
+                                          title={it.productName}
+                                        >
+                                          {it.productName}
+                                        </div>
+                                      </Td>
+                                      <Td>
+                                        {Array.isArray(it.comments) &&
+                                        it.comments.length > 0 ? (
+                                          <div className="flex max-w-[60ch] flex-wrap gap-1.5">
+                                            {it.comments.map(
+                                              (c: string, i: number) => (
+                                                <span
+                                                  key={`${it.sku}-c-${i}`}
+                                                  title={c}
+                                                  className="truncate rounded-md border border-[#BFBFBF]/60 bg-[#FFFFEC] px-1.5 py-0.5 text-[12px] text-[#17152A] max-w=[28ch]"
+                                                >
+                                                  {c}
+                                                </span>
+                                              )
+                                            )}
+                                          </div>
+                                        ) : (
+                                          <span className="text-[#17152A]/50">
+                                            —
+                                          </span>
+                                        )}
+                                      </Td>
+                                      <Td className="text-right font-semibold text-[#17152A]">
+                                        {it.quantity}
+                                      </Td>
+                                    </tr>
+                                  )
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                </motion.div>
               </li>
             );
           })}
         </ul>
       )}
 
-      {/* mini toast while background refresh adds more rows */}
       {loading && fulfillments.length > 0 && (
         <div className="fixed top-20 left-1/2 z-[60] -translate-x-1/2">
           <div className="flex items-center gap-2 rounded-full border border-[#BFBFBF] bg-white/95 px-4 py-2 text-sm font-medium text-[#17152A] shadow-lg">
@@ -320,7 +353,6 @@ export default function OrderTrackingPage() {
   );
 }
 
-/* ---------- subcomponents ---------- */
 function Th({
   children,
   className = "",
