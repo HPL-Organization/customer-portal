@@ -9,6 +9,7 @@ import React, {
   useState,
 } from "react";
 import { useCustomerBootstrap } from "./CustomerBootstrap";
+import { fetchWithLimit } from "@/lib/net/limit";
 
 export type TrackingDetail = {
   number: string;
@@ -145,9 +146,10 @@ export default function OrderTrackingProvider({
     setLoading(true);
     setError(null);
     try {
-      const r = await fetch(
+      const r = await fetchWithLimit(
         `/api/netsuite/fulfillments?customerId=${encodeURIComponent(nsId)}`,
-        { cache: "no-store", signal }
+        { cache: "no-store", signal },
+        { maxConcurrent: 1, retries: 3 }
       );
       const text = await r.text();
       const data = text ? JSON.parse(text) : {};

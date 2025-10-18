@@ -17,6 +17,8 @@ import type {
   InvoicePayment,
 } from "@/lib/types/billing";
 
+import { fetchWithLimit } from "@/lib/net/limit";
+
 type BillingState = {
   loading: boolean;
   error?: string | null;
@@ -173,12 +175,10 @@ export default function BillingProvider({
     setLoading(true);
     setError(null);
     try {
-      const r = await fetch(
+      const r = await fetchWithLimit(
         `/api/netsuite/invoices?customerId=${encodeURIComponent(nsId)}`,
-        {
-          cache: "no-store",
-          signal,
-        }
+        { cache: "no-store", signal },
+        { maxConcurrent: 1, retries: 3 }
       );
       if (!r.ok) {
         const msg = await r.text();
@@ -212,11 +212,12 @@ export default function BillingProvider({
     }
     setOverrideLoading(true);
     try {
-      const r = await fetch(
+      const r = await fetchWithLimit(
         `/api/netsuite/check-live-event-override?customerId=${encodeURIComponent(
           nsId
         )}`,
-        { cache: "no-store", signal }
+        { cache: "no-store", signal },
+        { maxConcurrent: 1, retries: 3 }
       );
       const j = await r.json().catch(() => ({}));
       if (!r.ok)

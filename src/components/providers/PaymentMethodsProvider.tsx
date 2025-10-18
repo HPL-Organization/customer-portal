@@ -9,6 +9,7 @@ import React, {
   useState,
 } from "react";
 import { useCustomerBootstrap } from "./CustomerBootstrap";
+import { fetchWithLimit } from "@/lib/net/limit";
 
 export type PaymentMethod = {
   id: string | number;
@@ -72,12 +73,16 @@ async function fetchPaymentMethods(
   customerId: number
 ): Promise<PaymentMethod[]> {
   try {
-    const res = await fetch(`/api/netsuite/get-payment-method`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ customerInternalId: Number(customerId) }),
-      cache: "no-store",
-    });
+    const res = await fetchWithLimit(
+      `/api/netsuite/get-payment-method`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ customerInternalId: Number(customerId) }),
+        cache: "no-store",
+      },
+      { maxConcurrent: 1, retries: 3 }
+    );
     const text = await res.text();
     let data: any;
     try {
