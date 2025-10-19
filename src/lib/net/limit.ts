@@ -1,53 +1,153 @@
-//  in-tab concurrency limiter + 429 backoff for NetSuite-bound routes
-let active = 0;
-const waiters: Array<() => void> = [];
+// src/lib/net/limit.ts
+// Cross-tab aware limiter + coalescing + robust 429/503
+
+type Key = string;
+function toKey(input: RequestInfo | URL, init?: RequestInit): Key {
+  const u =
+    typeof input === "string"
+      ? input
+      : (input as URL)?.toString
+      ? (input as URL).toString()
+      : String(input);
+  const m = (init?.method ?? "GET").toUpperCase();
+  const b = typeof init?.body === "string" ? init.body : "";
+  return `${m} ${u} :: ${b}`;
+}
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-async function withLimit<T>(fn: () => Promise<T>, max = 1): Promise<T> {
-  if (active >= max) {
-    await new Promise<void>((resolve) => waiters.push(resolve));
-  }
-  active++;
-  try {
-    return await fn();
-  } finally {
-    active--;
-    const next = waiters.shift();
-    if (next) next();
-  }
+const CHANNEL = "ns-fetch-gate-v1";
+const bc =
+  typeof window !== "undefined" && "BroadcastChannel" in window
+    ? new BroadcastChannel(CHANNEL)
+    : null;
+
+let localLocked = false;
+let waitingResolvers: Array<() => void> = [];
+let warnedMaxConcurrent = false;
+
+function notifyRelease() {
+  if (bc) bc.postMessage({ type: "release" });
+  const next = waitingResolvers.shift();
+  if (next) next();
 }
 
-/**
- * Wraps fetch so calls are serialized and 429s are retried with jittered backoff.
- * - maxConcurrent: how many requests at once (default 1)
- * - retries: how many retries on 429/503 (default 3)
- */
+bc?.addEventListener?.("message", (ev: MessageEvent) => {
+  const msg = ev.data;
+  if (msg?.type === "release") {
+    const next = waitingResolvers.shift();
+    if (next) next();
+  }
+});
+
+async function acquireGate() {
+  if (!localLocked) {
+    localLocked = true;
+    return () => {
+      localLocked = false;
+      notifyRelease();
+    };
+  }
+  await new Promise<void>((resolve) => waitingResolvers.push(resolve));
+  localLocked = true;
+  return () => {
+    localLocked = false;
+    notifyRelease();
+  };
+}
+
+const inflight = new Map<Key, Promise<Response>>();
+
+function parseRetryAfterSeconds(res: Response): number | null {
+  const ra = res.headers.get("retry-after");
+  if (!ra) return null;
+  const n = Number(ra);
+  if (!Number.isNaN(n) && n >= 0) return n;
+  return null;
+}
+
+function jitter(ms: number) {
+  const delta = Math.floor(ms * 0.15);
+  return ms + Math.floor(Math.random() * (2 * delta + 1)) - delta;
+}
+
 export async function fetchWithLimit(
   input: RequestInfo | URL,
   init?: RequestInit,
-  opts?: { maxConcurrent?: number; retries?: number }
+  opts?: {
+    retries?: number;
+    maxWaitMs?: number;
+    baseMs?: number;
+    coalesce?: boolean;
+    maxConcurrent?: number;
+  }
 ): Promise<Response> {
-  const maxConcurrent = opts?.maxConcurrent ?? 1;
-  const retries = opts?.retries ?? 3;
+  const retries = opts?.retries ?? 4;
+  const maxWaitMs = opts?.maxWaitMs ?? 6000;
+  const baseMs = opts?.baseMs ?? 300;
+  const coalesce = opts?.coalesce ?? true;
 
-  return withLimit<Response>(async () => {
-    let attempt = 0;
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      const res = await fetch(input, init);
-      if (res.status !== 429 && res.status !== 503) return res;
+  if (
+    process.env.NODE_ENV !== "production" &&
+    typeof opts?.maxConcurrent === "number" &&
+    opts.maxConcurrent > 1 &&
+    !warnedMaxConcurrent
+  ) {
+    warnedMaxConcurrent = true;
+    // eslint-disable-next-line no-console
+    console.warn(
+      "[fetchWithLimit] maxConcurrent > 1 is ignored; requests are serialized cross-tab."
+    );
+  }
 
-      if (attempt >= retries) return res;
-      attempt++;
+  const key = coalesce ? toKey(input, init) : `${Math.random()}`;
 
-      const retryAfter = Number(res.headers.get("retry-after")) || 0;
-      const base =
-        retryAfter > 0 ? retryAfter * 1000 : 300 * 2 ** (attempt - 1);
-      const jitter = Math.floor(Math.random() * 200);
-      await sleep(base + jitter);
+  if (coalesce && inflight.has(key)) {
+    return inflight.get(key)!;
+  }
+
+  const exec = (async () => {
+    const release = await acquireGate();
+    try {
+      let attempt = 0;
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const res = await fetch(input as any, init as any);
+
+        if (res.status !== 429 && res.status !== 503) {
+          return res;
+        }
+
+        if (attempt >= retries) {
+          return res;
+        }
+        attempt++;
+
+        const ra = parseRetryAfterSeconds(res);
+        if (ra != null) {
+          await sleep(jitter(Math.min(ra * 1000, maxWaitMs)));
+          continue;
+        }
+
+        const wait = Math.min(baseMs * 2 ** (attempt - 1), maxWaitMs);
+        await sleep(jitter(wait));
+      }
+    } finally {
+      release();
     }
-  }, maxConcurrent);
+  })();
+
+  if (coalesce) {
+    inflight.set(key, exec);
+    try {
+      const r = await exec;
+      return r;
+    } finally {
+      inflight.delete(key);
+    }
+  } else {
+    return exec;
+  }
 }
