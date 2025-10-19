@@ -12,7 +12,7 @@ const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-type Mode = "signin" | "signup";
+type Mode = "signin" | "signup" | "admin";
 
 export default function LoginPage() {
   return (
@@ -51,6 +51,8 @@ function LoginInner() {
   );
   const [resending, setResending] = useState(false);
   const [resendMsg, setResendMsg] = useState<string | null>(null);
+
+  const [adminTargetNsId, setAdminTargetNsId] = useState("");
 
   async function provisionAndRedirect() {
     await supabase.auth.getSession();
@@ -235,6 +237,43 @@ function LoginInner() {
     return /[^A-Za-z0-9]/.test(s);
   }
 
+  async function onAdminLogin(e: React.FormEvent) {
+    e.preventDefault();
+    setErrorMsg(null);
+    setInfoMsg(null);
+    if (!adminTargetNsId.trim()) {
+      setErrorMsg("Enter a NetSuite Customer ID.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const r = await fetch("/api/admin/impersonate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: email.trim(),
+          password,
+          nsId: adminTargetNsId.trim(),
+        }),
+      });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        throw new Error(j?.error || "Unauthorized");
+      }
+      const origin =
+        typeof window !== "undefined" ? window.location.origin : "";
+      const url = new URL(next, origin || "http://localhost");
+      url.searchParams.set("nsId", adminTargetNsId.trim());
+      if (typeof window !== "undefined")
+        localStorage.setItem("nsId", adminTargetNsId.trim());
+      window.location.replace(url.pathname + url.search);
+    } catch (err: any) {
+      setErrorMsg(err?.message || "Admin sign-in failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   const googleDisabled =
     googleLoading ||
     (mode === "signup" && (!firstName.trim() || !lastName.trim()));
@@ -248,15 +287,9 @@ function LoginInner() {
         <section className="relative hidden items-center p-6 lg:flex">
           <div className="absolute -left-8 top-12 -z-10 h-44 w-44 rounded-full bg-[#E01C24]/20 blur-2xl" />
           <div className="max-w-xl">
-            {/* <div className="mb-5 inline-flex items-center gap-2 rounded-full bg-white/90 px-3 py-1 text-xs text-slate-800 ring-1 ring-slate-200">
-              <span>Customer Portal</span>
-              <span className="h-1 w-1 rounded-full bg-slate-400" />
-              <span>Lapidary & Rock Supply</span>
-            </div> */}
             <h1 className="text-4xl sm:text-5xl font-semibold leading-tight text-slate-900">
               Welcome to the Highland Park Customer Portal!
             </h1>
-
             <div className="mt-6 space-y-4 text-[15px] leading-relaxed text-slate-800">
               <p>
                 Your Portal Account only takes a moment and once you're signed
@@ -275,12 +308,6 @@ function LoginInner() {
                 through the Portal making it easy to get into the Events.
               </p>
             </div>
-
-            {/* <div className="mt-8 grid grid-cols-3 gap-3 text-center">
-              <FeaturePill title="Secure" subtitle="Encrypted Auth" />
-              <FeaturePill title="Fast" subtitle="Realtime data" />
-              <FeaturePill title="Synced" subtitle="with Oracle" />
-            </div> */}
           </div>
         </section>
 
@@ -303,7 +330,7 @@ function LoginInner() {
                   Portal Access
                 </span>
               </div>
-              <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 ring-1 ring-slate-200">
+              <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1 ring-1 ring-slate-200">
                 <button
                   onClick={() => {
                     setMode("signin");
@@ -333,6 +360,21 @@ function LoginInner() {
                   }`}
                 >
                   Sign Up
+                </button>
+                <button
+                  onClick={() => {
+                    setMode("admin");
+                    setErrorMsg(null);
+                    setInfoMsg(null);
+                    setConfirmBannerEmail(null);
+                  }}
+                  className={`rounded-lg px-3 py-1 text-xs transition ${
+                    mode === "admin"
+                      ? "bg-slate-900 text-white"
+                      : "text-slate-700 hover:text-slate-900"
+                  }`}
+                >
+                  Admin
                 </button>
               </div>
             </div>
@@ -382,32 +424,147 @@ function LoginInner() {
               </div>
             )}
 
-            <AuthForm
-              mode={mode}
-              setMode={setMode}
-              email={email}
-              setEmail={setEmail}
-              password={password}
-              setPassword={setPassword}
-              showPass={showPass}
-              setShowPass={setShowPass}
-              firstName={firstName}
-              middleName={middleName}
-              lastName={lastName}
-              setFirstName={setFirstName}
-              setMiddleName={setMiddleName}
-              setLastName={setLastName}
-              loading={loading}
-              onSignin={onSignin}
-              onSignup={onSignup}
-              errorMsg={errorMsg}
-              infoMsg={infoMsg}
-              googleDisabled={googleLoading}
-              googleLoading={googleLoading}
-              continueWithGoogle={continueWithGoogle}
-              sendMagicLink={sendMagicLink}
-              resetPassword={resetPassword}
-            />
+            {mode !== "admin" ? (
+              <AuthForm
+                mode={mode}
+                setMode={setMode}
+                email={email}
+                setEmail={setEmail}
+                password={password}
+                setPassword={setPassword}
+                showPass={showPass}
+                setShowPass={setShowPass}
+                firstName={firstName}
+                middleName={middleName}
+                lastName={lastName}
+                setFirstName={setFirstName}
+                setMiddleName={setMiddleName}
+                setLastName={setLastName}
+                loading={loading}
+                onSignin={onSignin}
+                onSignup={onSignup}
+                errorMsg={errorMsg}
+                infoMsg={infoMsg}
+                googleDisabled={googleLoading}
+                googleLoading={googleLoading}
+                continueWithGoogle={continueWithGoogle}
+                sendMagicLink={sendMagicLink}
+                resetPassword={resetPassword}
+              />
+            ) : (
+              <form onSubmit={onAdminLogin} className="space-y-4">
+                <div>
+                  <label className="mb-2 block text-xs font-medium tracking-wide text-slate-700">
+                    Admin email
+                  </label>
+                  <div className="relative">
+                    <span className="pointer-events-none absolute left-3 top-2.5 text-slate-400">
+                      <svg viewBox="0 0 24 24" className="h-4 w-4">
+                        <path
+                          fill="currentColor"
+                          d="M20 4H4a2 2 0 00-2 2v1l10 6 10-6V6a2 2 0 00-2-2zm0 6.5l-8 4.8-8-4.8V18a2 2 0 002 2h12a2 2 0 002-2v-7.5z"
+                        />
+                      </svg>
+                    </span>
+                    <input
+                      type="email"
+                      required
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="w-full rounded-xl border border-slate-300 bg-white px-9 py-2 text-sm text-slate-900 placeholder-slate-400 outline-none ring-0 transition focus:border-slate-400"
+                      placeholder="admin@example.com"
+                      autoComplete="email"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-xs font-medium tracking-wide text-slate-700">
+                    Admin password
+                  </label>
+                  <div className="relative">
+                    <span className="pointer-events-none absolute left-3 top-2.5 text-slate-400">
+                      <svg viewBox="0 0 24 24" className="h-4 w-4">
+                        <path
+                          fill="currentColor"
+                          d="M12 17a2 2 0 002-2v-2a2 2 0 00-4 0v2a2 2 0 002 2zm6-6h-1V9a5 5 0 00-10 0v2H6a2 2 0 00-2 2v7a2 2 0 002 2h12a2 2 0 002-2v-7a2 2 0 00-2-2z"
+                        />
+                      </svg>
+                    </span>
+                    <input
+                      type={showPass ? "text" : "password"}
+                      required
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="w-full rounded-xl border border-slate-300 bg-white px-9 py-2 pr-10 text-sm text-slate-900 placeholder-slate-400 outline-none ring-0 transition focus:border-slate-400"
+                      placeholder="Admin password"
+                      autoComplete="current-password"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPass((s) => !s)}
+                      className="absolute right-3 top-2.5 text-slate-600 hover:text-slate-900"
+                      aria-label="Toggle password visibility"
+                    >
+                      {showPass ? (
+                        <svg viewBox="0 0 24 24" className="h-4 w-4">
+                          <path
+                            fill="currentColor"
+                            d="M12 5c-7 0-10 7-10 7s3 7 10 7 10-7 10-7-3-7-10-7zm0 12a5 5 0 115-5 5 5 0 01-5 5z"
+                          />
+                          <path
+                            fill="currentColor"
+                            d="M3 3l18 18-1.5 1.5L1.5 4.5 3 3z"
+                          />
+                        </svg>
+                      ) : (
+                        <svg viewBox="0 0 24 24" className="h-4 w-4">
+                          <path
+                            fill="currentColor"
+                            d="M12 5c-7 0-10 7-10 7s3 7 10 7 10-7 10-7-3-7-10-7zm0 12a5 5 0 115-5 5 5 0 01-5 5z"
+                          />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-xs font-medium tracking-wide text-slate-700">
+                    NetSuite Customer ID
+                  </label>
+                  <input
+                    required
+                    value={adminTargetNsId}
+                    onChange={(e) => setAdminTargetNsId(e.target.value)}
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm text-slate-900 placeholder-slate-400 outline-none ring-0 transition focus:border-slate-400"
+                    placeholder="e.g. 12345"
+                  />
+                </div>
+
+                {errorMsg && (
+                  <div className="rounded-xl border border-red-500/30 bg-red-50 px-4 py-2 text-sm text-red-700">
+                    {errorMsg}
+                  </div>
+                )}
+                {infoMsg && (
+                  <div className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm text-emerald-800">
+                    {infoMsg}
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="group inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-black disabled:opacity-60"
+                >
+                  <span>{loading ? "Signing in…" : "Admin sign"}</span>
+                  <span className="transition-transform group-hover:translate-x-0.5">
+                    →
+                  </span>
+                </button>
+              </form>
+            )}
 
             <p className="mt-8 text-center text-[11px] leading-relaxed text-slate-500">
               By continuing you agree to our Terms & Privacy.
@@ -694,7 +851,6 @@ function AuthForm(props: {
         <span>{mode === "signup" ? "Continue with Google" : "Sign in with Google"}</span>
       </button>
       */}
-
       {mode === "signin" && (
         <div className="mt-6 space-y-3 text-sm">
           <button

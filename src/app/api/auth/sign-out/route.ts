@@ -28,6 +28,13 @@ export async function POST(_req: NextRequest) {
   );
 
   await supabase.auth.signOut({ scope: "global" });
+
+  const secure = process.env.NODE_ENV === "production";
+  const base = { path: "/", sameSite: "lax" as const, httpOnly: true, secure };
+
+  res.cookies.set({ name: "imp", value: "", maxAge: 0, ...base });
+  res.cookies.set({ name: "nsId", value: "", maxAge: 0, ...base });
+
   res.headers.set("Cache-Control", "no-store");
   return res;
 }

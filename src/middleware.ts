@@ -1,4 +1,3 @@
-// src/middleware.ts
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
@@ -7,6 +6,12 @@ const PROTECTED_PREFIX = "/";
 
 export async function middleware(req: NextRequest) {
   if (!req.nextUrl.pathname.startsWith(PROTECTED_PREFIX)) {
+    return NextResponse.next();
+  }
+
+  const imp = req.cookies.get("imp")?.value;
+  const cookieNsId = req.cookies.get("nsId")?.value;
+  if (imp === "1" && cookieNsId) {
     return NextResponse.next();
   }
 
@@ -36,7 +41,7 @@ export async function middleware(req: NextRequest) {
   if (!user) {
     const url = req.nextUrl.clone();
     url.pathname = "/login";
-    url.searchParams.set("next", req.nextUrl.pathname);
+    url.searchParams.set("next", req.nextUrl.pathname + req.nextUrl.search);
     return NextResponse.redirect(url);
   }
 
