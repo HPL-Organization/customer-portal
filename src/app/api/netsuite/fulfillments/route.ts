@@ -1,15 +1,37 @@
 "use server";
 
 import { NextRequest } from "next/server";
-import axios from "axios";
-import { getValidToken } from "../../../../lib/netsuite/token";
+import { createClient } from "@supabase/supabase-js";
 
-const NS_ENV = process.env.NETSUITE_ENV?.toLowerCase() || "prod";
-const isSB = NS_ENV === "sb";
-const NETSUITE_ACCOUNT_ID = isSB
-  ? process.env.NETSUITE_ACCOUNT_ID_SB!
-  : process.env.NETSUITE_ACCOUNT_ID!;
-const BASE_URL = `https://${NETSUITE_ACCOUNT_ID}.suitetalk.api.netsuite.com/services/rest`;
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+
+type TrackingDetail = { number: string; carrier: string; url: string };
+
+type FulfillmentRow = {
+  fulfillment_id: number;
+  tran_id: string | null;
+  trandate: string | null;
+  customer_id: number | null;
+  ship_status: string | null;
+  status: string | null;
+  created_from_so_id: number | null;
+  created_from_so_tranid: string | null;
+  tracking: string | null;
+  tracking_urls: string[] | null;
+  tracking_details: TrackingDetail[] | null;
+};
+
+type FulfillmentLineRow = {
+  fulfillment_id: number;
+  line_no: number;
+  item_id: number | null;
+  item_sku: string | null;
+  item_display_name: string | null;
+  quantity: number;
+  serial_numbers: string[] | null;
+  comments: string[] | null;
+};
 
 export async function GET(req: NextRequest) {
   const customerId = req.nextUrl.searchParams.get("customerId");
@@ -27,219 +49,134 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const token = await getValidToken();
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
-    const fulfillmentQuery = `
-      SELECT
-        T.id,
-        T.tranid,
-        T.trandate
-      FROM transaction T
-      WHERE T.type = 'ItemShip'
-        AND T.entity = ${numericId}
-      ORDER BY T.trandate DESC
-    `;
+    const fRes = await supabase
+      .from("fulfillments")
+      .select(
+        "fulfillment_id, tran_id, trandate, customer_id, ship_status, status, created_from_so_id, created_from_so_tranid, tracking, tracking_urls, tracking_details"
+      )
+      .eq("customer_id", numericId)
+      .order("trandate", { ascending: false });
 
-    const fulfillmentRes = await axios.post(
-      `${BASE_URL}/query/v1/suiteql`,
-      { q: fulfillmentQuery },
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: "application/json",
-          "Content-Type": "application/json",
-          Prefer: "transient",
-        },
-      }
-    );
+    if (fRes.error) {
+      return new Response(
+        JSON.stringify({ error: "Failed to load fulfillments" }),
+        { status: 500 }
+      );
+    }
 
-    const uniqueFulfillments = Array.from(
-      new Map(
-        (fulfillmentRes.data?.items ?? []).map((it: any) => [it.id, it])
-      ).values()
-    );
+    const ffsData = (fRes.data ?? []) as any[];
+    if (ffsData.length === 0) {
+      return new Response(JSON.stringify({ fulfillments: [] }), {
+        status: 200,
+      });
+    }
 
-    const fulfillmentsWithItems = await Promise.all(
-      uniqueFulfillments.map(async (ff: any) => {
-        const lineItemQuery = `
-  SELECT
-    TL.transaction AS fulfillmentid,
-    I.itemid AS itemsku,
-    I.displayname AS itemdisplayname,
-    TL.quantity,
-    TL.custcol_hpl_serialnumber AS serialnumber,
-    TL.custcolns_comment AS comment
-  FROM transactionline TL
-  INNER JOIN item I ON I.id = TL.item
-  WHERE TL.transaction = ${ff.id}
-`;
+    const ffs: FulfillmentRow[] = ffsData.map((r) => ({
+      fulfillment_id: Number(r.fulfillment_id),
+      tran_id: r.tran_id ?? null,
+      trandate: r.trandate ?? null,
+      customer_id: r.customer_id != null ? Number(r.customer_id) : null,
+      ship_status: r.ship_status ?? null,
+      status: r.status ?? null,
+      created_from_so_id:
+        r.created_from_so_id != null ? Number(r.created_from_so_id) : null,
+      created_from_so_tranid: r.created_from_so_tranid ?? null,
+      tracking: r.tracking ?? null,
+      tracking_urls: Array.isArray(r.tracking_urls)
+        ? (r.tracking_urls as string[])
+        : r.tracking_urls ?? null,
+      tracking_details: Array.isArray(r.tracking_details)
+        ? (r.tracking_details as TrackingDetail[])
+        : r.tracking_details ?? null,
+    }));
 
-        const lineRes = await axios.post(
-          `${BASE_URL}/query/v1/suiteql`,
-          { q: lineItemQuery },
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-              Accept: "application/json",
-              "Content-Type": "application/json",
-              Prefer: "transient",
-            },
-          }
-        );
+    const ids = ffs.map((r) => r.fulfillment_id);
 
-        let shipStatus = "";
-        let fulfillmentStatus = "";
-        let tracking = "";
-        let trackingUrls: string[] = [];
-        let trackingDetails: {
-          number: string;
-          carrier: string;
-          url: string;
-        }[] = [];
+    const lRes = await supabase
+      .from("fulfillment_lines")
+      .select(
+        "fulfillment_id, line_no, item_id, item_sku, item_display_name, quantity, serial_numbers, comments"
+      )
+      .in("fulfillment_id", ids)
+      .order("line_no", { ascending: true });
 
-        let salesOrderId: string | number | null = null;
-        let salesOrderTranId: string | null = null;
+    if (lRes.error) {
+      return new Response(
+        JSON.stringify({ error: "Failed to load fulfillment lines" }),
+        { status: 500 }
+      );
+    }
 
-        try {
-          const detailRes = await axios.get(
-            `${BASE_URL}/record/v1/itemFulfillment/${ff.id}?expandSubResources=true`,
-            {
-              headers: {
-                Authorization: `Bearer ${token}`,
-                Accept: "application/json",
-              },
-            }
-          );
+    const linesData = (lRes.data ?? []) as any[];
+    const lines: FulfillmentLineRow[] = linesData.map((ln) => ({
+      fulfillment_id: Number(ln.fulfillment_id),
+      line_no: Number(ln.line_no),
+      item_id: ln.item_id != null ? Number(ln.item_id) : null,
+      item_sku: ln.item_sku ?? null,
+      item_display_name: ln.item_display_name ?? null,
+      quantity: Number(ln.quantity ?? 0),
+      serial_numbers: Array.isArray(ln.serial_numbers)
+        ? (ln.serial_numbers as string[])
+        : ln.serial_numbers ?? null,
+      comments: Array.isArray(ln.comments)
+        ? (ln.comments as string[])
+        : ln.comments ?? null,
+    }));
 
-          const d = detailRes.data || {};
-          shipStatus = d.shipStatus?.refName || "";
-          fulfillmentStatus = d.status?.refName || "";
+    const linesByFid = new Map<number, FulfillmentLineRow[]>();
+    for (const ln of lines) {
+      const fid = ln.fulfillment_id;
+      if (!linesByFid.has(fid)) linesByFid.set(fid, []);
+      linesByFid.get(fid)!.push(ln);
+    }
 
-          const cf = extractCreatedFrom(d);
-          if (cf.id != null) salesOrderId = cf.id;
-          if (cf.tranId) salesOrderTranId = cf.tranId;
+    const fulfillmentsWithItems = ffs.map((ff) => {
+      const fid = ff.fulfillment_id;
+      const orderNumber = normalizeSOTranId(ff.created_from_so_tranid);
+      const fulfillmentNumber = ff.tran_id ?? "";
+      const number = orderNumber
+        ? `${orderNumber} • ${fulfillmentNumber}`
+        : fulfillmentNumber;
 
-          const carrierFromRecord = extractCarrierName(d);
-          const packagesRaw =
-            d.packageList?.packages ?? d.packageList ?? d.packages ?? [];
-          const pkgs = Array.isArray(packagesRaw)
-            ? packagesRaw
-            : [packagesRaw].filter(Boolean);
+      const childLines = linesByFid.get(fid) || [];
+      const items = childLines.map((ln) => ({
+        sku: ln.item_sku ?? null,
+        productName: ln.item_display_name ?? ln.item_sku ?? null,
+        quantity: Math.abs(Number(ln.quantity ?? 0)),
+        serialNumbers: Array.from(
+          new Set((ln.serial_numbers ?? []) as string[])
+        ),
+        comments: Array.from(new Set((ln.comments ?? []) as string[])),
+        tracking: ff.tracking ?? null,
+      }));
 
-          const numbers: string[] = [];
-          for (const pkg of pkgs) {
-            const num =
-              pkg?.packageTrackingNumber ||
-              pkg?.trackingNumber ||
-              pkg?.packageTrackingNo ||
-              "";
-            if (num) numbers.push(String(num));
-          }
-          if (!numbers.length) numbers.push(...collectTrackingStrings(d));
+      const trackingUrls = (ff.tracking_urls ?? []) as string[];
+      const trackingDetails = (ff.tracking_details ?? []) as TrackingDetail[];
 
-          const details = numbers.map((num) => {
-            const pkg = pkgForNumber(pkgs, num);
-            const carrier =
-              carrierFromRecord ||
-              carrierFromPackage(pkg) ||
-              inferCarrierFromNumber(num) ||
-              "";
-            const url = pkgTrackingUrl(pkg) || buildTrackingUrl(carrier, num);
-            return { number: num, carrier, url };
-          });
-
-          trackingDetails = dedupeDetails(details);
-          tracking = trackingDetails.map((p) => p.number).join(", ");
-          trackingUrls = trackingDetails.map((p) => p.url);
-        } catch (e: any) {
-          console.warn(
-            `itemFulfillment ${ff.id} detail fetch failed`,
-            e?.response?.data || e?.message
-          );
-        }
-
-        if (salesOrderId && !salesOrderTranId) {
-          try {
-            const soTranId = await fetchTranIdById(token, salesOrderId);
-            if (soTranId) salesOrderTranId = soTranId;
-          } catch (_) {}
-        }
-
-        const grouped = new Map<
-          string,
-          {
-            sku: string;
-            productName: string;
-            quantity: number;
-            serialNumbers: string[];
-            comments: string[];
-          }
-        >();
-
-        for (const line of lineRes.data?.items ?? []) {
-          const key = `${line.itemsku}::${line.itemdisplayname}`;
-          const serial =
-            line.serialnumber ??
-            line.SerialNumber ??
-            line.custcol_hpl_serialnumber ??
-            null;
-          const comment = line.comment ?? line.custcolns_comment ?? null;
-
-          if (!grouped.has(key)) {
-            grouped.set(key, {
-              sku: line.itemsku,
-              productName: line.itemdisplayname,
-              quantity: Math.abs(parseFloat(line.quantity ?? 0)),
-              serialNumbers: serial ? [String(serial)] : [],
-              comments: comment ? [String(comment)] : [],
-            });
-          } else {
-            const g = grouped.get(key)!;
-            g.quantity += Math.abs(parseFloat(line.quantity ?? 0));
-            if (serial) g.serialNumbers.push(String(serial));
-            if (comment) g.comments.push(String(comment));
-          }
-        }
-
-        // --- Order-first display fields ---
-        const orderNumber = normalizeSOTranId(salesOrderTranId);
-        const fulfillmentNumber = ff.tranid;
-        const number = orderNumber
-          ? `${orderNumber} • ${fulfillmentNumber}`
-          : fulfillmentNumber;
-        const items = Array.from(grouped.values()).map((x) => ({
-          ...x,
-          serialNumbers: Array.from(new Set(x.serialNumbers)),
-          comments: Array.from(new Set(x.comments)),
-          tracking,
-        }));
-        return {
-          id: ff.id,
-          number, // e.g., "SO-521210 • IF-556"
-          orderNumber, // e.g., "SO-521210"
-          fulfillmentNumber, // e.g., "IF-556"
-          shippedAt: ff.trandate,
-          shipStatus,
-          status: fulfillmentStatus,
-          tracking,
-          trackingUrls,
-          trackingDetails,
-          salesOrderId: salesOrderId ?? null,
-          salesOrderTranId: salesOrderTranId ?? null,
-          items,
-        };
-      })
-    );
+      return {
+        id: fid,
+        number,
+        orderNumber,
+        fulfillmentNumber,
+        shippedAt: ff.trandate,
+        shipStatus: ff.ship_status ?? "",
+        status: ff.status ?? "",
+        tracking: ff.tracking ?? "",
+        trackingUrls,
+        trackingDetails,
+        salesOrderId: ff.created_from_so_id ?? null,
+        salesOrderTranId: ff.created_from_so_tranid ?? null,
+        items,
+      };
+    });
 
     return new Response(
       JSON.stringify({ fulfillments: fulfillmentsWithItems }),
       { status: 200 }
     );
-  } catch (error: any) {
-    console.error(
-      "Failed to fetch fulfillments by customer:",
-      error?.response?.data || error?.message
-    );
+  } catch {
     return new Response(
       JSON.stringify({ error: "Failed to fetch fulfillments" }),
       { status: 500 }
@@ -247,181 +184,11 @@ export async function GET(req: NextRequest) {
   }
 }
 
-/* ----------------- helpers ----------------- */
-
-function extractCreatedFrom(d: any): {
-  id: string | number | null;
-  tranId: string;
-} {
-  const cf = d?.createdFrom ?? d?.createdfrom ?? null;
-  const id = (cf && (cf.id ?? cf.refId ?? cf.value)) ?? null;
-  const tranId = (cf && (cf.refName ?? cf.text ?? cf.name)) ?? "";
-  return { id, tranId };
-}
-
-async function fetchTranIdById(
-  token: string,
-  id: string | number
-): Promise<string | null> {
-  const q = `SELECT tranid FROM transaction WHERE id = ${id}`;
-  const res = await axios.post(
-    `${BASE_URL}/query/v1/suiteql`,
-    { q },
-    {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/json",
-        "Content-Type": "application/json",
-        Prefer: "transient",
-      },
-    }
-  );
-  const row = res.data?.items?.[0];
-  return row?.tranid ?? null;
-}
-
 function normalizeSOTranId(raw: string | null): string | null {
   if (!raw) return null;
   const s = String(raw).trim();
   const m = s.match(/\bSO[-\d]+\b/i);
   if (m) return m[0].toUpperCase();
-  return s.replace(/sales\s*order\s*#?/i, "").trim() || s;
-}
-
-function extractCarrierName(d: any): string {
-  const pick = (x: any) =>
-    (x &&
-      typeof x === "object" &&
-      (x.refName || x.text || x.name || x.value)) ||
-    (typeof x === "string" && x) ||
-    "";
-
-  const candidates = [
-    d.shipCarrier,
-    d.shipcarrier,
-    d.shipMethod?.carrier,
-    d.shipmethod?.carrier,
-    d.shipMethod,
-    d.carrier,
-    d.shippingCarrier,
-  ];
-
-  for (const c of candidates) {
-    const v = pick(c);
-    if (v) return String(v).toLowerCase();
-  }
-
-  const packagesRaw =
-    d.packageList?.packages ?? d.packageList ?? d.packages ?? [];
-  const pkgs = Array.isArray(packagesRaw)
-    ? packagesRaw
-    : [packagesRaw].filter(Boolean);
-  for (const p of pkgs) {
-    const v = p?.packageCarrier || p?.carrier || p?.packageShipCarrier;
-    if (v) return String(v).toLowerCase();
-  }
-
-  return "";
-}
-
-function carrierFromPackage(pkg: any): string {
-  if (!pkg) return "";
-  const v =
-    pkg.packageCarrier ||
-    pkg.carrier ||
-    pkg.packageShipCarrier ||
-    pkg.shipCarrier ||
-    pkg.shipMethod?.carrier ||
-    "";
-  return String(v || "").toLowerCase();
-}
-
-function inferCarrierFromNumber(num: string): string {
-  const n = (num || "").replace(/\s+/g, "").toUpperCase();
-  if (/^1Z[0-9A-Z]{16}$/.test(n)) return "ups";
-  if (/^[A-Z]{2}\d{9}US$/.test(n)) return "usps";
-  if (/^\d{20,22}$/.test(n)) {
-    if (/^9\d{19,21}$/.test(n)) return "usps";
-    return "fedex";
-  }
-  if (/^\d{12}$/.test(n) || /^\d{15}$/.test(n)) return "fedex";
-  if (/^\d{10}$/.test(n) || /^JJD\d+$/i.test(n) || /^JVGL\d+$/i.test(n))
-    return "dhl";
-  if (/^C\d{12}$/i.test(n)) return "ontrac";
-  return "";
-}
-
-function buildTrackingUrl(carrier: string, num: string): string {
-  if (!num) return "";
-  const n = encodeURIComponent(num);
-  const c = (carrier || "").toLowerCase();
-  if (c.includes("fedex"))
-    return `https://www.fedex.com/fedextrack/?tracknumbers=${n}`;
-  if (c.includes("ups")) return `https://www.ups.com/track?tracknum=${n}`;
-  if (c.includes("usps"))
-    return `https://tools.usps.com/go/TrackConfirmAction?tLabels=${n}`;
-  if (c.includes("dhl"))
-    return `https://www.dhl.com/global-en/home/tracking.html?tracking-id=${n}`;
-  if (c.includes("ontrac"))
-    return `https://www.ontrac.com/trackingres.asp?tracking_number=${n}`;
-  return `https://www.google.com/search?q=${encodeURIComponent(
-    num + " tracking"
-  )}`;
-}
-
-function pkgForNumber(pkgs: any[], num: string) {
-  if (!Array.isArray(pkgs)) return null;
-  return pkgs.find((p) => {
-    const v =
-      p?.packageTrackingNumber ||
-      p?.trackingNumber ||
-      p?.packageTrackingNo ||
-      "";
-    return String(v).trim() === String(num).trim();
-  });
-}
-
-function pkgTrackingUrl(pkg: any): string {
-  const url =
-    pkg?.packageTrackingUrl ||
-    pkg?.trackingUrl ||
-    pkg?.packageTrackingLink ||
-    "";
-  return url ? String(url) : "";
-}
-
-function collectTrackingStrings(obj: any): string[] {
-  const out = new Set<string>();
-  (function walk(o: any) {
-    if (o && typeof o === "object") {
-      for (const k in o) {
-        const v = o[k];
-        if (
-          k.toLowerCase().includes("tracking") &&
-          typeof v === "string" &&
-          v.trim()
-        ) {
-          out.add(v.trim());
-        } else if (typeof v === "object") {
-          walk(v);
-        }
-      }
-    }
-  })(obj);
-  return Array.from(out);
-}
-
-function dedupeDetails(
-  arr: { number: string; carrier: string; url: string }[]
-): { number: string; carrier: string; url: string }[] {
-  const seen = new Set<string>();
-  const out: typeof arr = [];
-  for (const d of arr) {
-    const key = `${d.number}::${d.carrier || "?"}::${d.url || "?"}`;
-    if (!seen.has(key)) {
-      seen.add(key);
-      out.push(d);
-    }
-  }
-  return out;
+  const cleaned = s.replace(/sales\s*order\s*#?/i, "").trim();
+  return cleaned || s;
 }
