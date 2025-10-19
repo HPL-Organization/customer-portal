@@ -156,9 +156,11 @@ export async function POST(req: NextRequest) {
     .select("*")
     .eq("key", "invoices")
     .maybeSingle();
-  const sinceIso: string =
+  const sinceIsoRaw: string =
     (state?.last_cursor as string | undefined) ??
     new Date(Date.now() - lookbackDays * 86400000).toISOString();
+
+  const sinceIso = new Date(sinceIsoRaw).toISOString();
 
   const token = await getValidToken();
   const headers = {
@@ -210,16 +212,14 @@ export async function POST(req: NextRequest) {
   const changedIds = Array.from(idSet) as number[];
   if (!changedIds.length) {
     if (!dry && !fromParam) {
-      await supabase
-        .from("sync_state")
-        .upsert(
-          {
-            key: "invoices",
-            last_success_at: new Date().toISOString(),
-            last_cursor: new Date().toISOString(),
-          },
-          { onConflict: "key" }
-        );
+      await supabase.from("sync_state").upsert(
+        {
+          key: "invoices",
+          last_success_at: new Date().toISOString(),
+          last_cursor: new Date().toISOString(),
+        },
+        { onConflict: "key" }
+      );
     }
     return new Response(
       JSON.stringify({ scanned: 0, upserted: 0, message: "No changes" }),
@@ -422,16 +422,14 @@ export async function POST(req: NextRequest) {
   }
 
   if (!dry && !fromParam) {
-    await supabase
-      .from("sync_state")
-      .upsert(
-        {
-          key: "invoices",
-          last_success_at: new Date().toISOString(),
-          last_cursor: lastCursor,
-        },
-        { onConflict: "key" }
-      );
+    await supabase.from("sync_state").upsert(
+      {
+        key: "invoices",
+        last_success_at: new Date().toISOString(),
+        last_cursor: lastCursor,
+      },
+      { onConflict: "key" }
+    );
   }
 
   return new Response(
