@@ -22,10 +22,6 @@ const ADMIN_SECRET_HEADER = "x-admin-secret";
 
 type InvoiceId = number;
 
-interface ChangedRow {
-  id: number;
-  lastModified: string;
-}
 interface HeaderRow {
   invoice_id: number;
   tran_id: string | null;
@@ -68,6 +64,7 @@ interface SoLink {
 
 const invoiceUrl = (id: number | string) =>
   `${NS_UI_BASE}/app/accounting/transactions/custinvc.nl?whence=&id=${id}`;
+
 function chunk<T>(arr: T[], size: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
@@ -75,10 +72,7 @@ function chunk<T>(arr: T[], size: number): T[][] {
 }
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function netsuiteQuery(
-  q: string,
-  headers: Record<string, string>
-): Promise<any> {
+async function netsuiteQuery(q: string, headers: Record<string, string>) {
   let attempt = 0;
   const delays = [500, 1000, 2000, 4000, 8000];
   for (;;) {
@@ -92,10 +86,6 @@ async function netsuiteQuery(
       const status = err?.response?.status;
       const code =
         err?.response?.data?.["o:errorDetails"]?.[0]?.["o:errorCode"];
-      const details =
-        err?.response?.data?.["o:errorDetails"]?.[0]?.detail ||
-        err?.response?.data;
-      console.error("SuiteQL error", { status, code, details, q });
       if (status === 429 || code === "CONCURRENCY_LIMIT_EXCEEDED") {
         const d = delays[Math.min(attempt, delays.length - 1)];
         await sleep(d);
@@ -121,10 +111,8 @@ export async function POST(req: NextRequest) {
   const lookbackDays = Number(
     req.nextUrl.searchParams.get("lookbackDays") ?? 90
   );
-  const fromParam = req.nextUrl.searchParams.get("from");
-  const toParam = req.nextUrl.searchParams.get("to");
-
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+
   const { data: profileRows, error: profilesErr } = await supabase
     .from("profiles")
     .select("netsuite_customer_id");
@@ -137,9 +125,10 @@ export async function POST(req: NextRequest) {
     new Set(
       (profileRows || [])
         .map((r: any) => Number(r.netsuite_customer_id))
-        .filter((n) => Number.isFinite(n))
+        .filter(Number.isFinite)
     )
   ) as number[];
+  const customerSet = new Set<number>(customerIds);
   if (!customerIds.length) {
     return new Response(
       JSON.stringify({
@@ -156,11 +145,14 @@ export async function POST(req: NextRequest) {
     .select("*")
     .eq("key", "invoices")
     .maybeSingle();
-  const sinceIsoRaw: string =
+  const overlapMs = 10 * 60 * 1000;
+  const baseSince =
     (state?.last_cursor as string | undefined) ??
     new Date(Date.now() - lookbackDays * 86400000).toISOString();
-
-  const sinceIso = new Date(sinceIsoRaw).toISOString();
+  const sinceIso = new Date(
+    new Date(baseSince).getTime() - overlapMs
+  ).toISOString();
+  const sinceDate = sinceIso.slice(0, 10);
 
   const token = await getValidToken();
   const headers = {
@@ -171,117 +163,135 @@ export async function POST(req: NextRequest) {
   } as const;
 
   const idSet = new Set<number>();
+  let foundModified = 0;
+  let foundCreatedToday = 0;
+  let foundFallbackToday = 0;
 
-  const entityBatches = chunk<number>(customerIds, 900);
-
-  for (const entBatch of entityBatches) {
+  for (const entBatch of chunk<number>(customerIds, 900)) {
     const entList = entBatch.join(",");
-    let idsQuery: string;
-    if (fromParam && toParam) {
-      idsQuery = `
-        SELECT T.id AS invoiceId, T.trandate AS lastmodifieddate
-        FROM transaction T
-        WHERE T.type = 'CustInvc'
-          AND T.entity IN (${entList})
-          AND T.trandate >= TO_DATE('${fromParam}','YYYY-MM-DD')
-          AND T.trandate <  TO_DATE('${toParam}','YYYY-MM-DD')
-        ORDER BY T.trandate ASC
-      `;
-    } else {
-      idsQuery = `
-        SELECT T.id AS invoiceId, T.lastmodifieddate
-        FROM transaction T
-        WHERE T.type = 'CustInvc'
-          AND T.entity IN (${entList})
-          AND T.lastmodifieddate > TO_TIMESTAMP_TZ('${sinceIso}','YYYY-MM-DD"T"HH24:MI:SS.FF3"Z"')
-        ORDER BY T.lastmodifieddate ASC
-      `;
+    const idsModQ = `
+      SELECT
+        T.id AS invoiceId,
+        TO_CHAR(T.lastmodifieddate,'YYYY-MM-DD"T"HH24:MI:SS.FF3TZH:TZM') AS lmIso
+      FROM transaction T
+      WHERE T.type = 'CustInvc'
+        AND T.entity IN (${entList})
+        AND T.lastmodifieddate >= TO_TIMESTAMP_TZ('${sinceIso}','YYYY-MM-DD"T"HH24:MI:SS.FF3"Z"')
+      ORDER BY T.lastmodifieddate ASC
+    `;
+    const r1 = await netsuiteQuery(idsModQ, headers);
+    for (const row of r1?.data?.items || []) {
+      const id = Number(row.invoiceid);
+      if (Number.isFinite(id)) idSet.add(id);
+      foundModified++;
     }
-    const idsResp = await netsuiteQuery(idsQuery, headers);
-    const changedBatch: ChangedRow[] = (idsResp?.data?.items || []).map(
-      (r: any) => ({
-        id: Number(r.invoiceid),
-        lastModified: String(r.lastmodifieddate ?? ""),
-      })
-    );
-    for (const row of changedBatch)
-      if (Number.isFinite(row.id)) idSet.add(row.id);
-    await sleep(150);
+    await sleep(120);
+
+    const idsCreatedTodayQ = `
+      SELECT T.id AS invoiceId
+      FROM transaction T
+      WHERE T.type = 'CustInvc'
+        AND T.entity IN (${entList})
+        AND T.trandate >= TO_DATE('${sinceDate}','YYYY-MM-DD')
+      ORDER BY T.trandate ASC
+    `;
+    const r2 = await netsuiteQuery(idsCreatedTodayQ, headers);
+    for (const row of r2?.data?.items || []) {
+      const id = Number(row.invoiceid);
+      if (Number.isFinite(id)) idSet.add(id);
+      foundCreatedToday++;
+    }
+    await sleep(120);
+  }
+
+  const fallbackQ = `
+    SELECT T.id AS invoiceId, T.entity AS customerId
+    FROM transaction T
+    WHERE T.type = 'CustInvc'
+      AND T.trandate >= TO_DATE('${sinceDate}','YYYY-MM-DD')
+  `;
+  const fb = await netsuiteQuery(fallbackQ, headers);
+  for (const row of fb?.data?.items || []) {
+    const id = Number(row.invoiceid);
+    const cid = Number(row.customerid);
+    if (Number.isFinite(id) && customerSet.has(cid)) {
+      idSet.add(id);
+      foundFallbackToday++;
+    }
   }
 
   const changedIds = Array.from(idSet) as number[];
   if (!changedIds.length) {
-    if (!dry && !fromParam) {
-      await supabase.from("sync_state").upsert(
-        {
-          key: "invoices",
-          last_success_at: new Date().toISOString(),
-          last_cursor: new Date().toISOString(),
-        },
-        { onConflict: "key" }
+    if (!dry) {
+      const nextCursorQ = `
+        SELECT TO_CHAR(MAX(T.lastmodifieddate),'YYYY-MM-DD"T"HH24:MI:SS.FF3TZH:TZM') AS maxIso
+        FROM transaction T
+        WHERE T.type = 'CustInvc'
+          AND T.lastmodifieddate >= TO_TIMESTAMP_TZ('${sinceIso}','YYYY-MM-DD"T"HH24:MI:SS.FF3"Z"')
+    `;
+      const mx = await netsuiteQuery(nextCursorQ, headers);
+      const maxIso = mx?.data?.items?.[0]?.maxiso || sinceIso;
+      await supabase
+        .from("sync_state")
+        .upsert(
+          {
+            key: "invoices",
+            last_success_at: new Date().toISOString(),
+            last_cursor: maxIso,
+          },
+          { onConflict: "key" }
+        );
+      return new Response(
+        JSON.stringify({
+          scanned: 0,
+          upserted: 0,
+          lastCursor: maxIso,
+          foundModified,
+          foundCreatedToday,
+          foundFallbackToday,
+        }),
+        { status: 200 }
+      );
+    } else {
+      return new Response(
+        JSON.stringify({
+          scanned: 0,
+          upserted: 0,
+          lastCursor: sinceIso,
+          foundModified,
+          foundCreatedToday,
+          foundFallbackToday,
+        }),
+        { status: 200 }
       );
     }
-    return new Response(
-      JSON.stringify({ scanned: 0, upserted: 0, message: "No changes" }),
-      { status: 200 }
-    );
   }
 
-  const batches: InvoiceId[][] = chunk<InvoiceId>(changedIds, 300);
   let upsertedCount = 0;
-  let lastCursor: string = sinceIso;
-
-  for (const ids of batches) {
+  for (const ids of chunk<InvoiceId>(changedIds, 300)) {
     const idList = ids.join(",");
 
     const headersQ = `
-      SELECT
-        T.id AS invoiceId,
-        T.tranid AS tranId,
-        T.trandate AS trandate,
-        T.total AS total,
-        T.taxtotal AS taxTotal,
-        T.entity AS customerId
+      SELECT T.id AS invoiceId, T.tranid AS tranId, T.trandate AS trandate, T.total AS total, T.taxtotal AS taxTotal, T.entity AS customerId
       FROM transaction T
       WHERE T.type = 'CustInvc' AND T.id IN (${idList})
     `;
-
     const linesQ = `
-      SELECT
-        TL.transaction AS invoiceId,
-        TL.linesequencenumber AS lineNo,
-        I.id AS itemId,
-        I.itemid AS sku,
-        I.displayname AS displayName,
-        NVL(ABS(TL.quantity), 0) AS quantity,
-        TL.rate AS rate,
-        NVL(ABS(TL.amount), 0) AS amount,
-        TL.memo AS description,
-        TL.custcolns_comment AS lineComment
+      SELECT TL.transaction AS invoiceId, TL.linesequencenumber AS lineNo, I.id AS itemId, I.itemid AS sku, I.displayname AS displayName,
+             NVL(ABS(TL.quantity),0) AS quantity, TL.rate AS rate, NVL(ABS(TL.amount),0) AS amount, TL.memo AS description, TL.custcolns_comment AS lineComment
       FROM transactionline TL
       JOIN item I ON I.id = TL.item
       WHERE TL.transaction IN (${idList})
     `;
-
     const paymentsQ = `
-      SELECT
-        TL.createdfrom AS invoiceId,
-        P.id AS paymentId,
-        P.tranid AS tranId,
-        P.trandate AS paymentDate,
-        BUILTIN.DF(P.status) AS status,
-        P.total AS amount,
-        BUILTIN.DF(P.paymentoption) AS paymentOption
+      SELECT TL.createdfrom AS invoiceId, P.id AS paymentId, P.tranid AS tranId, P.trandate AS paymentDate,
+             BUILTIN.DF(P.status) AS status, P.total AS amount, BUILTIN.DF(P.paymentoption) AS paymentOption
       FROM transaction P
       JOIN transactionline TL ON TL.transaction = P.id
       WHERE P.type = 'CustPymt' AND TL.createdfrom IN (${idList})
     `;
-
     const soLinkQ = `
-      SELECT
-        PTL.NextDoc AS invoiceId,
-        PTL.PreviousDoc AS soId,
-        S.tranid AS soTranId
+      SELECT PTL.NextDoc AS invoiceId, PTL.PreviousDoc AS soId, S.tranid AS soTranId
       FROM PreviousTransactionLink PTL
       JOIN transaction S ON S.id = PTL.PreviousDoc
       WHERE PTL.NextDoc IN (${idList}) AND S.type='SalesOrd'
@@ -303,12 +313,8 @@ export async function POST(req: NextRequest) {
         trandate: row.trandate ?? null,
         total: Number(row.total ?? 0),
         tax_total: Number(row.taxtotal ?? row.taxTotal ?? 0),
-        customer_id:
-          row.customerid != null || row.customerId != null
-            ? Number(row.customerid ?? row.customerId)
-            : null,
+        customer_id: row.customerid != null ? Number(row.customerid) : null,
       });
-      lastCursor = row.lastmodifieddate ?? lastCursor;
     }
 
     const linesByInv = new Map<InvoiceId, LineRow[]>();
@@ -384,8 +390,7 @@ export async function POST(req: NextRequest) {
         synced_at: new Date().toISOString(),
       });
 
-      const lns = linesByInv.get(id) ?? [];
-      for (const ln of lns) linesRows.push(ln);
+      for (const ln of linesByInv.get(id) ?? []) linesRows.push(ln);
       for (const pr of pmts) paymentsRows.push(pr);
     }
 
@@ -418,17 +423,38 @@ export async function POST(req: NextRequest) {
     }
 
     upsertedCount += invoicesRows.length;
-    await sleep(350);
+    await sleep(300);
   }
 
-  if (!dry && !fromParam) {
-    await supabase.from("sync_state").upsert(
-      {
-        key: "invoices",
-        last_success_at: new Date().toISOString(),
-        last_cursor: lastCursor,
-      },
-      { onConflict: "key" }
+  if (!dry) {
+    const maxCursorQ = `
+      SELECT TO_CHAR(MAX(T.lastmodifieddate),'YYYY-MM-DD"T"HH24:MI:SS.FF3TZH:TZM') AS maxIso
+      FROM transaction T
+      WHERE T.type = 'CustInvc'
+        AND T.lastmodifieddate >= TO_TIMESTAMP_TZ('${sinceIso}','YYYY-MM-DD"T"HH24:MI:SS.FF3"Z"')
+    `;
+    const mx = await netsuiteQuery(maxCursorQ, headers);
+    const maxIso = mx?.data?.items?.[0]?.maxiso || sinceIso;
+    await supabase
+      .from("sync_state")
+      .upsert(
+        {
+          key: "invoices",
+          last_success_at: new Date().toISOString(),
+          last_cursor: maxIso,
+        },
+        { onConflict: "key" }
+      );
+    return new Response(
+      JSON.stringify({
+        scanned: changedIds.length,
+        upserted: upsertedCount,
+        lastCursor: maxIso,
+        foundModified,
+        foundCreatedToday,
+        foundFallbackToday,
+      }),
+      { status: 200 }
     );
   }
 
@@ -436,7 +462,10 @@ export async function POST(req: NextRequest) {
     JSON.stringify({
       scanned: changedIds.length,
       upserted: upsertedCount,
-      lastCursor,
+      lastCursor: sinceIso,
+      foundModified,
+      foundCreatedToday,
+      foundFallbackToday,
     }),
     { status: 200 }
   );

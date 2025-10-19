@@ -290,6 +290,9 @@ function LoginInner() {
             <h1 className="text-4xl sm:text-5xl font-semibold leading-tight text-slate-900">
               Welcome to the Highland Park Customer Portal!
             </h1>
+            <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-[13px] text-amber-900">
+              ⚠️ Going through upgrades — might be a bit unstable for users.
+            </div>
             <div className="mt-6 space-y-4 text-[15px] leading-relaxed text-slate-800">
               <p>
                 Your Portal Account only takes a moment and once you're signed
@@ -330,6 +333,7 @@ function LoginInner() {
                   Portal Access
                 </span>
               </div>
+
               <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1 ring-1 ring-slate-200">
                 <button
                   onClick={() => {
