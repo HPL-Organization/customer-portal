@@ -57,6 +57,7 @@ export async function GET(req: NextRequest) {
         "fulfillment_id, tran_id, trandate, customer_id, ship_status, status, created_from_so_id, created_from_so_tranid, tracking, tracking_urls, tracking_details"
       )
       .eq("customer_id", numericId)
+      .is("ns_deleted_at", null)
       .order("trandate", { ascending: false });
 
     if (fRes.error) {

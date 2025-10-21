@@ -1,7 +1,94 @@
 import { NextRequest } from "next/server";
 import axios from "axios";
-import { createClient } from "@supabase/supabase-js";
 import { getValidToken } from "@/lib/netsuite/token";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
+
+type Database = {
+  public: {
+    Tables: {
+      invoices: {
+        Row: {
+          invoice_id: number;
+          tran_id: string | null;
+          trandate: string | null;
+          total: number | null;
+          tax_total: number | null;
+          amount_paid: number | null;
+          amount_remaining: number | null;
+          customer_id: number | null;
+          created_from_so_id: number | null;
+          created_from_so_tranid: string | null;
+          netsuite_url: string | null;
+          synced_at: string | null;
+          ns_deleted_at: string | null;
+          sales_rep: string | null;
+          ship_address: string | null;
+          so_reference: string | null;
+        };
+        Insert: Partial<Database["public"]["Tables"]["invoices"]["Row"]>;
+        Update: Partial<Database["public"]["Tables"]["invoices"]["Row"]>;
+        Relationships: [];
+      };
+      invoice_lines: {
+        Row: {
+          invoice_id: number;
+          line_no: number;
+          item_id: number | null;
+          item_sku: string | null;
+          item_display_name: string | null;
+          quantity: number | null;
+          rate: number | null;
+          amount: number | null;
+          description: string | null;
+          comment: string | null;
+        };
+        Insert: Partial<Database["public"]["Tables"]["invoice_lines"]["Row"]>;
+        Update: Partial<Database["public"]["Tables"]["invoice_lines"]["Row"]>;
+        Relationships: [];
+      };
+      invoice_payments: {
+        Row: {
+          invoice_id: number;
+          payment_id: number;
+          tran_id: string | null;
+          payment_date: string | null;
+          amount: number | null;
+          status: string | null;
+          payment_option: string | null;
+        };
+        Insert: Partial<
+          Database["public"]["Tables"]["invoice_payments"]["Row"]
+        >;
+        Update: Partial<
+          Database["public"]["Tables"]["invoice_payments"]["Row"]
+        >;
+        Relationships: [];
+      };
+      profiles: {
+        Row: {
+          netsuite_customer_id: number | null;
+        };
+        Insert: Partial<Database["public"]["Tables"]["profiles"]["Row"]>;
+        Update: Partial<Database["public"]["Tables"]["profiles"]["Row"]>;
+        Relationships: [];
+      };
+      sync_state: {
+        Row: {
+          key: string;
+          last_success_at: string | null;
+          last_cursor: string | null;
+        };
+        Insert: Partial<Database["public"]["Tables"]["sync_state"]["Row"]>;
+        Update: Partial<Database["public"]["Tables"]["sync_state"]["Row"]>;
+        Relationships: [];
+      };
+    };
+    Views: {};
+    Functions: {};
+    Enums: {};
+    CompositeTypes: {};
+  };
+};
 
 const NS_ENV = process.env.NETSUITE_ENV?.toLowerCase() || "prod";
 const isSB = NS_ENV === "sb";
@@ -35,6 +122,9 @@ interface HeaderRow {
   created_from_so_tranid?: string | null;
   netsuite_url?: string | null;
   synced_at?: string;
+  sales_rep?: string | null;
+  ship_address?: string | null;
+  so_reference?: string | null;
 }
 interface LineRow {
   invoice_id: number;
@@ -72,7 +162,11 @@ function chunk<T>(arr: T[], size: number): T[][] {
 }
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function netsuiteQuery(q: string, headers: Record<string, string>) {
+async function netsuiteQuery(
+  q: string,
+  headers: Record<string, string>,
+  tag?: string
+) {
   let attempt = 0;
   const delays = [500, 1000, 2000, 4000, 8000];
   for (;;) {
@@ -92,9 +186,97 @@ async function netsuiteQuery(q: string, headers: Record<string, string>) {
         attempt++;
         continue;
       }
-      throw err;
+      const info = {
+        tag,
+        status: err?.response?.status,
+        body:
+          typeof err?.response?.data === "string"
+            ? String(err.response.data).slice(0, 600)
+            : err?.response?.data,
+      };
+      const e = new Error(`SuiteQL ${tag || ""} failed`);
+      (e as any).details = info;
+      throw e;
     }
   }
+}
+
+async function reconcileDeletedInvoices(
+  supabase: SupabaseClient<Database>,
+  headers: Record<string, string>,
+  customerIds: number[],
+  dry: boolean
+) {
+  if (!customerIds.length) return { checked: 0, softDeleted: 0 };
+
+  const pageSize = 1000;
+  let from = 0;
+  const localIds: number[] = [];
+  for (;;) {
+    const { data, error } = await supabase
+      .from("invoices")
+      .select("invoice_id")
+      .in("customer_id", customerIds)
+      .is("ns_deleted_at", null)
+      .order("invoice_id", { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+    const batch = (data || [])
+      .map((r: any) => Number(r.invoice_id))
+      .filter(Number.isFinite);
+    if (!batch.length) break;
+    localIds.push(...batch);
+    if (batch.length < pageSize) break;
+    from += pageSize;
+  }
+
+  if (!localIds.length) return { checked: 0, softDeleted: 0 };
+
+  const missing: number[] = [];
+  const voided: number[] = [];
+  for (const batch of chunk<number>(localIds, 900)) {
+    const idList = batch.join(",");
+    const presentQ = `
+      SELECT T.id AS invoiceId
+      FROM transaction T
+      WHERE T.type='CustInvc' AND T.id IN (${idList})
+    `;
+    const r1 = await netsuiteQuery(presentQ, headers, "present");
+    const present = new Set<number>(
+      (r1?.data?.items || []).map((x: any) => Number(x.invoiceid))
+    );
+    for (const id of batch) if (!present.has(id)) missing.push(id);
+    if (present.size) {
+      const voidedQ = `
+        SELECT T.id AS invoiceId
+        FROM transaction T
+        WHERE T.type='CustInvc'
+          AND T.id IN (${idList})
+          AND LOWER(BUILTIN.DF(T.status)) LIKE '%void%'
+      `;
+      const r2 = await netsuiteQuery(voidedQ, headers, "voided");
+      for (const row of r2?.data?.items || []) {
+        const id = Number(row.invoiceid);
+        if (Number.isFinite(id)) voided.push(id);
+      }
+    }
+    await sleep(120);
+  }
+
+  const toTombstone = Array.from(new Set([...missing, ...voided]));
+  if (!dry && toTombstone.length) {
+    const nowIso = new Date().toISOString();
+    for (const ids of chunk<number>(toTombstone, 1000)) {
+      await supabase
+        .from("invoices")
+        .update({
+          ns_deleted_at: nowIso,
+        } as Database["public"]["Tables"]["invoices"]["Update"])
+        .in("invoice_id", ids);
+    }
+  }
+
+  return { checked: localIds.length, softDeleted: toTombstone.length };
 }
 
 export async function POST(req: NextRequest) {
@@ -112,7 +294,9 @@ export async function POST(req: NextRequest) {
     req.nextUrl.searchParams.get("lookbackDays") ?? 90
   );
   const forceAll = req.nextUrl.searchParams.get("forceAll") === "1";
-  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+  const forceSince = req.nextUrl.searchParams.get("forceSince");
+  const idsParam = req.nextUrl.searchParams.get("ids");
+  const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
   const { data: profileRows, error: profilesErr } = await supabase
     .from("profiles")
@@ -130,12 +314,14 @@ export async function POST(req: NextRequest) {
     )
   ) as number[];
   const customerSet = new Set<number>(customerIds);
-  if (!customerIds.length) {
+  if (!customerIds.length && !idsParam) {
     return new Response(
       JSON.stringify({
         scanned: 0,
         upserted: 0,
         message: "No customer IDs in profiles",
+        checked: 0,
+        softDeleted: 0,
       }),
       { status: 200 }
     );
@@ -160,25 +346,35 @@ export async function POST(req: NextRequest) {
     Authorization: `Bearer ${token}`,
     Accept: "application/json",
     "Content-Type": "application/json",
-    Prefer: "transient",
-  } as const;
+    Prefer: "transient, maxpagesize=1000",
+  } as Record<string, string>;
 
   const idSet = new Set<number>();
   let foundModified = 0;
   let foundCreatedToday = 0;
   let foundFallbackToday = 0;
 
-  if (forceAll) {
+  if (idsParam) {
+    idsParam
+      .split(",")
+      .map((s) => Number(s.trim()))
+      .filter((n) => Number.isFinite(n) && n > 0)
+      .forEach((n) => idSet.add(n));
+  } else if (forceAll) {
     for (const entBatch of chunk<number>(customerIds, 900)) {
       const entList = entBatch.join(",");
+      const dateFilter = forceSince
+        ? `AND T.trandate >= TO_DATE('${forceSince}','YYYY-MM-DD')`
+        : "";
       const q = `
         SELECT T.id AS invoiceId
         FROM transaction T
         WHERE T.type = 'CustInvc'
           AND T.entity IN (${entList})
+          ${dateFilter}
         ORDER BY T.trandate DESC
       `;
-      const r = await netsuiteQuery(q, headers);
+      const r = await netsuiteQuery(q, headers, "forceAllIds");
       for (const row of r?.data?.items || []) {
         const id = Number(row.invoiceid);
         if (Number.isFinite(id)) idSet.add(id);
@@ -198,7 +394,7 @@ export async function POST(req: NextRequest) {
           AND T.lastmodifieddate >= TO_TIMESTAMP_TZ('${sinceIso}','YYYY-MM-DD"T"HH24:MI:SS.FF3"Z"')
         ORDER BY T.lastmodifieddate ASC
       `;
-      const r1 = await netsuiteQuery(idsModQ, headers);
+      const r1 = await netsuiteQuery(idsModQ, headers, "idsModified");
       for (const row of r1?.data?.items || []) {
         const id = Number(row.invoiceid);
         if (Number.isFinite(id)) idSet.add(id);
@@ -214,7 +410,7 @@ export async function POST(req: NextRequest) {
           AND T.trandate >= TO_DATE('${sinceDate}','YYYY-MM-DD')
         ORDER BY T.trandate ASC
       `;
-      const r2 = await netsuiteQuery(idsCreatedTodayQ, headers);
+      const r2 = await netsuiteQuery(idsCreatedTodayQ, headers, "idsCreated");
       for (const row of r2?.data?.items || []) {
         const id = Number(row.invoiceid);
         if (Number.isFinite(id)) idSet.add(id);
@@ -229,7 +425,7 @@ export async function POST(req: NextRequest) {
       WHERE T.type = 'CustInvc'
         AND T.trandate >= TO_DATE('${sinceDate}','YYYY-MM-DD')
     `;
-    const fb = await netsuiteQuery(fallbackQ, headers);
+    const fb = await netsuiteQuery(fallbackQ, headers, "fallbackIds");
     for (const row of fb?.data?.items || []) {
       const id = Number(row.invoiceid);
       const cid = Number(row.customerid);
@@ -242,6 +438,12 @@ export async function POST(req: NextRequest) {
 
   const changedIds = Array.from(idSet) as number[];
   if (!changedIds.length) {
+    const { checked, softDeleted } = await reconcileDeletedInvoices(
+      supabase,
+      headers,
+      customerIds,
+      dry
+    );
     if (!dry) {
       const nextCursorQ = `
         SELECT TO_CHAR(MAX(T.lastmodifieddate),'YYYY-MM-DD"T"HH24:MI:SS.FF3TZH:TZM') AS maxIso
@@ -249,7 +451,7 @@ export async function POST(req: NextRequest) {
         WHERE T.type = 'CustInvc'
           AND T.lastmodifieddate >= TO_TIMESTAMP_TZ('${sinceIso}','YYYY-MM-DD"T"HH24:MI:SS.FF3"Z"')
       `;
-      const mx = await netsuiteQuery(nextCursorQ, headers);
+      const mx = await netsuiteQuery(nextCursorQ, headers, "nextCursor");
       const maxIso = mx?.data?.items?.[0]?.maxiso || sinceIso;
       await supabase.from("sync_state").upsert(
         {
@@ -267,6 +469,9 @@ export async function POST(req: NextRequest) {
           foundModified,
           foundCreatedToday,
           foundFallbackToday,
+          checked,
+          softDeleted,
+          forceAll,
         }),
         { status: 200 }
       );
@@ -279,6 +484,9 @@ export async function POST(req: NextRequest) {
           foundModified,
           foundCreatedToday,
           foundFallbackToday,
+          checked,
+          softDeleted,
+          forceAll,
         }),
         { status: 200 }
       );
@@ -291,17 +499,40 @@ export async function POST(req: NextRequest) {
 
     const headersQ = `
       SELECT
-        T.id AS invoiceId,
-        T.tranid AS tranId,
-        T.trandate AS trandate,
-        T.total AS total,
-        T.taxtotal AS taxTotal,
-        T.entity AS customerId,
-        NVL(TL.foreignamountunpaid,0) AS amountRemaining
+        T.id           AS invoiceId,
+        T.tranid       AS tranId,
+        T.trandate     AS trandate,
+        T.total        AS total,
+        T.taxtotal     AS taxTotal,
+        T.entity       AS customerId,
+        NVL(TL.foreignamountunpaid,0) AS amountRemaining,
+        T.custbody_hpl_so_reference AS soReference,
+        (
+          SELECT TRIM(BUILTIN.DF(x.DestinationAddress))
+          FROM TransactionShipment x
+          WHERE x.Doc = T.id
+          ORDER BY x.id DESC
+          FETCH NEXT 1 ROWS ONLY
+        ) AS shipToText,
+        (
+          SELECT y.salesRepName FROM (
+            SELECT BUILTIN.DF(ST.employee) AS salesRepName,
+                   ROW_NUMBER() OVER (
+                     PARTITION BY ST.transaction
+                     ORDER BY CASE WHEN ST.isprimary = 'T' THEN 0 ELSE 1 END,
+                              NVL(ST.contribution, 0) DESC
+                   ) AS rn
+            FROM TransactionSalesTeam ST
+            WHERE ST.transaction = T.id
+          ) y
+          WHERE y.rn = 1
+        ) AS salesRepName
       FROM transaction T
-      JOIN transactionline TL ON TL.transaction = T.id AND TL.mainline = 'T'
+      LEFT JOIN transactionline TL
+        ON TL.transaction = T.id AND TL.mainline = 'T'
       WHERE T.type = 'CustInvc' AND T.id IN (${idList})
     `;
+
     const linesQ = `
       SELECT TL.transaction AS invoiceId, TL.linesequencenumber AS lineNo, I.id AS itemId, I.itemid AS sku, I.displayname AS displayName,
              NVL(ABS(TL.quantity),0) AS quantity, TL.rate AS rate, NVL(ABS(TL.amount),0) AS amount, TL.memo AS description, TL.custcolns_comment AS lineComment
@@ -309,6 +540,7 @@ export async function POST(req: NextRequest) {
       JOIN item I ON I.id = TL.item
       WHERE TL.transaction IN (${idList})
     `;
+
     const paymentsQ = `
       SELECT TL.createdfrom AS invoiceId, P.id AS paymentId, P.tranid AS tranId, P.trandate AS paymentDate,
              BUILTIN.DF(P.status) AS status, P.total AS amount, BUILTIN.DF(P.paymentoption) AS paymentOption
@@ -316,6 +548,7 @@ export async function POST(req: NextRequest) {
       JOIN transactionline TL ON TL.transaction = P.id
       WHERE P.type = 'CustPymt' AND TL.createdfrom IN (${idList})
     `;
+
     const soLinkQ = `
       SELECT PTL.NextDoc AS invoiceId, PTL.PreviousDoc AS soId, S.tranid AS soTranId
       FROM PreviousTransactionLink PTL
@@ -324,10 +557,10 @@ export async function POST(req: NextRequest) {
     `;
 
     const [h, l, p, s] = await Promise.all([
-      netsuiteQuery(headersQ, headers),
-      netsuiteQuery(linesQ, headers),
-      netsuiteQuery(paymentsQ, headers),
-      netsuiteQuery(soLinkQ, headers),
+      netsuiteQuery(headersQ, headers, "headersQ"),
+      netsuiteQuery(linesQ, headers, "linesQ"),
+      netsuiteQuery(paymentsQ, headers, "paymentsQ"),
+      netsuiteQuery(soLinkQ, headers, "soLinkQ"),
     ]);
 
     const headerMap = new Map<InvoiceId, HeaderRow>();
@@ -336,6 +569,12 @@ export async function POST(req: NextRequest) {
       const total = Number(row.total ?? 0);
       const amountRemaining = Number(row.amountremaining ?? 0);
       const amountPaid = Math.max(0, total - amountRemaining);
+      const rep =
+        typeof row.salesrepname === "string" ? row.salesrepname.trim() : null;
+      const ship =
+        typeof row.shiptotext === "string" ? row.shiptotext.trim() : null;
+      const soRef =
+        typeof row.soreference === "string" ? row.soreference.trim() : null;
       headerMap.set(idNum, {
         invoice_id: idNum,
         tran_id: row.tranid ?? null,
@@ -345,6 +584,9 @@ export async function POST(req: NextRequest) {
         customer_id: row.customerid != null ? Number(row.customerid) : null,
         amount_paid: amountPaid,
         amount_remaining: amountRemaining,
+        sales_rep: rep || null,
+        ship_address: ship || null,
+        so_reference: soRef || null,
       });
     }
 
@@ -389,6 +631,27 @@ export async function POST(req: NextRequest) {
       soByInv.set(inv, { soId, soTranId });
     }
 
+    const { data: existingRows } = await supabase
+      .from("invoices")
+      .select("invoice_id,sales_rep,ship_address,so_reference")
+      .in("invoice_id", ids);
+
+    const existingMap = new Map<
+      number,
+      {
+        sales_rep: string | null;
+        ship_address: string | null;
+        so_reference: string | null;
+      }
+    >();
+    (existingRows || []).forEach((r) =>
+      existingMap.set(r.invoice_id, {
+        sales_rep: r.sales_rep,
+        ship_address: r.ship_address,
+        so_reference: r.so_reference,
+      })
+    );
+
     const invoicesRows: HeaderRow[] = [];
     const linesRows: LineRow[] = [];
     const paymentsRows: PaymentRow[] = [];
@@ -399,6 +662,11 @@ export async function POST(req: NextRequest) {
 
       const pmts = paymentsByInv.get(id) ?? [];
       const so = soByInv.get(id) ?? { soId: null, soTranId: null };
+
+      const prev = existingMap.get(id);
+      const rep = head.sales_rep ?? prev?.sales_rep ?? null;
+      const ship = head.ship_address ?? prev?.ship_address ?? null;
+      const ref = head.so_reference ?? prev?.so_reference ?? null;
 
       invoicesRows.push({
         invoice_id: id,
@@ -413,6 +681,9 @@ export async function POST(req: NextRequest) {
         created_from_so_tranid: so.soTranId,
         netsuite_url: invoiceUrl(id),
         synced_at: new Date().toISOString(),
+        sales_rep: rep,
+        ship_address: ship,
+        so_reference: ref,
       });
 
       for (const ln of linesByInv.get(id) ?? []) linesRows.push(ln);
@@ -423,7 +694,10 @@ export async function POST(req: NextRequest) {
       if (invoicesRows.length) {
         const { error: e1 } = await supabase
           .from("invoices")
-          .upsert(invoicesRows as any, { onConflict: "invoice_id" });
+          .upsert(
+            invoicesRows as Database["public"]["Tables"]["invoices"]["Insert"][],
+            { onConflict: "invoice_id" }
+          );
         if (e1) throw e1;
       }
       for (const invId of ids) {
@@ -436,13 +710,19 @@ export async function POST(req: NextRequest) {
       if (linesRows.length) {
         const { error: e2 } = await supabase
           .from("invoice_lines")
-          .upsert(linesRows as any, { onConflict: "invoice_id,line_no" });
+          .upsert(
+            linesRows as Database["public"]["Tables"]["invoice_lines"]["Insert"][],
+            { onConflict: "invoice_id,line_no" }
+          );
         if (e2) throw e2;
       }
       if (paymentsRows.length) {
         const { error: e3 } = await supabase
           .from("invoice_payments")
-          .upsert(paymentsRows as any, { onConflict: "invoice_id,payment_id" });
+          .upsert(
+            paymentsRows as Database["public"]["Tables"]["invoice_payments"]["Insert"][],
+            { onConflict: "invoice_id,payment_id" }
+          );
         if (e3) throw e3;
       }
     }
@@ -451,6 +731,13 @@ export async function POST(req: NextRequest) {
     await sleep(300);
   }
 
+  const { checked, softDeleted } = await reconcileDeletedInvoices(
+    supabase,
+    headers,
+    customerIds,
+    dry
+  );
+
   if (!dry) {
     const maxCursorQ = `
       SELECT TO_CHAR(MAX(T.lastmodifieddate),'YYYY-MM-DD"T"HH24:MI:SS.FF3TZH:TZM') AS maxIso
@@ -458,14 +745,14 @@ export async function POST(req: NextRequest) {
       WHERE T.type = 'CustInvc'
         AND T.lastmodifieddate >= TO_TIMESTAMP_TZ('${sinceIso}','YYYY-MM-DD"T"HH24:MI:SS.FF3"Z"')
     `;
-    const mx = await netsuiteQuery(maxCursorQ, headers);
+    const mx = await netsuiteQuery(maxCursorQ, headers, "maxCursor");
     const maxIso = mx?.data?.items?.[0]?.maxiso || sinceIso;
     await supabase.from("sync_state").upsert(
       {
         key: "invoices",
         last_success_at: new Date().toISOString(),
         last_cursor: maxIso,
-      },
+      } as Database["public"]["Tables"]["sync_state"]["Insert"],
       { onConflict: "key" }
     );
     return new Response(
@@ -476,6 +763,8 @@ export async function POST(req: NextRequest) {
         foundModified,
         foundCreatedToday,
         foundFallbackToday,
+        checked,
+        softDeleted,
         forceAll,
       }),
       { status: 200 }
@@ -490,6 +779,8 @@ export async function POST(req: NextRequest) {
       foundModified,
       foundCreatedToday,
       foundFallbackToday,
+      checked,
+      softDeleted,
       forceAll,
     }),
     { status: 200 }

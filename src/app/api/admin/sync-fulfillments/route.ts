@@ -16,15 +16,19 @@ const ADMIN_SECRET_HEADER = "x-admin-secret";
 
 type FulfillmentId = number;
 
+const http = axios.create({ timeout: 60000 });
+
 function chunk<T>(arr: T[], size: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
   return out;
 }
 
-const http = axios.create({ timeout: 60000 });
-
-async function netsuiteQuery(q: string, headers: Record<string, string>) {
+async function netsuiteQuery(
+  q: string,
+  headers: Record<string, string>,
+  tag?: string
+) {
   let attempt = 0;
   const delays = [500, 1000, 2000, 4000, 8000];
   for (;;) {
@@ -44,9 +48,149 @@ async function netsuiteQuery(q: string, headers: Record<string, string>) {
         attempt++;
         continue;
       }
-      throw err;
+      const e = new Error("SuiteQL " + (tag || "") + " failed");
+      (e as any).details = {
+        tag,
+        status: err?.response?.status,
+        code,
+        details:
+          err?.response?.data?.["o:errorDetails"]?.[0]?.detail ||
+          err?.response?.data,
+        q,
+      };
+      throw e;
     }
   }
+}
+
+async function suiteqlKeysetIdsForEntities(
+  headers: Record<string, string>,
+  entListCsv: string,
+  dateFilterSql: string | "",
+  pageSize = 1000
+) {
+  const out: number[] = [];
+  let lastDate: string | null = null;
+  let lastId: number | null = null;
+
+  for (;;) {
+    const whereAfter = lastDate
+      ? `AND (T.trandate < TO_DATE('${lastDate}','YYYY-MM-DD')
+             OR (T.trandate = TO_DATE('${lastDate}','YYYY-MM-DD') AND T.id < ${lastId}))`
+      : "";
+
+    const q = `
+      SELECT
+        T.id AS fulfillmentId,
+        TO_CHAR(T.trandate,'YYYY-MM-DD') AS trandate
+      FROM transaction T
+      WHERE T.type = 'ItemShip'
+        AND T.entity IN (${entListCsv})
+        ${dateFilterSql}
+        ${whereAfter}
+      ORDER BY T.trandate DESC, T.id DESC
+      FETCH NEXT ${pageSize} ROWS ONLY
+    `;
+
+    const r = await netsuiteQuery(q, headers, "forceAllIdsKeyset");
+    const items = r?.data?.items || [];
+
+    for (const row of items) {
+      const id = Number(row.fulfillmentid);
+      if (Number.isFinite(id)) out.push(id);
+    }
+
+    if (items.length < pageSize) break;
+
+    const tail = items[items.length - 1];
+    lastDate = String(tail.trandate);
+    lastId = Number(tail.fulfillmentid);
+
+    await new Promise((res) => setTimeout(res, 40));
+  }
+
+  return out;
+}
+
+async function reconcileDeletedFulfillments(
+  supabase: any,
+  headers: Record<string, string>,
+  customerIds: number[],
+  dry: boolean
+) {
+  if (!customerIds.length) return { checked: 0, softDeleted: 0 };
+
+  const pageSize = 1000;
+  let from = 0;
+  const localIds: number[] = [];
+  for (;;) {
+    const { data, error } = await supabase
+      .from("fulfillments")
+      .select("fulfillment_id")
+      .in("customer_id", customerIds)
+      .is("ns_deleted_at", null)
+      .order("fulfillment_id", { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+    const batch = (data || [])
+      .map((r: any) => Number(r.fulfillment_id))
+      .filter(Number.isFinite);
+    if (!batch.length) break;
+    localIds.push(...batch);
+    if (batch.length < pageSize) break;
+    from += pageSize;
+  }
+
+  if (!localIds.length) return { checked: 0, softDeleted: 0 };
+
+  const missing: number[] = [];
+  const cancelled: number[] = [];
+  for (const batch of chunk<number>(localIds, 900)) {
+    const idList = batch.join(",");
+    const presentQ = `
+      SELECT T.id AS fulfillmentId
+      FROM transaction T
+      WHERE T.type='ItemShip' AND T.id IN (${idList})
+    `;
+    const r1 = await netsuiteQuery(presentQ, headers, "presentIF");
+    const present = new Set<number>(
+      (r1?.data?.items || []).map((x: any) => Number(x.fulfillmentid))
+    );
+    for (const id of batch) if (!present.has(id)) missing.push(id);
+
+    if (present.size) {
+      const cancelledQ = `
+        SELECT T.id AS fulfillmentId
+        FROM transaction T
+        WHERE T.type='ItemShip'
+          AND T.id IN (${idList})
+          AND (
+            LOWER(BUILTIN.DF(T.status)) LIKE '%cancel%'
+            OR LOWER(BUILTIN.DF(T.status)) LIKE '%void%'
+          )
+      `;
+      const r2 = await netsuiteQuery(cancelledQ, headers, "cancelledIF");
+      for (const row of r2?.data?.items || []) {
+        const id = Number(row.fulfillmentid);
+        if (Number.isFinite(id)) cancelled.push(id);
+      }
+    }
+
+    await new Promise((r) => setTimeout(r, 120));
+  }
+
+  const toTombstone = Array.from(new Set([...missing, ...cancelled]));
+  if (!dry && toTombstone.length) {
+    const nowIso = new Date().toISOString();
+    for (const ids of chunk<number>(toTombstone, 1000)) {
+      await supabase
+        .from("fulfillments")
+        .update({ ns_deleted_at: nowIso })
+        .in("fulfillment_id", ids);
+    }
+  }
+
+  return { checked: localIds.length, softDeleted: toTombstone.length };
 }
 
 function inferCarrierFromNumber(num: string): string {
@@ -97,6 +241,86 @@ function dedupeDetails(
   return out;
 }
 
+function extractIFLines(rec: any) {
+  type Line = {
+    line_id: number | null;
+    line_no: number;
+    item_id: number | null;
+    item_sku: string | null;
+    item_display_name: string | null;
+    quantity: number;
+    serial_numbers: string[] | null;
+    comments: string[] | null;
+  };
+
+  const firstPath =
+    (Array.isArray(rec?.item?.items) && rec.item.items) ||
+    (Array.isArray(rec?.itemList?.items) && rec.itemList.items) ||
+    (Array.isArray(rec?.item) && rec.item) ||
+    null;
+
+  const rows: any[] = Array.isArray(firstPath) ? firstPath : [];
+  const out: Line[] = [];
+
+  let idx = 0;
+  for (const row of rows) {
+    const lineNo =
+      Number(row.line ?? row.lineSequenceNumber ?? row.lineNumber ?? idx + 1) ||
+      idx + 1;
+
+    if (!Number.isFinite(lineNo)) {
+      idx++;
+      continue;
+    }
+
+    const lineId = Number(row.id ?? row.lineId ?? row.lineUniqueKey ?? NaN);
+    const itemObj = row.item ?? row.itemRef ?? {};
+    const itemId = Number(itemObj.id ?? itemObj.internalId ?? NaN);
+    const itemSku =
+      (itemObj.refName ?? itemObj.name ?? itemObj.text ?? row.itemid ?? null) &&
+      String(itemObj.refName ?? itemObj.name ?? itemObj.text ?? row.itemid);
+    const disp =
+      row.description ?? itemObj.displayName ?? itemObj.refName ?? null;
+    const qty = Math.abs(Number(row.quantity ?? 0));
+
+    const serials: string[] = [];
+    const ia =
+      row.inventoryassignment ||
+      row.inventoryAssignment ||
+      row.inventoryDetail ||
+      null;
+    if (ia && typeof ia === "object") {
+      const assignments = ia.assignments || ia.assignment || ia.details || [];
+      const arr = Array.isArray(assignments) ? assignments : [assignments];
+      for (const a of arr) {
+        const sn =
+          a?.issueinventorynumber?.text ??
+          a?.inventorynumber?.text ??
+          a?.serialnumber ??
+          a?.lotnumber ??
+          null;
+        if (sn) serials.push(String(sn));
+      }
+    }
+    const commentVal = row.custcolns_comment ?? row.comments ?? null;
+    const comments = commentVal != null ? [String(commentVal)] : null;
+
+    out.push({
+      line_id: Number.isFinite(lineId) ? lineId : null,
+      line_no: Math.trunc(lineNo),
+      item_id: Number.isFinite(itemId) ? itemId : null,
+      item_sku: itemSku,
+      item_display_name: disp ? String(disp) : null,
+      quantity: qty,
+      serial_numbers: serials.length ? Array.from(new Set(serials)) : null,
+      comments,
+    });
+    idx++;
+  }
+
+  return out;
+}
+
 export async function POST(req: NextRequest) {
   if (
     !ADMIN_SYNC_SECRET ||
@@ -111,15 +335,16 @@ export async function POST(req: NextRequest) {
   const lookbackDays = Number(
     req.nextUrl.searchParams.get("lookbackDays") ?? 90
   );
-  const fromParam = req.nextUrl.searchParams.get("from");
-  const toParam = req.nextUrl.searchParams.get("to");
+  const forceAll = req.nextUrl.searchParams.get("forceAll") === "1";
+  const forceSince = req.nextUrl.searchParams.get("forceSince");
+  const idsParam = req.nextUrl.searchParams.get("ids");
   const batchSize = Math.max(
     50,
     Math.min(500, Number(req.nextUrl.searchParams.get("batchSize") ?? 300))
   );
   const detailConcurrency = Math.max(
     1,
-    Math.min(8, Number(req.nextUrl.searchParams.get("detailConcurrency") ?? 5))
+    Math.min(10, Number(req.nextUrl.searchParams.get("detailConcurrency") ?? 5))
   );
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
@@ -136,10 +361,11 @@ export async function POST(req: NextRequest) {
     new Set(
       (profileRows || [])
         .map((r: any) => Number(r.netsuite_customer_id))
-        .filter((n) => Number.isFinite(n))
+        .filter(Number.isFinite)
     )
   ) as number[];
-  if (!customerIds.length) {
+  const customerSet = new Set<number>(customerIds);
+  if (!customerIds.length && !idsParam) {
     return new Response(
       JSON.stringify({
         scanned: 0,
@@ -155,75 +381,154 @@ export async function POST(req: NextRequest) {
     .select("*")
     .eq("key", "fulfillments")
     .maybeSingle();
-  const sinceIsoRaw: string =
+  const overlapMs = 10 * 60 * 1000;
+  const baseSince =
     (state?.last_cursor as string | undefined) ??
     new Date(Date.now() - lookbackDays * 86400000).toISOString();
-  const sinceIso = new Date(sinceIsoRaw).toISOString();
+  const sinceIso = new Date(
+    new Date(baseSince).getTime() - overlapMs
+  ).toISOString();
+  const sinceDate = sinceIso.slice(0, 10);
 
   const token = await getValidToken();
-  const baseHeaders = {
+  const headers = {
     Authorization: `Bearer ${token}`,
     Accept: "application/json",
     "Content-Type": "application/json",
-    Prefer: "transient",
-  } as const;
+    Prefer: "transient, maxpagesize=1000",
+  } as Record<string, string>;
 
-  // 1) Find changed fulfillment IDs
   const idSet = new Set<number>();
-  for (const entBatch of chunk<number>(customerIds, 900)) {
-    const entList = entBatch.join(",");
-    const idsQuery =
-      fromParam && toParam
-        ? `
-        SELECT T.id AS fulfillmentId, T.trandate AS lastmodifieddate
+  let foundModified = 0;
+  let foundCreatedToday = 0;
+  let foundFallbackToday = 0;
+
+  if (idsParam) {
+    idsParam
+      .split(",")
+      .map((s) => Number(s.trim()))
+      .filter((n) => Number.isFinite(n) && n > 0)
+      .forEach((n) => idSet.add(n));
+  } else if (forceAll) {
+    for (const entBatch of chunk<number>(customerIds, 900)) {
+      const entList = entBatch.join(",");
+      const dateFilter = forceSince
+        ? `AND T.trandate >= TO_DATE('${forceSince}','YYYY-MM-DD')`
+        : "";
+
+      const ids = await suiteqlKeysetIdsForEntities(
+        headers,
+        entList,
+        dateFilter,
+        1000
+      );
+      for (const id of ids) idSet.add(id);
+
+      await new Promise((r) => setTimeout(r, 60));
+    }
+  } else {
+    for (const entBatch of chunk<number>(customerIds, 900)) {
+      const entList = entBatch.join(",");
+      const idsModQ = `
+        SELECT
+          T.id AS fulfillmentId,
+          TO_CHAR(T.lastmodifieddate,'YYYY-MM-DD"T"HH24:MI:SS.FF3TZH:TZM') AS lmIso
         FROM transaction T
-        WHERE T.type='ItemShip' AND T.entity IN (${entList})
-          AND T.trandate >= TO_DATE('${fromParam}','YYYY-MM-DD')
-          AND T.trandate <  TO_DATE('${toParam}','YYYY-MM-DD')
-        ORDER BY T.trandate ASC
-      `
-        : `
-        SELECT T.id AS fulfillmentId, T.lastmodifieddate
-        FROM transaction T
-        WHERE T.type='ItemShip' AND T.entity IN (${entList})
-          AND T.lastmodifieddate > TO_TIMESTAMP_TZ('${sinceIso}','YYYY-MM-DD"T"HH24:MI:SS.FF3"Z"')
+        WHERE T.type = 'ItemShip'
+          AND T.entity IN (${entList})
+          AND T.lastmodifieddate >= TO_TIMESTAMP_TZ('${sinceIso}','YYYY-MM-DD"T"HH24:MI:SS.FF3"Z"')
         ORDER BY T.lastmodifieddate ASC
       `;
-    const idsResp = await netsuiteQuery(idsQuery, baseHeaders as any);
-    for (const r of idsResp?.data?.items || []) {
-      const id = Number(r.fulfillmentid);
-      if (Number.isFinite(id)) idSet.add(id);
+      const r1 = await netsuiteQuery(idsModQ, headers, "idsModified");
+      for (const row of r1?.data?.items || []) {
+        const id = Number(row.fulfillmentid);
+        if (Number.isFinite(id)) idSet.add(id);
+        foundModified++;
+      }
+      await new Promise((r) => setTimeout(r, 120));
+
+      const idsCreatedTodayQ = `
+        SELECT T.id AS fulfillmentId, T.entity AS customerId
+        FROM transaction T
+        WHERE T.type = 'ItemShip'
+          AND T.entity IN (${entList})
+          AND T.trandate >= TO_DATE('${sinceDate}','YYYY-MM-DD')
+        ORDER BY T.trandate ASC
+      `;
+      const r2 = await netsuiteQuery(idsCreatedTodayQ, headers, "idsCreated");
+      for (const row of r2?.data?.items || []) {
+        const id = Number(row.fulfillmentid);
+        if (Number.isFinite(id)) idSet.add(id);
+        foundCreatedToday++;
+      }
+      await new Promise((r) => setTimeout(r, 120));
+    }
+
+    const fallbackQ = `
+      SELECT T.id AS fulfillmentId, T.entity AS customerId
+      FROM transaction T
+      WHERE T.type = 'ItemShip'
+        AND T.trandate >= TO_DATE('${sinceDate}','YYYY-MM-DD')
+    `;
+    const fb = await netsuiteQuery(fallbackQ, headers, "fallbackIds");
+    for (const row of fb?.data?.items || []) {
+      const id = Number(row.fulfillmentid);
+      const cid = Number(row.customerid);
+      if (Number.isFinite(id) && customerSet.has(cid)) {
+        idSet.add(id);
+        foundFallbackToday++;
+      }
     }
   }
 
   const changedIds = Array.from(idSet) as number[];
   if (!changedIds.length) {
-    if (!dry && !fromParam) {
-      await supabase
-        .from("sync_state")
-        .upsert(
-          {
-            key: "fulfillments",
-            last_success_at: new Date().toISOString(),
-            last_cursor: new Date().toISOString(),
-          },
-          { onConflict: "key" }
-        );
+    const { checked, softDeleted } = await reconcileDeletedFulfillments(
+      supabase,
+      headers,
+      Array.from(customerSet),
+      dry
+    );
+
+    const nextCursorQ = `
+      SELECT TO_CHAR(MAX(T.lastmodifieddate),'YYYY-MM-DD"T"HH24:MI:SS.FF3TZH:TZM') AS maxIso
+      FROM transaction T
+      WHERE T.type = 'ItemShip'
+        AND T.lastmodifieddate >= TO_TIMESTAMP_TZ('${sinceIso}','YYYY-MM-DD"T"HH24:MI:SS.FF3"Z"')
+    `;
+    const mx = await netsuiteQuery(nextCursorQ, headers, "nextCursor");
+    const maxIso = mx?.data?.items?.[0]?.maxiso || sinceIso;
+    if (!dry) {
+      await supabase.from("sync_state").upsert(
+        {
+          key: "fulfillments",
+          last_success_at: new Date().toISOString(),
+          last_cursor: maxIso,
+        },
+        { onConflict: "key" }
+      );
     }
     return new Response(
-      JSON.stringify({ scanned: 0, upserted: 0, message: "No changes" }),
+      JSON.stringify({
+        scanned: 0,
+        upserted: 0,
+        lastCursor: maxIso,
+        foundModified,
+        foundCreatedToday,
+        foundFallbackToday,
+        checked,
+        softDeleted,
+      }),
       { status: 200 }
     );
   }
 
-  // 2) Process in batches like invoices
   let upsertedCount = 0;
   let lastCursor = sinceIso;
 
   for (const ids of chunk<FulfillmentId>(changedIds, batchSize)) {
     const idList = ids.join(",");
 
-    // SuiteQL triplet
     const headersQ = `
       SELECT
         T.id AS fulfillmentId,
@@ -231,24 +536,11 @@ export async function POST(req: NextRequest) {
         T.trandate AS trandate,
         T.entity AS customerId,
         BUILTIN.DF(T.status) AS status,
-        T.lastmodifieddate AS lastmodifieddate
+        TO_CHAR(T.lastmodifieddate,'YYYY-MM-DD"T"HH24:MI:SS.FF3TZH:TZM') AS lastmodifieddate
       FROM transaction T
-      WHERE T.type='ItemShip' AND T.id IN (${idList})
+      WHERE T.type = 'ItemShip' AND T.id IN (${idList})
     `;
-    const linesQ = `
-      SELECT
-        TL.transaction AS fulfillmentId,
-        TL.linesequencenumber AS lineNo,
-        I.id AS itemId,
-        I.itemid AS sku,
-        I.displayname AS displayName,
-        NVL(ABS(TL.quantity),0) AS quantity,
-        TL.custcol_hpl_serialnumber AS serialnumber,
-        TL.custcolns_comment AS linecomment
-      FROM transactionline TL
-      JOIN item I ON I.id = TL.item
-      WHERE TL.transaction IN (${idList})
-    `;
+
     const soLinkQ = `
       SELECT
         PTL.NextDoc AS fulfillmentId,
@@ -259,120 +551,44 @@ export async function POST(req: NextRequest) {
       WHERE PTL.NextDoc IN (${idList}) AND S.type='SalesOrd'
     `;
 
-    const [h, l, s] = await Promise.all([
-      netsuiteQuery(headersQ, baseHeaders as any),
-      netsuiteQuery(linesQ, baseHeaders as any),
-      netsuiteQuery(soLinkQ, baseHeaders as any),
+    const [h, s] = await Promise.all([
+      netsuiteQuery(headersQ, headers, "headersQ"),
+      netsuiteQuery(soLinkQ, headers, "soLinkQ"),
     ]);
 
-    // Map header + lastmodifieddate
-    const headerMap = new Map<
-      number,
-      {
-        tran_id: string | null;
-        trandate: string | null;
-        customer_id: number | null;
-        status: string | null;
-        lastmodified: string | null;
-      }
-    >();
+    const headerMap = new Map<number, any>();
     for (const row of h?.data?.items || []) {
-      const idNum = Number(row.fulfillmentid);
+      const idNum = Number(row.fulfillmentid) as FulfillmentId;
       headerMap.set(idNum, {
+        fulfillment_id: idNum,
         tran_id: row.tranid ?? null,
         trandate: row.trandate ?? null,
-        customer_id:
-          row.customerid != null
-            ? Number(row.customerid)
-            : Number(row.customerId ?? null),
+        customer_id: row.customerid != null ? Number(row.customerid) : null,
         status: row.status ?? null,
-        lastmodified: row.lastmodifieddate
-          ? String(row.lastmodifieddate)
-          : null,
       });
       if (row.lastmodifieddate) lastCursor = String(row.lastmodifieddate);
     }
 
-    // Lines
-    const linesById = new Map<
-      number,
-      Array<{
-        line_no: number;
-        item_id: number | null;
-        item_sku: string | null;
-        item_display_name: string | null;
-        quantity: number;
-        serial: string | null;
-        comment: string | null;
-      }>
-    >();
-    for (const r of l?.data?.items || []) {
-      const fid = Number(r.fulfillmentid);
-      if (!linesById.has(fid)) linesById.set(fid, []);
-      linesById.get(fid)!.push({
-        line_no: Number(r.lineno ?? r.linesequencenumber ?? 0),
-        item_id: r.itemid != null ? Number(r.itemid) : null,
-        item_sku: r.sku ?? null,
-        item_display_name: (r.displayname as string | null) ?? r.sku ?? null,
-        quantity: Number(r.quantity ?? 0),
-        serial: (r.serialnumber as string | null) ?? null,
-        comment: (r.linecomment as string | null) ?? null,
-      });
-    }
-
-    // SO links
     const soById = new Map<
-      number,
+      FulfillmentId,
       { soId: number | null; soTranId: string | null }
     >();
     for (const r of s?.data?.items || []) {
-      const fid = Number(r.fulfillmentid);
+      const fid = Number(r.fulfillmentid) as FulfillmentId;
       const soId = r.soid != null ? Number(r.soid) : null;
       const soTranId = (r.sotranid as string | null) ?? null;
       soById.set(fid, { soId, soTranId });
     }
 
-    // Pull existing rows once for this batch to decide who needs detail fetch
-    const { data: existingRows } = await supabase
-      .from("fulfillments")
-      .select(
-        "fulfillment_id, last_modified, ship_status, tracking, tracking_urls, tracking_details"
-      )
-      .in("fulfillment_id", ids);
-
-    const existingMap = new Map<number, any>();
-    for (const r of existingRows || []) existingMap.set(r.fulfillment_id, r);
-
-    // Compute the small set that actually needs record/v1
-    const detailIds: number[] = [];
-    for (const id of ids) {
-      const head = headerMap.get(id);
-      const ex = existingMap.get(id);
-      const changed =
-        !ex ||
-        !ex.last_modified ||
-        (head?.lastmodified &&
-          String(ex.last_modified) !== String(head.lastmodified));
-      const missing =
-        !ex ||
-        !ex.ship_status ||
-        !ex.tracking_details ||
-        (Array.isArray(ex.tracking_details) &&
-          ex.tracking_details.length === 0);
-      if (changed || missing) detailIds.push(id);
-    }
-
-    // Fetch details only for those
     const detailHeaders = {
       Authorization: `Bearer ${token}`,
       Accept: "application/json",
     } as const;
 
-    async function fetchDetail(
-      id: number
-    ): Promise<{
+    async function fetchDetail(id: number): Promise<{
       shipStatus: string;
       trackingDetails: { number: string; carrier: string; url: string }[];
+      lines: ReturnType<typeof extractIFLines>;
     }> {
       let attempt = 0;
       const delays = [0, 500, 1000, 2000, 4000];
@@ -394,16 +610,16 @@ export async function POST(req: NextRequest) {
           const pkgs = Array.isArray(packagesRaw)
             ? packagesRaw
             : [packagesRaw].filter(Boolean);
-          const nums: string[] = [];
+          const numbers: string[] = [];
           for (const pkg of pkgs) {
             const num =
               pkg?.packageTrackingNumber ||
               pkg?.trackingNumber ||
               pkg?.packageTrackingNo ||
               "";
-            if (num) nums.push(String(num));
+            if (num) numbers.push(String(num));
           }
-          if (!nums.length) {
+          if (!numbers.length) {
             const out = new Set<string>();
             (function walk(o: any) {
               if (o && typeof o === "object") {
@@ -419,9 +635,9 @@ export async function POST(req: NextRequest) {
                 }
               }
             })(rec);
-            nums.push(...Array.from(out));
+            numbers.push(...Array.from(out));
           }
-          let details = nums.map((num) => {
+          let details = numbers.map((num) => {
             const carrier = inferCarrierFromNumber(num);
             return {
               number: num,
@@ -430,7 +646,9 @@ export async function POST(req: NextRequest) {
             };
           });
           details = dedupeDetails(details);
-          return { shipStatus, trackingDetails: details };
+
+          const lines = extractIFLines(rec);
+          return { shipStatus, trackingDetails: details, lines };
         } catch (e: any) {
           const status = e?.response?.status;
           const code =
@@ -445,7 +663,7 @@ export async function POST(req: NextRequest) {
             attempt++;
             continue;
           }
-          return { shipStatus: "", trackingDetails: [] };
+          return { shipStatus: "", trackingDetails: [], lines: [] };
         }
       }
     }
@@ -455,102 +673,182 @@ export async function POST(req: NextRequest) {
       {
         shipStatus: string;
         trackingDetails: { number: string; carrier: string; url: string }[];
+        lines: ReturnType<typeof extractIFLines>;
       }
     >();
-    for (const group of chunk(detailIds, detailConcurrency)) {
+
+    for (const group of chunk(ids, detailConcurrency)) {
       const res = await Promise.all(group.map((id) => fetchDetail(id)));
       group.forEach((id, i) => detailMap.set(id, res[i]));
     }
 
-    // Build rows
-    const fulfillmentsRows: Array<any> = [];
-    const linesRows: Array<any> = [];
+    const fulfillmentsRows: Array<{
+      fulfillment_id: number;
+      tran_id: string | null;
+      trandate: string | null;
+      customer_id: number | null;
+      ship_status: string | null;
+      status: string | null;
+      created_from_so_id: number | null;
+      created_from_so_tranid: string | null;
+      tracking: string | null;
+      tracking_urls: string[] | null;
+      tracking_details: any[] | null;
+      synced_at: string;
+    }> = [];
+
+    let linesRows: Array<{
+      fulfillment_id: number;
+      line_id: number | null;
+      line_no: number;
+      item_id: number | null;
+      item_sku: string | null;
+      item_display_name: string | null;
+      quantity: number;
+      serial_numbers: string[] | null;
+      comments: string[] | null;
+    }> = [];
 
     for (const id of ids) {
       const head = headerMap.get(id);
       if (!head) continue;
       const so = soById.get(id) ?? { soId: null, soTranId: null };
+      const detail = detailMap.get(id) || {
+        shipStatus: "",
+        trackingDetails: [],
+        lines: [],
+      };
 
-      // gather line arrays (serials/comments aggregated by line_no)
-      const grouped = new Map<
-        number,
-        {
-          item_id: number | null;
-          item_sku: string | null;
-          item_display_name: string | null;
-          quantity: number;
-          serials: Set<string>;
-          comments: Set<string>;
-        }
-      >();
-      for (const ln of linesById.get(id) || []) {
-        if (!grouped.has(ln.line_no)) {
-          grouped.set(ln.line_no, {
-            item_id: ln.item_id,
-            item_sku: ln.item_sku,
-            item_display_name: ln.item_display_name,
-            quantity: Math.abs(Number(ln.quantity || 0)),
-            serials: new Set<string>(),
-            comments: new Set<string>(),
-          });
-        }
-        const g = grouped.get(ln.line_no)!;
-        if (ln.serial) g.serials.add(String(ln.serial));
-        if (ln.comment) g.comments.add(String(ln.comment));
-      }
-      for (const [line_no, g] of grouped.entries()) {
+      for (const g of detail.lines) {
+        if (!Number.isFinite(g.line_no)) continue;
         linesRows.push({
           fulfillment_id: id,
-          line_no,
+          line_id: g.line_id,
+          line_no: Math.trunc(g.line_no),
           item_id: g.item_id,
           item_sku: g.item_sku,
           item_display_name: g.item_display_name,
-          quantity: g.quantity,
-          serial_numbers: Array.from(g.serials),
-          comments: Array.from(g.comments),
+          quantity: Math.abs(Number(g.quantity || 0)),
+          serial_numbers: g.serial_numbers,
+          comments: g.comments,
         });
       }
-
-      // details: prefer fresh from detailMap; else reuse existing
-      const ex = existingMap.get(id);
-      const det = detailMap.get(id) || {
-        shipStatus: ex?.ship_status || null,
-        trackingDetails: ex?.tracking_details || [],
-      };
 
       fulfillmentsRows.push({
         fulfillment_id: id,
         tran_id: head.tran_id,
         trandate: head.trandate,
         customer_id: head.customer_id ?? null,
+        ship_status: detail.shipStatus || null,
         status: head.status ?? null,
         created_from_so_id: so.soId,
         created_from_so_tranid: so.soTranId,
-        ship_status: det.shipStatus || null,
         tracking:
-          (det.trackingDetails || []).map((p: any) => p.number).join(", ") ||
-          null,
-        tracking_urls:
-          (det.trackingDetails || []).map((p: any) => p.url) || null,
-        tracking_details: det.trackingDetails || null,
-        last_modified: head.lastmodified
-          ? new Date(head.lastmodified).toISOString()
-          : null,
+          detail.trackingDetails.map((p) => p.number).join(", ") || null,
+        tracking_urls: detail.trackingDetails.map((p) => p.url),
+        tracking_details: detail.trackingDetails,
         synced_at: new Date().toISOString(),
       });
+    }
+
+    if (linesRows.length) {
+      const merged = new Map<string, (typeof linesRows)[number]>();
+      for (const row of linesRows) {
+        const key = `${row.fulfillment_id}::${row.line_no}`;
+        const prev = merged.get(key);
+        if (!prev) {
+          merged.set(key, row);
+        } else {
+          prev.quantity = row.quantity ?? prev.quantity;
+          prev.item_id = prev.item_id ?? row.item_id;
+          prev.item_sku = prev.item_sku ?? row.item_sku;
+          prev.item_display_name =
+            prev.item_display_name ?? row.item_display_name;
+          prev.line_id = prev.line_id ?? row.line_id;
+          if (row.serial_numbers?.length) {
+            const set = new Set([
+              ...(prev.serial_numbers ?? []),
+              ...row.serial_numbers,
+            ]);
+            prev.serial_numbers = Array.from(set);
+          }
+          if (row.comments?.length) {
+            const set = new Set([...(prev.comments ?? []), ...row.comments]);
+            prev.comments = Array.from(set);
+          }
+        }
+      }
+      linesRows = Array.from(merged.values());
+    }
+
+    {
+      const itemIds = Array.from(
+        new Set(
+          linesRows
+            .map((r) => r.item_id)
+            .filter((n): n is number => Number.isFinite(n as number))
+        )
+      );
+      const meta = new Map<
+        number,
+        { sku: string | null; displayName: string | null }
+      >();
+      for (const batch of chunk(itemIds, 900)) {
+        const idList = batch.join(",");
+        const q = `
+          SELECT
+            I.id AS itemId,
+            I.itemid AS sku,
+            I.displayname AS displayName
+          FROM item I
+          WHERE I.id IN (${idList})
+        `;
+        const r = await netsuiteQuery(q, headers, "itemMeta");
+        for (const row of r?.data?.items || []) {
+          const iid = Number(row.itemid);
+          if (Number.isFinite(iid)) {
+            meta.set(iid, {
+              sku: row.sku ?? null,
+              displayName: row.displayname ?? null,
+            });
+          }
+        }
+        await new Promise((res) => setTimeout(res, 40));
+      }
+      for (const row of linesRows) {
+        if (row.item_id != null) {
+          const m = meta.get(row.item_id);
+          if (m) {
+            if (!row.item_sku && m.sku) row.item_sku = m.sku;
+            if (
+              (!row.item_display_name ||
+                (row.item_sku && row.item_display_name === row.item_sku)) &&
+              m.displayName
+            ) {
+              row.item_display_name = m.displayName;
+            }
+          }
+        }
+        if (!row.item_display_name && row.item_sku) {
+          row.item_display_name = row.item_sku;
+        }
+      }
     }
 
     if (!dry) {
       if (fulfillmentsRows.length) {
         const { error: e1 } = await supabase
           .from("fulfillments")
-          .upsert(fulfillmentsRows as any, { onConflict: "fulfillment_id" });
+          .upsert(fulfillmentsRows as any, {
+            onConflict: "fulfillment_id",
+          });
         if (e1) throw e1;
       }
       await supabase
         .from("fulfillment_lines")
         .delete()
         .in("fulfillment_id", ids);
+
       if (linesRows.length) {
         const { error: e2 } = await supabase
           .from("fulfillment_lines")
@@ -562,24 +860,55 @@ export async function POST(req: NextRequest) {
     upsertedCount += fulfillmentsRows.length;
   }
 
-  if (!dry && !fromParam) {
-    await supabase
-      .from("sync_state")
-      .upsert(
-        {
-          key: "fulfillments",
-          last_success_at: new Date().toISOString(),
-          last_cursor: lastCursor,
-        },
-        { onConflict: "key" }
-      );
+  const { checked, softDeleted } = await reconcileDeletedFulfillments(
+    supabase,
+    headers,
+    Array.from(customerSet),
+    dry
+  );
+
+  if (!dry) {
+    const maxCursorQ = `
+      SELECT TO_CHAR(MAX(T.lastmodifieddate),'YYYY-MM-DD"T"HH24:MI:SS.FF3TZH:TZM') AS maxIso
+      FROM transaction T
+      WHERE T.type = 'ItemShip'
+        AND T.lastmodifieddate >= TO_TIMESTAMP_TZ('${sinceIso}','YYYY-MM-DD"T"HH24:MI:SS.FF3"Z"')
+    `;
+    const mx = await netsuiteQuery(maxCursorQ, headers, "maxCursor");
+    const maxIso = mx?.data?.items?.[0]?.maxiso || sinceIso;
+    await supabase.from("sync_state").upsert(
+      {
+        key: "fulfillments",
+        last_success_at: new Date().toISOString(),
+        last_cursor: maxIso,
+      },
+      { onConflict: "key" }
+    );
+    return new Response(
+      JSON.stringify({
+        scanned: changedIds.length,
+        upserted: upsertedCount,
+        lastCursor: maxIso,
+        foundModified,
+        foundCreatedToday,
+        foundFallbackToday,
+        checked,
+        softDeleted,
+      }),
+      { status: 200 }
+    );
   }
 
   return new Response(
     JSON.stringify({
       scanned: changedIds.length,
       upserted: upsertedCount,
-      lastCursor,
+      lastCursor: sinceIso,
+      foundModified,
+      foundCreatedToday,
+      foundFallbackToday,
+      checked,
+      softDeleted,
     }),
     { status: 200 }
   );

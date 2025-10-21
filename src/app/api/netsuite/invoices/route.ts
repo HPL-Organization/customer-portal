@@ -49,6 +49,7 @@ export async function GET(req: NextRequest) {
         .from("invoices")
         .select("invoice_id")
         .eq("customer_id", customerId)
+        .is("ns_deleted_at", null)
         .order("trandate", { ascending: false });
       if (error) throw error;
       invoiceIds = (invs || []).map((r) => Number(r.invoice_id));
@@ -62,7 +63,8 @@ export async function GET(req: NextRequest) {
       const { data: invsBySo, error: e1 } = await supabase
         .from("invoices")
         .select("invoice_id, customer_id")
-        .eq("created_from_so_id", soId);
+        .eq("created_from_so_id", soId)
+        .is("ns_deleted_at", null);
       if (e1) throw e1;
       invoiceIds = (invsBySo || []).map((r) => Number(r.invoice_id));
       customerId = invsBySo?.[0]?.customer_id ?? null;
@@ -86,7 +88,8 @@ export async function GET(req: NextRequest) {
     const { data: headers, error: eH } = await supabase
       .from("invoices")
       .select("*")
-      .in("invoice_id", invoiceIds);
+      .in("invoice_id", invoiceIds)
+      .is("ns_deleted_at", null);
     if (eH) throw eH;
 
     const { data: lines, error: eL } = await supabase
@@ -139,7 +142,8 @@ export async function GET(req: NextRequest) {
     const invoicesOut = (headers || [])
       .sort(
         (a, b) =>
-          new Date(b.trandate).getTime() - new Date(a.trandate).getTime()
+          new Date(b.trandate || 0).getTime() -
+          new Date(a.trandate || 0).getTime()
       )
       .map((h) => {
         const id = Number(h.invoice_id);

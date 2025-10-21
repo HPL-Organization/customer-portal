@@ -32,8 +32,14 @@ function LoginInner() {
   const router = useRouter();
   const sp = useSearchParams();
   const next = sp.get("next") || "/";
+  const maintParam = sp.get("maintenance") === "1";
+  const maintOn =
+    maintParam ||
+    (process.env.NEXT_PUBLIC_MAINTENANCE_ON || "").toLowerCase() === "true";
 
   const [mode, setMode] = useState<Mode>("signin");
+  const [showAdminForMaint, setShowAdminForMaint] = useState(false);
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
@@ -278,6 +284,8 @@ function LoginInner() {
     googleLoading ||
     (mode === "signup" && (!firstName.trim() || !lastName.trim()));
 
+  const showOnlyMaintenance = maintOn && !showAdminForMaint;
+
   return (
     <main className="relative min-h-screen w-full overflow-hidden bg-[#FFFEF4]">
       <div className="pointer-events-none absolute inset-0 opacity-[0.18] [background-image:repeating-linear-gradient(0deg,rgba(197,170,107,0.45)_0,rgba(197,170,107,0.45)_1px,transparent_1px,transparent_22px),repeating-linear-gradient(90deg,rgba(197,170,107,0.28)_0,rgba(197,170,107,0.28)_1px,transparent_1px,transparent_22px)]" />
@@ -290,9 +298,7 @@ function LoginInner() {
             <h1 className="text-4xl sm:text-5xl font-semibold leading-tight text-slate-900">
               Welcome to the Highland Park Customer Portal!
             </h1>
-            <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-[13px] text-amber-900">
-              ⚠️ Going through upgrades — might be a bit unstable for users.
-            </div>
+
             <div className="mt-6 space-y-4 text-[15px] leading-relaxed text-slate-800">
               <p>
                 Your Portal Account only takes a moment and once you're signed
@@ -334,56 +340,83 @@ function LoginInner() {
                 </span>
               </div>
 
-              <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1 ring-1 ring-slate-200">
+              {!maintOn && (
+                <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1 ring-1 ring-slate-200">
+                  <button
+                    onClick={() => {
+                      setMode("signin");
+                      setErrorMsg(null);
+                      setInfoMsg(null);
+                      setConfirmBannerEmail(null);
+                    }}
+                    className={`rounded-lg px-3 py-1 text-xs transition ${
+                      mode === "signin"
+                        ? "bg-slate-900 text-white"
+                        : "text-slate-700 hover:text-slate-900"
+                    }`}
+                  >
+                    Sign in
+                  </button>
+                  <button
+                    onClick={() => {
+                      setMode("signup");
+                      setErrorMsg(null);
+                      setInfoMsg(null);
+                      setConfirmBannerEmail(null);
+                    }}
+                    className={`rounded-lg px-3 py-1 text-xs transition ${
+                      mode === "signup"
+                        ? "bg-slate-900 text-white"
+                        : "text-slate-700 hover:text-slate-900"
+                    }`}
+                  >
+                    Sign Up
+                  </button>
+                  <button
+                    onClick={() => {
+                      setMode("admin");
+                      setErrorMsg(null);
+                      setInfoMsg(null);
+                      setConfirmBannerEmail(null);
+                    }}
+                    className={`rounded-lg px-3 py-1 text-xs transition ${
+                      mode === "admin"
+                        ? "bg-slate-900 text-white"
+                        : "text-slate-700 hover:text-slate-900"
+                    }`}
+                  >
+                    Admin
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {maintOn && !showAdminForMaint && (
+              <div className="space-y-6">
+                <div className="rounded-2xl border border-amber-300/70 bg-amber-50 p-4">
+                  <div className="text-sm font-semibold text-amber-900">
+                    Portal is getting updated!
+                  </div>
+                  <div className="mt-1 text-xs text-amber-800">
+                    Please check back later
+                  </div>
+                </div>
                 <button
                   onClick={() => {
-                    setMode("signin");
-                    setErrorMsg(null);
-                    setInfoMsg(null);
-                    setConfirmBannerEmail(null);
-                  }}
-                  className={`rounded-lg px-3 py-1 text-xs transition ${
-                    mode === "signin"
-                      ? "bg-slate-900 text-white"
-                      : "text-slate-700 hover:text-slate-900"
-                  }`}
-                >
-                  Sign in
-                </button>
-                <button
-                  onClick={() => {
-                    setMode("signup");
-                    setErrorMsg(null);
-                    setInfoMsg(null);
-                    setConfirmBannerEmail(null);
-                  }}
-                  className={`rounded-lg px-3 py-1 text-xs transition ${
-                    mode === "signup"
-                      ? "bg-slate-900 text-white"
-                      : "text-slate-700 hover:text-slate-900"
-                  }`}
-                >
-                  Sign Up
-                </button>
-                <button
-                  onClick={() => {
+                    setShowAdminForMaint(true);
                     setMode("admin");
                     setErrorMsg(null);
                     setInfoMsg(null);
                     setConfirmBannerEmail(null);
                   }}
-                  className={`rounded-lg px-3 py-1 text-xs transition ${
-                    mode === "admin"
-                      ? "bg-slate-900 text-white"
-                      : "text-slate-700 hover:text-slate-900"
-                  }`}
+                  className="w-full rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-black"
                 >
-                  Admin
+                  Staff sign-in
                 </button>
               </div>
-            </div>
+            )}
 
-            {confirmBannerEmail && (
+            {!maintOn && confirmBannerEmail && (
               <div className="mb-6 rounded-2xl border border-amber-300/70 bg-amber-50 p-4">
                 <div className="flex items-start gap-3">
                   <div className="mt-0.5 h-3 w-3 animate-pulse rounded-full bg-amber-500" />
@@ -428,34 +461,7 @@ function LoginInner() {
               </div>
             )}
 
-            {mode !== "admin" ? (
-              <AuthForm
-                mode={mode}
-                setMode={setMode}
-                email={email}
-                setEmail={setEmail}
-                password={password}
-                setPassword={setPassword}
-                showPass={showPass}
-                setShowPass={setShowPass}
-                firstName={firstName}
-                middleName={middleName}
-                lastName={lastName}
-                setFirstName={setFirstName}
-                setMiddleName={setMiddleName}
-                setLastName={setLastName}
-                loading={loading}
-                onSignin={onSignin}
-                onSignup={onSignup}
-                errorMsg={errorMsg}
-                infoMsg={infoMsg}
-                googleDisabled={googleLoading}
-                googleLoading={googleLoading}
-                continueWithGoogle={continueWithGoogle}
-                sendMagicLink={sendMagicLink}
-                resetPassword={resetPassword}
-              />
-            ) : (
+            {maintOn && showAdminForMaint ? (
               <form onSubmit={onAdminLogin} className="space-y-4">
                 <div>
                   <label className="mb-2 block text-xs font-medium tracking-wide text-slate-700">
@@ -562,13 +568,40 @@ function LoginInner() {
                   disabled={loading}
                   className="group inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-black disabled:opacity-60"
                 >
-                  <span>{loading ? "Signing in…" : "Admin sign"}</span>
+                  <span>{loading ? "Signing in…" : "Admin sign in"}</span>
                   <span className="transition-transform group-hover:translate-x-0.5">
                     →
                   </span>
                 </button>
               </form>
-            )}
+            ) : !maintOn ? (
+              <AuthForm
+                mode={mode}
+                setMode={setMode}
+                email={email}
+                setEmail={setEmail}
+                password={password}
+                setPassword={setPassword}
+                showPass={showPass}
+                setShowPass={setShowPass}
+                firstName={firstName}
+                middleName={middleName}
+                lastName={lastName}
+                setFirstName={setFirstName}
+                setMiddleName={setMiddleName}
+                setLastName={setLastName}
+                loading={loading}
+                onSignin={onSignin}
+                onSignup={onSignup}
+                errorMsg={errorMsg}
+                infoMsg={infoMsg}
+                googleDisabled={googleLoading}
+                googleLoading={googleLoading}
+                continueWithGoogle={continueWithGoogle}
+                sendMagicLink={sendMagicLink}
+                resetPassword={resetPassword}
+              />
+            ) : null}
 
             <p className="mt-8 text-center text-[11px] leading-relaxed text-slate-500">
               By continuing you agree to our Terms & Privacy.
@@ -813,7 +846,7 @@ function AuthForm(props: {
         <button
           type="submit"
           disabled={loading}
-          className="group inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-black disabled:opacity-60"
+          className="group inline-flex w-full items-center justify-center gap-2 rounded--xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-black disabled:opacity-60"
         >
           <span>
             {loading
@@ -836,34 +869,25 @@ function AuthForm(props: {
         <div className="h-px w-full bg-slate-200" />
       </div>
 
-      {/*
-      <button
-        onClick={continueWithGoogle}
-        disabled={googleDisabled}
-        className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-medium text-slate-900 ring-1 ring-slate-200 transition hover:bg-slate-50 disabled:opacity-60"
-      >
-        {googleLoading ? (
-          <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-slate-900" />
-        ) : (
-          <svg viewBox="0 0 24 24" className="h-4 w-4">
-            <path
-              fill="#EA4335"
-              d="M12 11.8v3.9h6.5c-.3 1.9-2.1 5.5-6.5 5.5-3.9 0-7.1-3.2-7.1-7.1S8.1 7 12 7c2.2 0 3.7.9 4.6 1.8l3.1-3.1C18.2 3.8 15.4 2.5 12 2.5 6.8 2.5 2.5 6.8 2.5 12S6.8 21.5 12 21.5c6.9 0 9.5-4.8 9.5-7.3 0-.5 0-.9-.1-1.3H12z"
-            />
-          </svg>
-        )}
-        <span>{mode === "signup" ? "Continue with Google" : "Sign in with Google"}</span>
-      </button>
-      */}
       {mode === "signin" && (
         <div className="mt-6 space-y-3 text-sm">
-          <button
-            onClick={sendMagicLink}
-            disabled={loading}
-            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-slate-900 transition hover:bg-slate-50 disabled:opacity-60"
+          {/* <button
+            onClick={continueWithGoogle}
+            disabled={googleDisabled}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-medium text-slate-900 ring-1 ring-slate-200 transition hover:bg-slate-50 disabled:opacity-60"
           >
-            Email me a magic link
-          </button>
+            {googleLoading ? (
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-slate-900" />
+            ) : (
+              <svg viewBox="0 0 24 24" className="h-4 w-4">
+                <path
+                  fill="#EA4335"
+                  d="M12 11.8v3.9h6.5c-.3 1.9-2.1 5.5-6.5 5.5-3.9 0-7.1-3.2-7.1-7.1S8.1 7 12 7c2.2 0 3.7.9 4.6 1.8l3.1-3.1C18.2 3.8 15.4 2.5 12 2.5 6.8 2.5 2.5 6.8 2.5 12S6.8 21.5 12 21.5c6.9 0 9.5-4.8 9.5-7.3 0-.5 0-.9-.1-1.3H12z"
+                />
+              </svg>
+            )}
+            <span>{mode === "signup" ? "Continue with Google" : "Sign in with Google"}</span>
+          </button> */}
           <div className="text-center text-slate-700">
             Forgot your password?{" "}
             <button
