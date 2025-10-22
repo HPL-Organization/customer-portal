@@ -1,163 +1,13 @@
-// "use client";
-
-// import React, { useEffect, useRef, useState } from "react";
-// import Link from "next/link";
-// import { AnimatePresence } from "framer-motion";
-// import { Sparkles, ArrowRight } from "lucide-react";
-// import VipCard, { VipEvent } from "@/components/UI/VipCard";
-
-// const DEMO_EVENTS: VipEvent[] = [];
-
-// export default function Dashboard() {
-//   const [events, setEvents] = useState<VipEvent[] | null>(null);
-//   const [error, setError] = useState<string | null>(null);
-//   const scrollerRef = useRef<HTMLDivElement>(null);
-//   const DEMO_EVENTS: VipEvent[] = [
-//     // {
-//     //   id: "evt_mon_rock",
-//     //   name: "Monday Night Live — Rough Rock Sale",
-//     //   startsAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
-//     //   description:
-//     //     "Hand-picked rough for slabs, spheres, and cabbing. Early access pricing.",
-//     //   zoomJoinUrl: "https://zoom.us/j/1234567890",
-//     //   category: "rough_rock",
-//     // },
-//     // {
-//     //   id: "evt_tools",
-//     //   name: "All Machines — Lapidary Tools Live",
-//     //   startsAt: new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(),
-//     //   description:
-//     //     "Saws, polishers, belts & accessories. Live Q&A with the tech team.",
-//     //   zoomJoinUrl: "https://zoom.us/j/0987654321",
-//     //   category: "machines",
-//     // },
-//     // {
-//     //   id: "evt_agate",
-//     //   name: "Agate Collectors Community",
-//     //   startsAt: new Date(Date.now() + 26 * 60 * 60 * 1000).toISOString(),
-//     //   description: "Show & tell, ID tips, swaps, and exclusive agate drops.",
-//     //   zoomJoinUrl: "https://zoom.us/j/111222333",
-//     //   category: "agate",
-//     // },
-//   ];
-
-//   useEffect(() => {
-//     let alive = true;
-//     (async () => {
-//       try {
-//         const res = await fetch("/api/get-customer-event-subscriptions", {
-//           cache: "no-store",
-//         });
-//         if (!res.ok) throw new Error("");
-//         const data = await res.json();
-//         const list: VipEvent[] = (data?.events || data || []).map((x: any) => ({
-//           id: String(x.id ?? x.eventId ?? Math.random().toString(36).slice(2)),
-//           name: String(x.name ?? x.title ?? "VIP Session"),
-//           startsAt: String(
-//             x.startsAt ?? x.startDate ?? new Date().toISOString()
-//           ),
-//           description:
-//             x.description ??
-//             x.summary ??
-//             "Exclusive live session for subscribers.",
-//           zoomJoinUrl: String(x.zoomJoinUrl ?? x.zoomUrl ?? x.joinUrl ?? "#"),
-//           category: x.category as VipEvent["category"],
-//         }));
-//         if (alive) setEvents(list);
-//       } catch (e: any) {
-//         if (alive) {
-//           setError(e?.message || "");
-//           setEvents(DEMO_EVENTS);
-//         }
-//       }
-//     })();
-//     return () => {
-//       alive = false;
-//     };
-//   }, []);
-
-//   const scrollBy = (dir: 1 | -1) => {
-//     const el = scrollerRef.current;
-//     if (!el) return;
-//     const card = el.querySelector<HTMLElement>("article");
-//     const dx = card ? card.clientWidth + 16 : 480;
-//     el.scrollBy({ left: dir * dx, behavior: "smooth" });
-//   };
-
-//   return (
-//     <div className="relative space-y-8">
-//       <div className="pointer-events-none absolute inset-0 -z-10 rounded-xl">
-//         <div className="absolute inset-0 bg-[radial-gradient(120%_140%_at_50%_-20%,#FFFFEC,transparent_60%),linear-gradient(180deg,#FFFFFF_0%,#FFFFEC_50%,#FFFFFF_100%)]" />
-//         <div className="absolute inset-0 bg-[radial-gradient(60%_40%_at_20%_10%,rgba(140,15,15,0.06),transparent_60%),radial-gradient(40%_30%_at_90%_20%,rgba(224,28,36,0.05),transparent_60%)]" />
-//       </div>
-
-//       <header className="mb-2">
-//         <h1 className="text-2xl font-bold text-[#17152A]">Welcome!</h1>
-//         <div className="mt-2 h-0.5 w-16 rounded-full bg-gradient-to-r from-[#8C0F0F] to-[#E01C24]" />
-//       </header>
-
-//       <section className="relative">
-//         <div className="mb-3 flex items-center justify-between">
-//           <h3 className="text-sm font-medium tracking-wide text-[#17152A]">
-//             Your VIP Events
-//           </h3>
-//           <div className="flex items-center gap-2">
-//             {/* <button
-//               onClick={() => scrollBy(-1)}
-//               aria-label="Previous"
-//               className="inline-flex items-center justify-center rounded-full border border-[#BFBFBF] bg-white px-3.5 py-3 text-[#17152A] transition-colors hover:bg-[#8C0F0F] hover:text-white"
-//             >
-//               <ArrowRight className="h-4 w-4 rotate-180" />
-//             </button>
-//             <button
-//               onClick={() => scrollBy(1)}
-//               aria-label="Next"
-//               className="inline-flex items-center justify-center rounded-full border border-[#BFBFBF] bg-white px-3.5 py-3 text-[#17152A] transition-colors hover:bg-[#8C0F0F] hover:text-white"
-//             >
-//               <ArrowRight className="h-4 w-4" />
-//             </button> */}
-//           </div>
-//         </div>
-
-//         <div
-//           ref={scrollerRef}
-//           className="scrollbar-none relative flex snap-x snap-mandatory gap-4 overflow-x-auto rounded-3xl p-1"
-//         >
-//           <AnimatePresence initial={false}>
-//             {events && events.length > 0 ? (
-//               events.map((e) => <VipCard key={e.id} event={e} />)
-//             ) : (
-//               <div className="w-full">
-//                 <div className="relative isolate rounded-3xl border border-[#BFBFBF] bg-[#FFFFEC] p-12 text-center overflow-hidden">
-//                   <div className="relative z-[1] mx-auto max-w-xl">
-//                     <div className="inline-flex items-center gap-2 rounded-full border border-[#BFBFBF] bg-white/60 px-4 py-1 text-xs text-[#17152A]">
-//                       <Sparkles className="h-3.5 w-3.5 text-[#8C0F0F]" />
-//                       VIP Room
-//                     </div>
-//                     <h3 className="mt-4 text-2xl sm:text-3xl font-semibold text-[#17152A]">
-//                       (Coming Soon) No upcoming events yet
-//                     </h3>
-//                     <p className="mt-2 text-[#17152A]/70">
-//                       (Coming Soon) When you're subscribed to events, your
-//                       personal VIP join banners will show up here.
-//                     </p>
-//                     {error && (
-//                       <p className="mt-4 text-[12px] text-[#8C0F0F]">{error}</p>
-//                     )}
-//                   </div>
-//                 </div>
-//               </div>
-//             )}
-//           </AnimatePresence>
-//         </div>
-//       </section>
-//     </div>
-//   );
-// }
 "use client";
 
 import { useCustomerBootstrap } from "@/components/providers/CustomerBootstrap";
-import { fetchLiveEvents, getEventTypes, isEventCurrentlyLive, joinLiveSession, type LiveEvent } from "@/lib/actions/livesaleapp";
+import {
+  fetchLiveEvents,
+  getEventTypes,
+  isEventCurrentlyLive,
+  joinLiveSession,
+  type LiveEvent,
+} from "@/lib/actions/livesaleapp";
 import {
   Box,
   Button,
@@ -167,12 +17,28 @@ import {
   DialogTitle,
   Divider,
   Typography,
+  TextField,
 } from "@mui/material";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowRight, Clock, PlayCircle, Sparkles, UserCog, Users } from "lucide-react";
+import {
+  ArrowRight,
+  Clock,
+  PlayCircle,
+  Sparkles,
+  UserCog,
+  Users,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "react-toastify";
+import Image from "next/image";
+import Loader from "@/components/UI/Loader";
+import { createBrowserClient } from "@supabase/ssr";
+
+const supabase = createBrowserClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 type VipEvent = {
   id: string;
@@ -183,32 +49,50 @@ type VipEvent = {
   category?: "rough_rock" | "machines" | "agate" | "other";
 };
 
-const DEMO_EVENTS: VipEvent[] = [
+type ImageRule = { pattern: RegExp; src: string };
+
+const IMG_BASE = "/assets/events";
+
+const IMAGE_MAP_EXACT: Record<string, string> = {
+  monday_live_event: `${IMG_BASE}/Monday_event.png`,
+  cut_and_chat_live_event: `${IMG_BASE}/Thursday_Cut_and_Chat.png`,
+  thursday_afternoon_live_event: `${IMG_BASE}/Thursday_Cabochon_afternoon.png`,
+  friday_rough_rock_event: `${IMG_BASE}/Wednesday_Friday_Saturday_Rough_Rock.png`,
+  wednesday_rough_rock_event: `${IMG_BASE}/Wednesday_Friday_Saturday_Rough_Rock.png`,
+  saturday_slab_event: `${IMG_BASE}/Wednesday_Friday_Saturday_Rough_Rock.png`,
+  sphere_collectors_event: `${IMG_BASE}/Wednesday_Friday_Saturday_Rough_Rock.png`,
+};
+
+const IMAGE_FALLBACK_BY_KEYWORD: ImageRule[] = [
   {
-    id: "evt_demo_1",
-    name: "Monday Night Live — Rough Rock Sale",
-    startsAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
-    description: "Hand-picked rough for slabs, spheres, and cabbing.",
-    zoomJoinUrl: "#",
-    category: "rough_rock",
+    pattern: /rough|slab|rock/i,
+    src: `${IMG_BASE}/Wednesday_Friday_Saturday_Rough_Rock.png`,
   },
   {
-    id: "evt_demo_2",
-    name: "All Machines — Lapidary Tools Live",
-    startsAt: new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(),
-    description: "Saws, polishers, belts & accessories. Live Q&A.",
-    zoomJoinUrl: "#",
-    category: "machines",
+    pattern: /machine|tool/i,
+    src: `${IMG_BASE}/Machine_Night_special_event.png`,
   },
   {
-    id: "evt_demo_3",
-    name: "Agate Collectors Community",
-    startsAt: new Date(Date.now() + 26 * 60 * 60 * 1000).toISOString(),
-    description: "Show & tell, ID tips, swaps, and exclusive drops.",
-    zoomJoinUrl: "#",
-    category: "agate",
+    pattern: /chat|cabochon|thursday/i,
+    src: `${IMG_BASE}/Thursday_Cabochon_afternoon.png`,
   },
 ];
+
+function resolveEventImage(opts: {
+  internalName: string;
+  category?: VipEvent["category"];
+}): string | null {
+  const key = opts.internalName.trim().toLowerCase();
+  if (IMAGE_MAP_EXACT[key]) return IMAGE_MAP_EXACT[key];
+  for (const rule of IMAGE_FALLBACK_BY_KEYWORD) {
+    if (rule.pattern.test(key)) return rule.src;
+  }
+  if (opts.category === "rough_rock")
+    return "/events/Wednesday_Friday_Saturday_Rough_Rock.png";
+  if (opts.category === "machines")
+    return "/events/Machine_Night_special_event.png";
+  return null;
+}
 
 function whenText(iso: string) {
   const d = new Date(iso);
@@ -241,6 +125,59 @@ function categoryPill(c?: VipEvent["category"]) {
   }
 }
 
+function parseISO(s?: string) {
+  if (!s) return new Date(NaN);
+  const hasTZ = /Z|[+-]\d{2}:\d{2}$/.test(s);
+  return new Date(hasTZ ? s : s + "Z");
+}
+
+function classify(event?: LiveEvent) {
+  if (!event)
+    return {
+      isLive: false,
+      badge: "Not live",
+      timeText: "TBA",
+      sortKey: 3,
+      startsAt: undefined as string | undefined,
+    };
+  const now = Date.now();
+  const start = parseISO(event.startTime).getTime();
+  const end = event.endTime
+    ? parseISO(event.endTime).getTime()
+    : start + 3 * 60 * 60 * 1000;
+  if (now >= start && now <= end) {
+    const mins = Math.max(0, Math.round((now - start) / 60000));
+    return {
+      isLive: true,
+      badge: "Live now",
+      timeText:
+        mins < 60
+          ? `started ${mins}m ago`
+          : `started ${Math.round(mins / 60)}h ago`,
+      sortKey: 0,
+      startsAt: event.startTime,
+    };
+  }
+  if (now < start) {
+    const mins = Math.round((start - now) / 60000);
+    return {
+      isLive: false,
+      badge: "Upcoming",
+      timeText: mins < 60 ? `in ${mins}m` : `in ${Math.round(mins / 60)}h`,
+      sortKey: 1,
+      startsAt: event.startTime,
+    };
+  }
+  const mins = Math.round((now - end) / 60000);
+  return {
+    isLive: false,
+    badge: "Ended",
+    timeText: mins < 60 ? `${mins}m ago` : `${Math.round(mins / 60)}h ago`,
+    sortKey: 2,
+    startsAt: event.startTime,
+  };
+}
+
 function CardSkeleton() {
   return (
     <div className="relative overflow-hidden rounded-2xl border border-[#EAEAEA] bg-white">
@@ -261,85 +198,254 @@ function CardSkeleton() {
 export default function Dashboard() {
   const router = useRouter();
   const { hsId } = useCustomerBootstrap();
-  const [events, setEvents] = useState<VipEvent[] | null>(null);
+
+  const [events, setEvents] = useState<
+    | (VipEvent & {
+        _live?: {
+          isLive: boolean;
+          badge: string;
+          timeText: string;
+          sortKey: number;
+        };
+      })[]
+    | null
+  >(null);
   const [liveEvents, setLiveEvents] = useState<LiveEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loadingEventId, setLoadingEventId] = useState<string | null>(null);
+
   const [showProfileUpdateDialog, setShowProfileUpdateDialog] = useState(false);
-  const [hubspotContact, setHubspotContact] = useState<{
-    firstname?: string;
-    lastname?: string;
-    email?: string;
-  } | null>(null);
+  const [formFirstName, setFormFirstName] = useState("");
+  const [formMiddleName, setFormMiddleName] = useState("");
+  const [formLastName, setFormLastName] = useState("");
+  const [savingProfile, setSavingProfile] = useState(false);
+
+  const [authEmail, setAuthEmail] = useState<string>("");
+  const [authFirstName, setAuthFirstName] = useState<string>("");
+  const [authMiddleName, setAuthMiddleName] = useState<string>("");
+  const [authLastName, setAuthLastName] = useState<string>("");
+
+  const [pageLoading, setPageLoading] = useState<boolean>(true);
+  const [loaderLabel, setLoaderLabel] = useState<string>("Cutting your rock…");
+  const [loaderProgress, setLoaderProgress] = useState<number | null>(null);
 
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
-        // Fetch event types and live events in parallel
+        const { data } = await supabase.auth.getUser();
+        const u = data.user;
+        if (u) {
+          const meta = (u.user_metadata as any) || {};
+          setAuthEmail(u.email || "");
+          setAuthFirstName((meta.first_name || "").toString().trim());
+          setAuthMiddleName((meta.middle_name || "").toString().trim());
+          setAuthLastName((meta.last_name || "").toString().trim());
+        }
+      } catch {}
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        setLoaderLabel("Cutting your rock…");
+        setLoaderProgress(12);
         const [eventTypes, liveEventsData] = await Promise.all([
           getEventTypes(),
-          fetchLiveEvents()
+          fetchLiveEvents(),
         ]);
-        
-        if (alive) {
-          setLiveEvents(liveEventsData);
-          
-          // Map event types to VipEvent format using actual live event times
-          const list: VipEvent[] = eventTypes.map((eventType) => {
-            // Find the latest live event for this event type
-            const matchingLiveEvents = liveEventsData.filter(
-              liveEvent => liveEvent.type === eventType.internalName
+        if (!alive) return;
+
+        console.groupCollapsed("LiveSaleApp debug");
+        console.log("now", new Date().toISOString());
+        console.log("eventTypes", eventTypes);
+        console.log("liveEventsData (raw)", liveEventsData);
+        try {
+          const table = liveEventsData.map((e) => ({
+            id: e.id,
+            type: e.type,
+            startTime: e.startTime,
+            endTime: e.endTime,
+            isEnded: e.isEnded,
+            zoomMeetingId: e.zoomMeetingId,
+            totalSale: e.totalSale,
+            customers: e._count?.customers,
+          }));
+          console.table(table);
+          const byType = liveEventsData.reduce(
+            (acc: Record<string, number>, e) => {
+              acc[e.type] = (acc[e.type] || 0) + 1;
+              return acc;
+            },
+            {}
+          );
+          console.log("countsByType", byType);
+          const liveNow = liveEventsData.filter((e) => {
+            const now = Date.now();
+            const hasTZ = /Z|[+-]\d{2}:\d{2}$/.test(e.startTime || "");
+            const start = new Date(
+              hasTZ ? e.startTime : (e.startTime || "") + "Z"
+            ).getTime();
+            const end = e.endTime
+              ? new Date(
+                  /Z|[+-]\d{2}:\d{2}$/.test(e.endTime)
+                    ? e.endTime
+                    : e.endTime + "Z"
+                ).getTime()
+              : start + 3 * 60 * 60 * 1000;
+            return now >= start && now <= end;
+          });
+          console.log("liveNowDetectedClientSide", liveNow);
+        } catch (err) {
+          console.warn("debug table failed", err);
+        }
+        console.groupEnd();
+
+        setLoaderProgress(62);
+        setLiveEvents(liveEventsData);
+
+        const list = eventTypes
+          .map((eventType) => {
+            const matches = liveEventsData.filter(
+              (le) => le.type === eventType.internalName
             );
-            
-            // Get the latest event by start time, only if it's within 12 hours from now
-            let startsAt;
-            if (matchingLiveEvents.length > 0) {
-              const latestEvent = matchingLiveEvents.sort((a, b) => 
-                new Date(b.startTime).getTime() - new Date(a.startTime).getTime()
-              )[0];
-              
-              // Check if the event is not older than 12 hours from now
-              const now = new Date();
-              const eventTime = new Date(latestEvent.startTime);
-              const twelveHoursAgo = new Date(now.getTime() - 12 * 60 * 60 * 1000);
-              
-              if (eventTime >= twelveHoursAgo) {
-                startsAt = latestEvent.startTime;
-              } else {
-                startsAt = undefined;
-              }
-            } else {
-              startsAt = undefined;
+            let chosen = matches.find((e) => {
+              const now = Date.now();
+              const hasTZS = /Z|[+-]\d{2}:\d{2}$/.test(e.startTime || "");
+              const s = new Date(
+                hasTZS ? e.startTime : (e.startTime || "") + "Z"
+              ).getTime();
+              const eHasTZ = e.endTime
+                ? /Z|[+-]\d{2}:\d{2}$/.test(e.endTime)
+                : true;
+              const end = e.endTime
+                ? new Date(eHasTZ ? e.endTime : e.endTime + "Z").getTime()
+                : s + 3 * 60 * 60 * 1000;
+              return now >= s && now <= end;
+            });
+            if (!chosen && matches.length > 0) {
+              chosen = matches.slice().sort((a, b) => {
+                const az = /Z|[+-]\d{2}:\d{2}$/.test(a.startTime || "");
+                const bz = /Z|[+-]\d{2}:\d{2}$/.test(b.startTime || "");
+                return (
+                  new Date(
+                    (bz ? "" : "") + (b.startTime || "") + (bz ? "" : "Z")
+                  ).getTime() -
+                  new Date(
+                    (az ? "" : "") + (a.startTime || "") + (az ? "" : "Z")
+                  ).getTime()
+                );
+              })[0];
             }
-            // Map category based on internalName patterns
+            const now = Date.now();
+            let sortKey = 99;
+            let badge = "Not live";
+            let timeText = "TBA";
+            if (chosen) {
+              const hasTZS = /Z|[+-]\d{2}:\d{2}$/.test(chosen.startTime || "");
+              const s = new Date(
+                hasTZS ? chosen.startTime : (chosen.startTime || "") + "Z"
+              ).getTime();
+              const eHasTZ = chosen.endTime
+                ? /Z|[+-]\d{2}:\d{2}$/.test(chosen.endTime)
+                : true;
+              const end = chosen.endTime
+                ? new Date(
+                    eHasTZ ? chosen.endTime : chosen.endTime + "Z"
+                  ).getTime()
+                : s + 3 * 60 * 60 * 1000;
+              if (now >= s && now <= end) {
+                const mins = Math.max(0, Math.round((now - s) / 60000));
+                badge = "Live now";
+                timeText =
+                  mins < 60
+                    ? `started ${mins}m ago`
+                    : `started ${Math.round(mins / 60)}h ago`;
+                sortKey = 0;
+              } else if (now < s) {
+                const mins = Math.round((s - now) / 60000);
+                badge = "Upcoming";
+                timeText =
+                  mins < 60 ? `in ${mins}m` : `in ${Math.round(mins / 60)}h`;
+                sortKey = 1;
+              } else {
+                const mins = Math.round((now - end) / 60000);
+                badge = "Ended";
+                timeText =
+                  mins < 60 ? `${mins}m ago` : `${Math.round(mins / 60)}h ago`;
+                sortKey = 2;
+              }
+            }
             let category: VipEvent["category"] = "other";
-            if (eventType.internalName.includes("rough_rock") || eventType.internalName.includes("rough")) {
+            if (
+              eventType.internalName.includes("rough_rock") ||
+              eventType.internalName.includes("rough") ||
+              eventType.internalName.includes("slab")
+            ) {
               category = "rough_rock";
-            } else if (eventType.internalName.includes("machine") || eventType.internalName.includes("tool")) {
+            } else if (
+              eventType.internalName.includes("machine") ||
+              eventType.internalName.includes("tool")
+            ) {
               category = "machines";
             } else if (eventType.internalName.includes("agate")) {
               category = "agate";
             }
-            
-            return {
+            const record = {
               id: eventType.internalName,
               name: eventType.label,
-              startsAt,
+              startsAt: chosen?.startTime,
               description: eventType.description,
-              zoomJoinUrl: "#", // Will be handled by button logic
+              zoomJoinUrl: "#",
               category,
+              _live: { isLive: sortKey === 0, badge, timeText, sortKey },
             };
+            console.log("eventTypeSelection", {
+              type: eventType.internalName,
+              chosen,
+              rendered: record,
+            });
+            return record;
+          })
+          .sort((a, b) => {
+            const ak = a._live?.sortKey ?? 99;
+            const bk = b._live?.sortKey ?? 99;
+            if (ak !== bk) return ak - bk;
+            const at = a.startsAt
+              ? new Date(
+                  /Z|[+-]\d{2}:\d{2}$/.test(a.startsAt)
+                    ? a.startsAt
+                    : a.startsAt + "Z"
+                ).getTime()
+              : 0;
+            const bt = b.startsAt
+              ? new Date(
+                  /Z|[+-]\d{2}:\d{2}$/.test(b.startsAt)
+                    ? b.startsAt
+                    : b.startsAt + "Z"
+                ).getTime()
+              : 0;
+            return bt - at;
           });
-          
-          setEvents(list);
-        }
+
+        setLoaderProgress(88);
+        setEvents(list);
       } catch (e) {
-        if (alive) {
-          const errorMessage = e instanceof Error ? e.message : "Failed to load events";
-          setError(errorMessage);
-          setEvents(DEMO_EVENTS);
-        }
+        const errorMessage =
+          e instanceof Error ? e.message : "Failed to load events";
+        setError(errorMessage);
+        setEvents([]);
+      } finally {
+        setLoaderProgress(100);
+        setTimeout(() => {
+          setPageLoading(false);
+          setLoaderProgress(null);
+        }, 250);
       }
     })();
     return () => {
@@ -347,54 +453,124 @@ export default function Dashboard() {
     };
   }, []);
 
-  // Fetch HubSpot contact data when hsId is available
   useEffect(() => {
-    if (!hsId) {
-      setHubspotContact(null);
-      return;
-    }
-
+    if (!hsId) return;
     (async () => {
       try {
-        const contactRes = await fetch(`/api/hubspot/contact?contactId=${hsId}`, {
+        await fetch(`/api/hubspot/contact?contactId=${hsId}`, {
           cache: "no-store",
         });
-        
-        if (contactRes.ok) {
-          const contactData = await contactRes.json();
-          if (contactData?.properties) {
-            setHubspotContact({
-              firstname: contactData.properties.firstname || "",
-              lastname: contactData.properties.lastname || "",
-              email: contactData.properties.email || "",
-            });
-          }
-        }
-      } catch (err) {
-        console.log("Could not fetch HubSpot contact data:", err);
-        setHubspotContact(null);
-      }
+      } catch {}
     })();
   }, [hsId]);
 
+  async function ensureNames(): Promise<{
+    firstName: string;
+    lastName: string;
+    middleName?: string;
+  } | null> {
+    const fn = authFirstName.trim();
+    const ln = authLastName.trim();
+    if (fn && ln)
+      return {
+        firstName: fn,
+        lastName: ln,
+        middleName: authMiddleName.trim() || undefined,
+      };
+    setFormFirstName(fn);
+    setFormMiddleName(authMiddleName.trim());
+    setFormLastName(ln);
+    setShowProfileUpdateDialog(true);
+    return null;
+  }
+
+  async function saveNamesAndProceed(targetEventId: string) {
+    try {
+      setSavingProfile(true);
+      const firstName = formFirstName.trim();
+      const lastName = formLastName.trim();
+      const middleName = formMiddleName.trim();
+      if (!firstName || !lastName) {
+        toast.error("Please enter your first and last name.");
+        return;
+      }
+      const { error: updErr } = await supabase.auth.updateUser({
+        data: {
+          first_name: firstName,
+          middle_name: middleName || undefined,
+          last_name: lastName,
+        },
+      });
+      if (updErr) {
+        toast.error(updErr.message || "Could not update your profile.");
+        return;
+      }
+      setAuthFirstName(firstName);
+      setAuthMiddleName(middleName);
+      setAuthLastName(lastName);
+      setShowProfileUpdateDialog(false);
+
+      const matchingLiveEvents = liveEvents.filter(
+        (le) => le.type === targetEventId
+      );
+      if (matchingLiveEvents.length === 0) {
+        toast.error("No live events found for this event type");
+        return;
+      }
+      const latestEvent = matchingLiveEvents.sort(
+        (a, b) =>
+          new Date(b.startTime).getTime() - new Date(a.startTime).getTime()
+      )[0];
+      const isJoinable = await isEventCurrentlyLive(latestEvent);
+      if (!isJoinable) {
+        toast.error(
+          "This event is not currently available to join. Please check back within 12 hours of the event time."
+        );
+        return;
+      }
+      const reg = await joinLiveSession(latestEvent.id, {
+        email: authEmail,
+        firstName,
+        lastName,
+      });
+      if (reg.success && reg.joinUrl) {
+        window.open(reg.joinUrl, "_blank");
+      } else {
+        throw new Error(reg.message || "Failed to get join URL");
+      }
+    } catch (e) {
+      toast.error(
+        `Failed to join session: ${
+          e instanceof Error ? e.message : "Unknown error"
+        }`
+      );
+    } finally {
+      setSavingProfile(false);
+      setLoadingEventId(null);
+      setLoaderLabel("Cutting your rock…");
+    }
+  }
+
   return (
     <div className="relative space-y-8">
+      {/* <Loader
+        show={pageLoading || !!loadingEventId}
+        label={loadingEventId ? "Joining live session…" : loaderLabel}
+        progress={loadingEventId ? null : loaderProgress}
+      /> */}
       <div className="pointer-events-none absolute inset-0 -z-10 rounded-xl">
         <div className="absolute inset-0 bg-[radial-gradient(120%_140%_at_50%_-20%,#FFFFEC,transparent_60%),linear-gradient(180deg,#FFFFFF_0%,#FFFFEC_50%,#FFFFFF_100%)]" />
         <div className="absolute inset-0 bg-[radial-gradient(60%_40%_at_20%_10%,rgba(140,15,15,0.06),transparent_60%),radial-gradient(40%_30%_at_90%_20%,rgba(224,28,36,0.05),transparent_60%)]" />
       </div>
 
       <header className="mb-1">
-        <h1 className="text-2xl font-bold text-[#17152A]">Welcome!</h1>
+        <h1 className="text-2xl font-bold text-[#17152A]">Your VIP Events</h1>
         <div className="mt-2 h-0.5 w-16 rounded-full bg-gradient-to-r from-[#8C0F0F] to-[#E01C24]" />
       </header>
 
       <section>
-        <h3 className="mb-3 text-sm font-medium tracking-wide text-[#17152A]">
-          Your VIP Events
-        </h3>
+        <h3 className="mb-3 text-sm font-medium tracking-wide text-[#17152A]"></h3>
 
-        {/* Vertical, beautiful list */}
         <div className="grid grid-cols-1 gap-4">
           <AnimatePresence initial={false}>
             {!events &&
@@ -404,6 +580,11 @@ export default function Dashboard() {
 
             {events?.map((e) => {
               const pill = categoryPill(e.category);
+              const src = resolveEventImage({
+                internalName: e.id,
+                category: e.category,
+              });
+              const liveMeta = e._live;
               return (
                 <motion.article
                   key={e.id}
@@ -415,19 +596,25 @@ export default function Dashboard() {
                   className="relative overflow-hidden rounded-2xl border border-[#EAEAEA] bg-white shadow-[0_8px_28px_rgba(0,0,0,0.06)]"
                 >
                   <div className="absolute left-0 top-0 h-full w-1 bg-gradient-to-b from-[#8C0F0F] to-[#E01C24]" />
-                  <div className="absolute inset-0 opacity-0 hover:opacity-100 transition-opacity duration-500 pointer-events-none">
-                    <div className="absolute -inset-1 rounded-3xl bg-[conic-gradient(from_180deg,rgba(237,28,36,0.08),rgba(255,255,236,0.0),rgba(237,28,36,0.08))] blur-xl" />
-                  </div>
-
                   <div className="relative">
-                    <div className="aspect-[16/9] w-full bg-[#FFFFF4] grid place-items-center">
-                      <div className="absolute inset-0 m-4 rounded-xl border-2 border-dashed border-[#E0E0CF] grid place-items-center">
-                        <span className="text-xs font-medium tracking-wide text-[#9A9985]">
-                          Image here
-                        </span>
-                      </div>
+                    <div className="relative aspect-[16/9] w-full overflow-hidden bg-[#FFFFF4]">
+                      {src ? (
+                        <Image
+                          src={src}
+                          alt={e.name}
+                          fill
+                          sizes="100vw"
+                          className="object-cover"
+                          priority={false}
+                        />
+                      ) : (
+                        <div className="absolute inset-0 m-4 rounded-xl border-2 border-dashed border-[#E0E0CF] grid place-items-center">
+                          <span className="text-xs font-medium tracking-wide text-[#9A9985]">
+                            Image coming soon
+                          </span>
+                        </div>
+                      )}
                     </div>
-
                     <div className="absolute left-3 top-3 inline-flex items-center gap-2 rounded-full border border-[#EFEFEF] bg-white/85 px-3 py-1 text-xs font-medium shadow-sm backdrop-blur">
                       <Sparkles className="h-3.5 w-3.5 text-[#8C0F0F]" />
                       <span
@@ -436,6 +623,11 @@ export default function Dashboard() {
                         {pill.label}
                       </span>
                     </div>
+                    {liveMeta?.isLive && (
+                      <div className="absolute right-3 top-3 inline-flex items-center gap-2 rounded-full border border-[#F7CACA] bg-[#FFF2F2] px-3 py-1 text-xs font-semibold text-[#8C0F0F] shadow-sm">
+                        Live now
+                      </div>
+                    )}
                   </div>
 
                   <div className="p-4 sm:p-5">
@@ -447,85 +639,108 @@ export default function Dashboard() {
                         <p className="mt-1 text-sm text-[#17152A]/70">
                           {e.description}
                         </p>
-
                         <div className="mt-3 flex flex-wrap items-center gap-2 text-[13px] text-[#17152A]">
-                          <span className="inline-flex items-center gap-1 rounded-full bg-[#FAFAF7] px-2.5 py-1 border border-[#EFEFE5]">
+                          <span
+                            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 border ${
+                              liveMeta?.isLive
+                                ? "bg-[#FFEFEF] border-[#F2D1D1]"
+                                : "bg-[#FAFAF7] border-[#EFEFE5]"
+                            }`}
+                          >
                             <Clock className="h-3.5 w-3.5" />
-                            {e.startsAt ? whenText(e.startsAt) : "TBA"}
+                            {liveMeta
+                              ? liveMeta.timeText
+                              : e.startsAt
+                              ? whenText(e.startsAt)
+                              : "TBA"}
+                          </span>
+                          <span
+                            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 border ${
+                              liveMeta?.isLive
+                                ? "bg-[#FFF2F2] border-[#F7CACA] text-[#8C0F0F]"
+                                : "bg-[#F0F4F8] border-[#E1E8F0] text-[#0F3D8C]/80"
+                            }`}
+                          >
+                            {liveMeta?.isLive ? "Live now" : "Not live"}
                           </span>
                           <span className="inline-flex items-center gap-1 rounded-full bg-[#F8FAFF] px-2.5 py-1 border border-[#EAF0FF]">
                             <Users className="h-3.5 w-3.5" />
-                            Live
+                            {liveMeta?.isLive ? "Joinable" : "Browse"}
                           </span>
                         </div>
                       </div>
 
                       <div className="sm:pt-1 w-full sm:w-auto">
                         <button
-                          title={loadingEventId === e.id ? "Joining..." : "Join live session"}
+                          title={
+                            loadingEventId === e.id
+                              ? "Joining..."
+                              : "Join live session"
+                          }
                           onClick={async () => {
-                            if (!hubspotContact?.email) {
-                              toast.error("User email not found. Please update your profile.");
-                              return;
-                            }
-
                             try {
+                              if (!authEmail) {
+                                toast.error("User email not found.");
+                                return;
+                              }
                               setLoadingEventId(e.id);
-                              
-                              // Get user info from HubSpot contact
-                              const email = hubspotContact.email;
-                              const firstName = hubspotContact.firstname || "";
-                              const lastName = hubspotContact.lastname || "";
-                              
-                              // Check if firstName or lastName is missing
-                              if (!firstName.trim() || !lastName.trim()) {
-                                setShowProfileUpdateDialog(true);
-                                return;
-                              }
-                              
+                              setLoaderLabel("Joining live session…");
+                              const names = await ensureNames();
+                              if (!names) return;
                               const matchingLiveEvents = liveEvents.filter(
-                                liveEvent => liveEvent.type === e.id
+                                (le) => le.type === e.id
                               );
-                              
-                              if (matchingLiveEvents.length === 0) {
-                                throw new Error("No live events found for this event type");
-                              }
-                              
-                              // Get the latest event (sort by date/startTime to get most recent)
-                              const latestEvent = matchingLiveEvents.sort((a, b) => 
-                                new Date(b.startTime).getTime() - new Date(a.startTime).getTime()
+                              if (matchingLiveEvents.length === 0)
+                                throw new Error(
+                                  "No live events found for this event type"
+                                );
+                              const latestEvent = matchingLiveEvents.sort(
+                                (a, b) =>
+                                  new Date(b.startTime).getTime() -
+                                  new Date(a.startTime).getTime()
                               )[0];
-
-                              // Check if the event is currently joinable (within 12-hour threshold)
-                              const isJoinable = await isEventCurrentlyLive(latestEvent);
+                              const isJoinable = await isEventCurrentlyLive(
+                                latestEvent
+                              );
                               if (!isJoinable) {
-                                toast.error("This event is not currently available to join. Please check back within 12 hours of the event time.");
+                                toast.error(
+                                  "This event is not currently available to join. Please check back within 12 hours of the event time."
+                                );
                                 return;
                               }
-                              
-                              console.log(`🚀 -> Joining event type: ${e.id}, using live event ID: ${latestEvent.id}`);
-                              
-                              const result = await joinLiveSession(latestEvent.id, { email, firstName, lastName });
-                              console.log("Join session result:", result);
-                              
+                              const result = await joinLiveSession(
+                                latestEvent.id,
+                                {
+                                  email: authEmail,
+                                  firstName: names.firstName,
+                                  lastName: names.lastName,
+                                }
+                              );
                               if (result.success && result.joinUrl) {
-                                // Open new tab with join URL
-                                window.open(result.joinUrl, '_blank');
+                                window.open(result.joinUrl, "_blank");
                               } else {
-                                throw new Error(result.message || "Failed to get join URL");
+                                throw new Error(
+                                  result.message || "Failed to get join URL"
+                                );
                               }
                             } catch (error) {
-                              console.error("Failed to join session:", error);
-                              toast.error(`Failed to join session: ${error instanceof Error ? error.message : "Unknown error"}`);
+                              toast.error(
+                                `Failed to join session: ${
+                                  error instanceof Error
+                                    ? error.message
+                                    : "Unknown error"
+                                }`
+                              );
                             } finally {
                               setLoadingEventId(null);
+                              setLoaderLabel("Cutting your rock…");
                             }
                           }}
                           disabled={loadingEventId === e.id}
                           className={`cursor-pointer inline-flex w-full sm:w-auto items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium text-white transition-all ${
-                            loadingEventId === e.id 
-                              ? 'bg-gray-400 pointer-events-none' 
-                              : 'bg-[#17152A] hover:bg-[#8C0F0F] active:scale-98'
+                            loadingEventId === e.id
+                              ? "bg-gray-400 pointer-events-none"
+                              : "bg-[#17152A] hover:bg-[#8C0F0F] active:scale-98"
                           }`}
                         >
                           {loadingEventId === e.id ? (
@@ -576,7 +791,6 @@ export default function Dashboard() {
         </div>
       </section>
 
-      {/* Profile Update Dialog */}
       <Dialog
         open={showProfileUpdateDialog}
         onClose={() => setShowProfileUpdateDialog(false)}
@@ -610,16 +824,39 @@ export default function Dashboard() {
                 Profile Update Required
               </Typography>
               <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
-                Complete your profile to join live sessions
+                To join the live session, please confirm your name.
               </Typography>
             </Box>
           </Box>
         </DialogTitle>
-        <DialogContent sx={{ pt: 1 }}>
-          <Box className="rounded-lg border border-amber-200 bg-amber-50 p-3">
-            <Typography sx={{ fontSize: 13, color: "text.secondary" }}>
-              To join the live session, we need your first and last name. Please update your profile with this information.
-            </Typography>
+        <DialogContent sx={{ pt: 2 }}>
+          <Box sx={{ display: "grid", gap: 1.5 }}>
+            <TextField
+              label="First name"
+              size="small"
+              value={formFirstName}
+              onChange={(e) => setFormFirstName(e.target.value)}
+              inputProps={{ maxLength: 80 }}
+            />
+            <TextField
+              label="Middle name (optional)"
+              size="small"
+              value={formMiddleName}
+              onChange={(e) => setFormMiddleName(e.target.value)}
+              inputProps={{ maxLength: 80 }}
+            />
+            <TextField
+              label="Last name"
+              size="small"
+              value={formLastName}
+              onChange={(e) => setFormLastName(e.target.value)}
+              inputProps={{ maxLength: 80 }}
+            />
+            <Box className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+              <Typography sx={{ fontSize: 12.5, color: "text.secondary" }}>
+                We’ll save this to your account and won’t ask again.
+              </Typography>
+            </Box>
           </Box>
         </DialogContent>
         <Divider />
@@ -627,28 +864,27 @@ export default function Dashboard() {
           <Button
             variant="outlined"
             onClick={() => setShowProfileUpdateDialog(false)}
-            sx={{ 
+            disabled={savingProfile}
+            sx={{
               textTransform: "none",
               borderColor: "#d1d5db",
               color: "#6b7280",
-              "&:hover": { borderColor: "#9ca3af", backgroundColor: "#f9fafb" }
+              "&:hover": { borderColor: "#9ca3af", backgroundColor: "#f9fafb" },
             }}
           >
             Cancel
           </Button>
           <Button
             variant="contained"
-            onClick={() => {
-              setShowProfileUpdateDialog(false);
-              router.push("/profile");
-            }}
+            onClick={() => saveNamesAndProceed(loadingEventId || "")}
+            disabled={savingProfile}
             sx={{
               textTransform: "none",
               backgroundColor: "#17152A",
-              "&:hover": { backgroundColor: "#8C0F0F" }
+              "&:hover": { backgroundColor: "#8C0F0F" },
             }}
           >
-            Update Profile
+            {savingProfile ? "Saving…" : "Save & Join"}
           </Button>
         </DialogActions>
       </Dialog>

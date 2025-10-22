@@ -56,6 +56,10 @@ async function createNetSuiteCustomerSimple(
   return Number(id);
 }
 
+function clean(s: any) {
+  return (s ?? "").toString().trim();
+}
+
 export async function POST(req: NextRequest) {
   const supabase = await getServerSupabase();
   const {
@@ -68,14 +72,11 @@ export async function POST(req: NextRequest) {
   try {
     body = await req.json();
   } catch {}
+
   const meta = (user.user_metadata as any) || {};
-  const firstName = (body?.firstName ?? meta.first_name ?? "")
-    .toString()
-    .trim();
-  const middleName = (body?.middleName ?? meta.middle_name ?? "")
-    .toString()
-    .trim();
-  const lastName = (body?.lastName ?? meta.last_name ?? "").toString().trim();
+  const firstName = clean(body?.firstName) || clean(meta.first_name);
+  const middleName = clean(body?.middleName) || clean(meta.middle_name);
+  const lastName = clean(body?.lastName) || clean(meta.last_name);
 
   const emailLC = user.email.toLowerCase();
 
@@ -99,8 +100,8 @@ export async function POST(req: NextRequest) {
 
   const { data: preloaded } = await admin
     .from("profiles")
-    .select("profile_id, netsuite_customer_id")
-    .eq("email", emailLC)
+    .select("profile_id, netsuite_customer_id, email")
+    .ilike("email", emailLC)
     .is("user_id", null)
     .order("created_at", { ascending: false })
     .limit(1)
@@ -109,10 +110,21 @@ export async function POST(req: NextRequest) {
   if (preloaded?.netsuite_customer_id) {
     const { error: claimErr } = await admin
       .from("profiles")
-      .update({ user_id: user.id, email: emailLC, role: "customer" })
+      .update({ user_id: user.id, role: "customer" })
       .eq("profile_id", preloaded.profile_id)
       .is("user_id", null);
     if (!claimErr) {
+      const metaUpdates: Record<string, string> = {};
+      if (firstName && !clean(meta.first_name))
+        metaUpdates.first_name = firstName;
+      if (middleName && !clean(meta.middle_name))
+        metaUpdates.middle_name = middleName;
+      if (lastName && !clean(meta.last_name)) metaUpdates.last_name = lastName;
+      if (Object.keys(metaUpdates).length) {
+        await admin.auth.admin.updateUserById(user.id, {
+          user_metadata: { ...meta, ...metaUpdates },
+        });
+      }
       return NextResponse.json({
         nsId: String(preloaded.netsuite_customer_id),
         mode: "claimed",
@@ -148,6 +160,19 @@ export async function POST(req: NextRequest) {
         { status: 200 }
       );
     }
+
+    const metaUpdates: Record<string, string> = {};
+    if (firstName && !clean(meta.first_name))
+      metaUpdates.first_name = firstName;
+    if (middleName && !clean(meta.middle_name))
+      metaUpdates.middle_name = middleName;
+    if (lastName && !clean(meta.last_name)) metaUpdates.last_name = lastName;
+    if (Object.keys(metaUpdates).length) {
+      await admin.auth.admin.updateUserById(user.id, {
+        user_metadata: { ...meta, ...metaUpdates },
+      });
+    }
+
     return NextResponse.json({ nsId: String(nsIdNum), mode: "created" });
   } catch (e: any) {
     return NextResponse.json(

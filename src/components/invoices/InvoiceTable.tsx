@@ -6,6 +6,8 @@ import KeyboardArrowDown from "@mui/icons-material/KeyboardArrowDown";
 import KeyboardArrowUp from "@mui/icons-material/KeyboardArrowUp";
 import PaymentIcon from "@mui/icons-material/Payment";
 import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
+import FulfillmentPeek from "./FulfillmentPeak";
+import { motion } from "framer-motion";
 
 export type Invoice = {
   invoiceId: string | number;
@@ -34,6 +36,8 @@ export type Invoice = {
     status?: string;
     paymentOption?: string;
   }[];
+  createdFromSoId: number | null;
+  createdFromSoTranId: string | null;
 };
 
 function fmt(n: number | undefined) {
@@ -224,7 +228,6 @@ async function buildAndDownloadPdf(
   doc.setFont("helvetica", "normal");
   doc.text(fmt(remaining), rightX, cursorY);
 
-  // Closing
   cursorY += 40;
   doc.setDrawColor(191, 191, 191);
   doc.line(marginX, cursorY, 558, cursorY);
@@ -302,7 +305,7 @@ export default function InvoicesTable({
   );
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-md">
       <div className="hidden md:block">
         {loading ? (
           <SkeletonTable />
@@ -343,60 +346,63 @@ function DesktopTable({
   variant: "open" | "closed";
 }) {
   return (
-    <table className="w-full table-fixed text-sm">
-      <colgroup>
-        <col className="w-[44px]" />
-        <col className="w-[22%]" />
-        <col className="w-[14%]" />
-        <col className="w-[14%]" />
-        <col className="w-[14%]" />
-        <col className="w-[14%]" />
-        <col className="w-[12%]" />
-        <col className="w-[16%]" />
-      </colgroup>
-
-      <thead className="sticky top-0 z-10 bg-gradient-to-b from-slate-50 to-white">
-        <tr className="text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-          <th className="px-3 py-3"> </th>
-          <th className="px-4 py-3">Invoice</th>
-          <th className="px-4 py-3">Date</th>
-          <th className="px-4 py-3 text-right">Total</th>
-          <th className="px-4 py-3 text-right">Paid</th>
-          <th className="px-4 py-3 text-right">Remaining</th>
-          <th className="px-4 py-3">Status</th>
-          <th className="px-4 py-3 text-right">Actions</th>
-        </tr>
-      </thead>
-
-      <tbody>
-        {invoices.length === 0 ? (
-          <tr>
-            <td colSpan={7} className="px-4 py-12 text-center text-slate-500">
-              No invoices.
-            </td>
+    <div className="max-h-[70vh] overflow-auto">
+      <table className="w-full table-fixed text-sm">
+        <colgroup>
+          <col className="w-[132px]" />
+          <col className="w-[21%]" />
+          <col className="w-[14%]" />
+          <col className="w-[14%]" />
+          <col className="w-[14%]" />
+          <col className="w-[14%]" />
+          <col className="w-[11%]" />
+          <col className="w-[16%]" />
+        </colgroup>
+        <thead className="sticky top-0 z-10 bg-gradient-to-b from-slate-50 to-white backdrop-blur supports-[backdrop-filter]:bg-white/70">
+          <tr className="text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+            <th className="px-3 py-3" />
+            <th className="px-4 py-3">Invoice</th>
+            <th className="px-4 py-3">Date</th>
+            <th className="px-4 py-3 text-right">Total</th>
+            <th className="px-4 py-3 text-right">Paid</th>
+            <th className="px-4 py-3 text-right">Remaining</th>
+            <th className="px-4 py-3">Status</th>
+            <th className="px-4 py-3 text-right">Actions</th>
           </tr>
-        ) : (
-          invoices.map((inv) => (
-            <DesktopRow
-              key={String(inv.invoiceId)}
-              inv={inv}
-              canPay={variant === "open" && inv.amountRemaining > 0}
-              onPay={onPay}
-              onDownload={onDownload}
-            />
-          ))
-        )}
-      </tbody>
-    </table>
+        </thead>
+        <tbody className="[&_tr]:border-b [&_tr]:border-slate-200">
+          {invoices.length === 0 ? (
+            <tr>
+              <td colSpan={8} className="px-4 py-12 text-center text-slate-500">
+                No invoices.
+              </td>
+            </tr>
+          ) : (
+            invoices.map((inv, i) => (
+              <DesktopRow
+                key={String(inv.invoiceId)}
+                index={i}
+                inv={inv}
+                canPay={variant === "open" && inv.amountRemaining > 0}
+                onPay={onPay}
+                onDownload={onDownload}
+              />
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
 function DesktopRow({
+  index,
   inv,
   canPay,
   onPay,
   onDownload,
 }: {
+  index: number;
   inv: Invoice;
   canPay: boolean;
   onPay?: (inv: Invoice) => void;
@@ -405,29 +411,62 @@ function DesktopRow({
   const [open, setOpen] = React.useState<boolean>(false);
   const hasBalance = inv.amountRemaining > 0;
   const panelId = `invoice-details-${inv.invoiceId}`;
+  const baseBg = index % 2 === 0 ? "bg-slate-50" : "bg-white";
+  const openBg = "bg-rose-50";
+  const openOutline = "outline outline-2 -outline-offset-2 outline-rose-300/60";
 
   return (
     <>
-      <tr className="border-t border-slate-100 hover:bg-slate-50/60">
+      <tr
+        className={`transition-colors ${open ? openBg : baseBg} ${
+          open ? openOutline : ""
+        } ${open ? "" : "hover:bg-slate-100/70"}`}
+        aria-selected={open}
+        data-open={open ? "true" : "false"}
+      >
         <td className="px-2 py-2 align-middle">
-          <button
-            type="button"
-            aria-expanded={open}
-            aria-controls={panelId}
-            onClick={() => setOpen((s) => !s)}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
-            title={open ? "Hide details" : "Show details"}
-          >
-            {open ? (
-              <KeyboardArrowUp fontSize="small" />
-            ) : (
-              <KeyboardArrowDown fontSize="small" />
-            )}
-          </button>
+          <div className="relative inline-block">
+            <span
+              aria-hidden
+              className="pointer-events-none absolute inset-0 rounded-lg ring-2 ring-red-500/25"
+              style={{ boxShadow: "0 10px 24px rgba(237,28,36,0.18)" }}
+            />
+            <button
+              type="button"
+              aria-expanded={open}
+              aria-controls={panelId}
+              onClick={() => setOpen((s) => !s)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setOpen((s) => !s);
+                }
+              }}
+              className="relative z-[1] inline-flex max-w-full items-center gap-2 rounded-lg border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 shadow-sm hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300/40"
+              title={open ? "Hide details" : "View invoice details"}
+            >
+              <span className="inline-grid h-5 w-5 shrink-0 place-items-center rounded-md border border-slate-300 bg-slate-100">
+                {open ? (
+                  <KeyboardArrowUp fontSize="inherit" />
+                ) : (
+                  <KeyboardArrowDown fontSize="inherit" />
+                )}
+              </span>
+              <span className="whitespace-nowrap">Details</span>
+              <motion.span
+                animate={{ rotate: open ? 180 : 0 }}
+                transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                className="inline-grid h-4 w-4 shrink-0 place-items-center text-slate-600"
+              >
+                <KeyboardArrowDown fontSize="inherit" />
+              </motion.span>
+            </button>
+          </div>
         </td>
-
         <td className="px-4 py-3">
-          <div className="font-medium text-slate-900">{inv.tranId}</div>
+          <div className="font-semibold text-slate-900 tracking-tight">
+            {inv.tranId}
+          </div>
         </td>
         <td className="px-4 py-3 text-slate-700 whitespace-nowrap">
           {fdate(inv.trandate)}
@@ -439,7 +478,7 @@ function DesktopRow({
           {fmt(inv.amountPaid)}
         </td>
         <td className="px-4 py-3 text-right font-semibold">
-          <span className={hasBalance ? "text-rose-600" : "text-emerald-600"}>
+          <span className={hasBalance ? "text-rose-600" : "text-emerald-700"}>
             {fmt(inv.amountRemaining)}
           </span>
         </td>
@@ -452,13 +491,12 @@ function DesktopRow({
             sx={{ borderRadius: "10px" }}
           />
         </td>
-
         <td className="px-4 py-3 align-middle">
-          <div className="flex items-center justify-end gap-2 whitespace-nowrap">
+          <div className="flex items-center justify-end gap-2">
             {canPay && onPay && (
               <button
                 onClick={() => onPay(inv)}
-                className="inline-flex h-8 items-center gap-1 rounded-lg bg-blue-600 px-3 text-xs font-medium text-white shadow-sm hover:bg-blue-700"
+                className="inline-flex h-9 items-center gap-1 rounded-xl bg-blue-600 px-3.5 text-xs font-semibold text-white shadow-sm transition hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
               >
                 <PaymentIcon fontSize="inherit" />
                 <span className="hidden xl:inline">Pay</span>
@@ -466,7 +504,7 @@ function DesktopRow({
             )}
             <button
               onClick={() => onDownload(inv)}
-              className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 bg-[#FFFFEC] px-3 text-xs font-semibold text-slate-800 hover:bg-[#FFF9D7]"
+              className="inline-flex h-9 items-center gap-1 rounded-xl border border-amber-200 bg-amber-50 px-3.5 text-xs font-semibold text-amber-900 shadow-sm transition hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
               title="Download PDF"
               aria-label="Download PDF"
             >
@@ -476,13 +514,18 @@ function DesktopRow({
           </div>
         </td>
       </tr>
-
-      <tr className="border-t border-slate-100">
+      <tr>
         <td colSpan={8} className="p-0 align-top">
           <Collapse in={open} timeout="auto" unmountOnExit>
             <div
+              className={`border-t border-slate-200 px-3 pt-3 pb-4 md:px-4 ${
+                open
+                  ? "bg-rose-50/70"
+                  : index % 2 === 0
+                  ? "bg-slate-50/70"
+                  : "bg-white"
+              }`}
               id={panelId}
-              className="bg-slate-50/40 px-3 pt-3 pb-4 md:px-4 border-t border-slate-100 overflow-x-auto"
             >
               <Details inv={inv} />
             </div>
@@ -510,10 +553,11 @@ function MobileList({
     );
   }
   return (
-    <div className="divide-y divide-slate-100">
-      {invoices.map((inv) => (
+    <div>
+      {invoices.map((inv, i) => (
         <MobileCard
           key={String(inv.invoiceId)}
+          index={i}
           inv={inv}
           canPay={variant === "open" && inv.amountRemaining > 0}
           onPay={onPay}
@@ -526,11 +570,13 @@ function MobileList({
 
 function MobileCard({
   inv,
+  index,
   canPay,
   onPay,
   onDownload,
 }: {
   inv: Invoice;
+  index: number;
   canPay: boolean;
   onPay?: (inv: Invoice) => void;
   onDownload: (inv: Invoice) => void;
@@ -538,12 +584,21 @@ function MobileCard({
   const [open, setOpen] = React.useState<boolean>(false);
   const hasBalance = inv.amountRemaining > 0;
   const panelId = `m-invoice-details-${inv.invoiceId}`;
+  const rowBg =
+    index % 2 === 0 ? "from-white to-slate-50" : "from-slate-50 to-white";
+  const openRing = "ring-2 ring-rose-300/60";
 
   return (
-    <div className="p-4">
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="mb-2 flex items-center justify-between">
-          <div className="font-semibold text-slate-900">{inv.tranId}</div>
+    <div className="px-4 py-3">
+      <div
+        className={`rounded-2xl border border-slate-200 bg-gradient-to-b ${rowBg} p-4 shadow-sm transition ${
+          open ? openRing : ""
+        }`}
+      >
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <div className="truncate text-base font-semibold text-slate-900">
+            {inv.tranId}
+          </div>
           <Chip
             size="small"
             label={hasBalance ? "Unpaid" : "Paid"}
@@ -563,16 +618,16 @@ function MobileCard({
           <Metric
             label="Remaining"
             value={fmt(inv.amountRemaining)}
-            valueClass={hasBalance ? "text-rose-600" : "text-emerald-600"}
+            valueClass={hasBalance ? "text-rose-600" : "text-emerald-700"}
           />
         </div>
 
-        <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             {canPay && onPay ? (
               <button
                 onClick={() => onPay(inv)}
-                className="inline-flex h-9 items-center gap-1 rounded-lg bg-blue-600 px-3 text-xs font-medium text-white shadow-sm hover:bg-blue-700 shrink-0"
+                className="inline-flex h-9 items-center gap-1 rounded-xl bg-blue-600 px-3.5 text-xs font-semibold text-white shadow-sm transition hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
               >
                 <PaymentIcon fontSize="inherit" />
                 Pay
@@ -580,29 +635,49 @@ function MobileCard({
             ) : null}
             <button
               onClick={() => onDownload(inv)}
-              className="inline-flex h-9 items-center gap-1 rounded-lg border border-slate-200 bg-[#FFFFEC] px-3 text-xs font-semibold text-slate-800 hover:bg-[#FFF9D7] shrink-0"
+              className="inline-flex h-9 items-center gap-1 rounded-xl border border-amber-200 bg-amber-50 px-3.5 text-xs font-semibold text-amber-900 shadow-sm transition hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
               title="Download PDF"
             >
               <PictureAsPdfIcon fontSize="inherit" />
               PDF
             </button>
           </div>
-          <button
-            onClick={() => setOpen((s) => !s)}
-            className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
-            aria-expanded={open}
-            aria-controls={panelId}
-          >
-            {open ? (
-              <>
-                <KeyboardArrowUp fontSize="small" /> Hide details
-              </>
-            ) : (
-              <>
-                <KeyboardArrowDown fontSize="small" /> Show details
-              </>
-            )}
-          </button>
+          <div className="relative inline-block">
+            <span
+              aria-hidden
+              className="pointer-events-none absolute inset-0 rounded-lg ring-2 ring-red-500/25"
+              style={{ boxShadow: "0 10px 24px rgba(237,28,36,0.18)" }}
+            />
+            <button
+              onClick={() => setOpen((s) => !s)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setOpen((s) => !s);
+                }
+              }}
+              className="relative z-[1] inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300/40"
+              aria-expanded={open}
+              aria-controls={panelId}
+              title={open ? "Hide details" : "View invoice details"}
+            >
+              <span className="inline-grid h-5 w-5 shrink-0 place-items-center rounded-md border border-slate-300 bg-slate-100">
+                {open ? (
+                  <KeyboardArrowUp fontSize="inherit" />
+                ) : (
+                  <KeyboardArrowDown fontSize="inherit" />
+                )}
+              </span>
+              <span>Details</span>
+              <motion.span
+                animate={{ rotate: open ? 180 : 0 }}
+                transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                className="inline-grid h-4 w-4 shrink-0 place-items-center text-slate-600"
+              >
+                <KeyboardArrowDown fontSize="inherit" />
+              </motion.span>
+            </button>
+          </div>
         </div>
 
         <Collapse in={open} timeout="auto" unmountOnExit>
@@ -625,12 +700,12 @@ function Metric({
   valueClass?: string;
 }) {
   return (
-    <div className="rounded-lg bg-slate-50 px-3 py-2">
+    <div className="rounded-xl bg-white/70 px-3 py-2 ring-1 ring-slate-200">
       <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
         {label}
       </div>
       <div
-        className={`mt-0.5 text-sm font-semibold ${
+        className={`mt-0.5 tabular-nums text-sm font-semibold ${
           valueClass ?? "text-slate-900"
         }`}
       >
@@ -696,7 +771,54 @@ function Details({ inv, mobile = false }: { inv: Invoice; mobile?: boolean }) {
       </div>
 
       <div className="grid grid-cols-1 gap-6">
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+          <div className="border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-600">
+            Related Payments
+          </div>
+          <div className="overflow-x-auto">
+            {(inv.payments ?? []).length === 0 ? (
+              <div className="px-3 py-6 text-center text-sm text-slate-500">
+                No payments recorded.
+              </div>
+            ) : (
+              <table className="min-w-[560px] w-full table-auto text-sm">
+                <thead className="text-left text-slate-600">
+                  <tr>
+                    <th className="px-3 py-2">Transaction</th>
+                    <th className="px-3 py-2">Date</th>
+                    <th className="px-3 py-2">Method</th>
+                    <th className="px-3 py-2 text-right">Amount</th>
+                  </tr>
+                </thead>
+                <tbody className="[&>tr]:border-t [&>tr]:border-slate-200 [&>tr:nth-child(odd)]:bg-slate-50/60">
+                  {inv.payments.map((p, i: number) => (
+                    <tr key={i}>
+                      <td className="px-3 py-2">
+                        {p.tranId || p.paymentId || "Payment"}
+                        {p.status ? (
+                          <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+                            {p.status}
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        {fdate(p.paymentDate || p.date)}
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        {p.paymentOption ?? "—"}
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap text-right font-medium">
+                        {fmt(p.amount)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
           <div className="border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-600">
             Line Items
           </div>
@@ -704,7 +826,6 @@ function Details({ inv, mobile = false }: { inv: Invoice; mobile?: boolean }) {
           <div className="overflow-x-auto">
             <table className="min-w-[820px] w-full table-auto text-sm">
               <colgroup>
-                {/* Item, Detail, Qty, Rate, Amount */}
                 <col className="w-[38%]" />
                 <col className="w-[30%]" />
                 <col className="w-[10%]" />
@@ -720,7 +841,7 @@ function Details({ inv, mobile = false }: { inv: Invoice; mobile?: boolean }) {
                   <th className="px-3 py-2 text-right">Amount</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="[&>tr]:border-t [&>tr]:border-slate-200 [&>tr:nth-child(odd)]:bg-slate-50/60">
                 {(inv.lines ?? []).filter(isPrintableLine).length === 0 ? (
                   <tr>
                     <td
@@ -734,7 +855,7 @@ function Details({ inv, mobile = false }: { inv: Invoice; mobile?: boolean }) {
                   (inv.lines ?? [])
                     .filter(isPrintableLine)
                     .map((l, idx: number) => (
-                      <tr key={idx} className="border-t border-slate-100">
+                      <tr key={idx}>
                         <td className="px-3 py-2 font-medium text-slate-900 break-words">
                           {l.itemName ?? l.itemId ?? "—"}
                         </td>
@@ -773,7 +894,7 @@ function Details({ inv, mobile = false }: { inv: Invoice; mobile?: boolean }) {
 
               return (
                 <div className="w-full max-w-[360px]">
-                  <div className="rounded-xl border border-slate-200 bg-gradient-to-b from-white to-slate-50/60 p-3 shadow-sm">
+                  <div className="rounded-2xl border border-slate-200 bg-gradient-to-b from-white to-slate-50/60 p-3 shadow-sm">
                     <div className="space-y-1.5">
                       <SummaryRow label="Subtotal" value={fmt(subtotal)} />
                       <SummaryRow label="Tax" value={fmt(tax)} />
@@ -792,51 +913,16 @@ function Details({ inv, mobile = false }: { inv: Invoice; mobile?: boolean }) {
           </div>
         </div>
 
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
           <div className="border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-600">
-            Related Payments
+            Fulfillment
           </div>
-
-          <div className="overflow-x-auto">
-            {(inv.payments ?? []).length === 0 ? (
-              <div className="px-3 py-6 text-center text-sm text-slate-500">
-                No payments recorded.
-              </div>
-            ) : (
-              <table className="min-w-[560px] w-full table-auto text-sm">
-                <thead className="text-left text-slate-600">
-                  <tr>
-                    <th className="px-3 py-2">Transaction</th>
-                    <th className="px-3 py-2">Date</th>
-                    <th className="px-3 py-2">Method</th>
-                    <th className="px-3 py-2 text-right">Amount</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {inv.payments.map((p, i: number) => (
-                    <tr key={i} className="border-t border-slate-100">
-                      <td className="px-3 py-2">
-                        {p.tranId || p.paymentId || "Payment"}
-                        {p.status ? (
-                          <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
-                            {p.status}
-                          </span>
-                        ) : null}
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap">
-                        {fdate(p.paymentDate || p.date)}
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap">
-                        {p.paymentOption ?? "—"}
-                      </td>
-                      <td className="px-3 py-2 text-right font-medium whitespace-nowrap">
-                        {fmt(p.amount)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+          <div className="px-3 py-3">
+            <FulfillmentPeek
+              soId={inv.createdFromSoId}
+              soTranId={inv.createdFromSoTranId}
+              invoiceTranId={inv.tranId}
+            />
           </div>
         </div>
       </div>
@@ -848,17 +934,17 @@ function SkeletonTable() {
   return (
     <table className="w-full table-fixed text-sm">
       <colgroup>
-        <col className="w-[44px]" />
-        <col className="w-[22%]" />
+        <col className="w-[132px]" />
+        <col className="w-[21%]" />
         <col className="w-[14%]" />
         <col className="w-[14%]" />
         <col className="w-[14%]" />
         <col className="w-[16%]" />
-        <col className="w-[16%]" />
+        <col className="w-[11%]" />
       </colgroup>
       <thead className="sticky top-0 z-10 bg-gradient-to-b from-slate-50 to-white">
         <tr className="text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-          <th className="px-3 py-3"> </th>
+          <th className="px-3 py-3" />
           <th className="px-4 py-3">Invoice</th>
           <th className="px-4 py-3">Date</th>
           <th className="px-4 py-3 text-right">Total</th>
@@ -867,11 +953,11 @@ function SkeletonTable() {
           <th className="px-4 py-3">Status</th>
         </tr>
       </thead>
-      <tbody>
+      <tbody className="[&_tr]:border-b [&_tr]:border-slate-200">
         {Array.from({ length: 5 }).map((_, i: number) => (
-          <tr key={i} className="border-t border-slate-100">
+          <tr key={i} className={i % 2 === 0 ? "bg-slate-50" : "bg-white"}>
             <td className="px-3 py-3">
-              <div className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white">
+              <div className="relative inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white">
                 <KeyboardArrowDown fontSize="small" />
               </div>
             </td>
@@ -905,7 +991,7 @@ function MobileSkeleton() {
     <div className="divide-y divide-slate-100">
       {Array.from({ length: 3 }).map((_, i: number) => (
         <div key={i} className="p-4">
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="rounded-2xl border border-slate-200 bg-gradient-to-b from-white to-slate-50 p-4 shadow-sm">
             <div className="mb-2 flex items-center justify-between">
               <Skeleton width={100} />
               <Skeleton width={60} height={24} />
