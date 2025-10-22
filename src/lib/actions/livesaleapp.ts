@@ -77,14 +77,14 @@ const liveEventTypes: LiveEventType[] = [
     createdAt: "2024-09-06T08:17:40.141Z",
     updatedAt: "2024-10-22T11:28:20.502Z",
   },
-  {
-    internalName: "sphere_collectors_event",
-    label: "Sphere Collectors Event",
-    description: "This is a sphere collectors event",
-    category: "EVENT_TYPE",
-    createdAt: "2024-09-06T08:17:40.141Z",
-    updatedAt: "2024-09-06T08:17:40.141Z",
-  },
+  // {
+  //   internalName: "sphere_collectors_event",
+  //   label: "Sphere Collectors Event",
+  //   description: "This is a sphere collectors event",
+  //   category: "EVENT_TYPE",
+  //   createdAt: "2024-09-06T08:17:40.141Z",
+  //   updatedAt: "2024-09-06T08:17:40.141Z",
+  // },
   // {
   //   "internalName": "test_type",
   //   "label": "Test Type",
