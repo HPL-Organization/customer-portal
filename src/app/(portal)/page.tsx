@@ -156,15 +156,28 @@
 // }
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
-import Link from "next/link";
+import { useCustomerBootstrap } from "@/components/providers/CustomerBootstrap";
+import { fetchLiveEvents, getEventTypes, isEventCurrentlyLive, joinLiveSession, type LiveEvent } from "@/lib/actions/livesaleapp";
+import {
+  Box,
+  Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Divider,
+  Typography,
+} from "@mui/material";
 import { AnimatePresence, motion } from "framer-motion";
-import { Sparkles, ArrowRight, Clock, PlayCircle, Users } from "lucide-react";
+import { ArrowRight, Clock, PlayCircle, Sparkles, UserCog, Users } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { toast } from "react-toastify";
 
 type VipEvent = {
   id: string;
   name: string;
-  startsAt: string;
+  startsAt?: string;
   description: string;
   zoomJoinUrl: string;
   category?: "rough_rock" | "machines" | "agate" | "other";
@@ -246,35 +259,85 @@ function CardSkeleton() {
 }
 
 export default function Dashboard() {
+  const router = useRouter();
+  const { hsId } = useCustomerBootstrap();
   const [events, setEvents] = useState<VipEvent[] | null>(null);
+  const [liveEvents, setLiveEvents] = useState<LiveEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [loadingEventId, setLoadingEventId] = useState<string | null>(null);
+  const [showProfileUpdateDialog, setShowProfileUpdateDialog] = useState(false);
+  const [hubspotContact, setHubspotContact] = useState<{
+    firstname?: string;
+    lastname?: string;
+    email?: string;
+  } | null>(null);
 
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
-        const res = await fetch("/api/get-customer-event-subscriptions", {
-          cache: "no-store",
-        });
-        if (!res.ok) throw new Error("");
-        const data = await res.json();
-        const list: VipEvent[] = (data?.events || data || []).map((x: any) => ({
-          id: String(x.id ?? x.eventId ?? Math.random().toString(36).slice(2)),
-          name: String(x.name ?? x.title ?? "VIP Session"),
-          startsAt: String(
-            x.startsAt ?? x.startDate ?? new Date().toISOString()
-          ),
-          description:
-            x.description ??
-            x.summary ??
-            "Exclusive live session for subscribers.",
-          zoomJoinUrl: String(x.zoomJoinUrl ?? x.zoomUrl ?? x.joinUrl ?? "#"),
-          category: (x.category as VipEvent["category"]) ?? "other",
-        }));
-        if (alive) setEvents(list);
-      } catch (e: any) {
+        // Fetch event types and live events in parallel
+        const [eventTypes, liveEventsData] = await Promise.all([
+          getEventTypes(),
+          fetchLiveEvents()
+        ]);
+        
         if (alive) {
-          setError(e?.message || "");
+          setLiveEvents(liveEventsData);
+          
+          // Map event types to VipEvent format using actual live event times
+          const list: VipEvent[] = eventTypes.map((eventType) => {
+            // Find the latest live event for this event type
+            const matchingLiveEvents = liveEventsData.filter(
+              liveEvent => liveEvent.type === eventType.internalName
+            );
+            
+            // Get the latest event by start time, only if it's within 12 hours from now
+            let startsAt;
+            if (matchingLiveEvents.length > 0) {
+              const latestEvent = matchingLiveEvents.sort((a, b) => 
+                new Date(b.startTime).getTime() - new Date(a.startTime).getTime()
+              )[0];
+              
+              // Check if the event is not older than 12 hours from now
+              const now = new Date();
+              const eventTime = new Date(latestEvent.startTime);
+              const twelveHoursAgo = new Date(now.getTime() - 12 * 60 * 60 * 1000);
+              
+              if (eventTime >= twelveHoursAgo) {
+                startsAt = latestEvent.startTime;
+              } else {
+                startsAt = undefined;
+              }
+            } else {
+              startsAt = undefined;
+            }
+            // Map category based on internalName patterns
+            let category: VipEvent["category"] = "other";
+            if (eventType.internalName.includes("rough_rock") || eventType.internalName.includes("rough")) {
+              category = "rough_rock";
+            } else if (eventType.internalName.includes("machine") || eventType.internalName.includes("tool")) {
+              category = "machines";
+            } else if (eventType.internalName.includes("agate")) {
+              category = "agate";
+            }
+            
+            return {
+              id: eventType.internalName,
+              name: eventType.label,
+              startsAt,
+              description: eventType.description,
+              zoomJoinUrl: "#", // Will be handled by button logic
+              category,
+            };
+          });
+          
+          setEvents(list);
+        }
+      } catch (e) {
+        if (alive) {
+          const errorMessage = e instanceof Error ? e.message : "Failed to load events";
+          setError(errorMessage);
           setEvents(DEMO_EVENTS);
         }
       }
@@ -283,6 +346,36 @@ export default function Dashboard() {
       alive = false;
     };
   }, []);
+
+  // Fetch HubSpot contact data when hsId is available
+  useEffect(() => {
+    if (!hsId) {
+      setHubspotContact(null);
+      return;
+    }
+
+    (async () => {
+      try {
+        const contactRes = await fetch(`/api/hubspot/contact?contactId=${hsId}`, {
+          cache: "no-store",
+        });
+        
+        if (contactRes.ok) {
+          const contactData = await contactRes.json();
+          if (contactData?.properties) {
+            setHubspotContact({
+              firstname: contactData.properties.firstname || "",
+              lastname: contactData.properties.lastname || "",
+              email: contactData.properties.email || "",
+            });
+          }
+        }
+      } catch (err) {
+        console.log("Could not fetch HubSpot contact data:", err);
+        setHubspotContact(null);
+      }
+    })();
+  }, [hsId]);
 
   return (
     <div className="relative space-y-8">
@@ -358,7 +451,7 @@ export default function Dashboard() {
                         <div className="mt-3 flex flex-wrap items-center gap-2 text-[13px] text-[#17152A]">
                           <span className="inline-flex items-center gap-1 rounded-full bg-[#FAFAF7] px-2.5 py-1 border border-[#EFEFE5]">
                             <Clock className="h-3.5 w-3.5" />
-                            {whenText(e.startsAt)}
+                            {e.startsAt ? whenText(e.startsAt) : "TBA"}
                           </span>
                           <span className="inline-flex items-center gap-1 rounded-full bg-[#F8FAFF] px-2.5 py-1 border border-[#EAF0FF]">
                             <Users className="h-3.5 w-3.5" />
@@ -368,25 +461,86 @@ export default function Dashboard() {
                       </div>
 
                       <div className="sm:pt-1 w-full sm:w-auto">
-                        {e.zoomJoinUrl && e.zoomJoinUrl !== "#" ? (
-                          <Link
-                            href={e.zoomJoinUrl}
-                            target="_blank"
-                            className="inline-flex w-full sm:w-auto items-center justify-center gap-2 rounded-xl bg-[#17152A] px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-[#8C0F0F] active:scale-98"
-                          >
-                            <PlayCircle className="h-4 w-4" />
-                            Join live session
-                            <ArrowRight className="h-4 w-4" />
-                          </Link>
-                        ) : (
-                          <button
-                            disabled
-                            className="inline-flex w-full sm:w-auto cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-neutral-200 px-4 py-2.5 text-sm font-medium text-neutral-600"
-                          >
-                            <PlayCircle className="h-4 w-4" />
-                            Link not available
-                          </button>
-                        )}
+                        <button
+                          title={loadingEventId === e.id ? "Joining..." : "Join live session"}
+                          onClick={async () => {
+                            if (!hubspotContact?.email) {
+                              toast.error("User email not found. Please update your profile.");
+                              return;
+                            }
+
+                            try {
+                              setLoadingEventId(e.id);
+                              
+                              // Get user info from HubSpot contact
+                              const email = hubspotContact.email;
+                              const firstName = hubspotContact.firstname || "";
+                              const lastName = hubspotContact.lastname || "";
+                              
+                              // Check if firstName or lastName is missing
+                              if (!firstName.trim() || !lastName.trim()) {
+                                setShowProfileUpdateDialog(true);
+                                return;
+                              }
+                              
+                              const matchingLiveEvents = liveEvents.filter(
+                                liveEvent => liveEvent.type === e.id
+                              );
+                              
+                              if (matchingLiveEvents.length === 0) {
+                                throw new Error("No live events found for this event type");
+                              }
+                              
+                              // Get the latest event (sort by date/startTime to get most recent)
+                              const latestEvent = matchingLiveEvents.sort((a, b) => 
+                                new Date(b.startTime).getTime() - new Date(a.startTime).getTime()
+                              )[0];
+
+                              // Check if the event is currently joinable (within 12-hour threshold)
+                              const isJoinable = await isEventCurrentlyLive(latestEvent);
+                              if (!isJoinable) {
+                                toast.error("This event is not currently available to join. Please check back within 12 hours of the event time.");
+                                return;
+                              }
+                              
+                              console.log(`🚀 -> Joining event type: ${e.id}, using live event ID: ${latestEvent.id}`);
+                              
+                              const result = await joinLiveSession(latestEvent.id, { email, firstName, lastName });
+                              console.log("Join session result:", result);
+                              
+                              if (result.success && result.joinUrl) {
+                                // Open new tab with join URL
+                                window.open(result.joinUrl, '_blank');
+                              } else {
+                                throw new Error(result.message || "Failed to get join URL");
+                              }
+                            } catch (error) {
+                              console.error("Failed to join session:", error);
+                              toast.error(`Failed to join session: ${error instanceof Error ? error.message : "Unknown error"}`);
+                            } finally {
+                              setLoadingEventId(null);
+                            }
+                          }}
+                          disabled={loadingEventId === e.id}
+                          className={`cursor-pointer inline-flex w-full sm:w-auto items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium text-white transition-all ${
+                            loadingEventId === e.id 
+                              ? 'bg-gray-400 pointer-events-none' 
+                              : 'bg-[#17152A] hover:bg-[#8C0F0F] active:scale-98'
+                          }`}
+                        >
+                          {loadingEventId === e.id ? (
+                            <>
+                              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                              Joining...
+                            </>
+                          ) : (
+                            <>
+                              <PlayCircle className="h-4 w-4" />
+                              Join live session
+                              <ArrowRight className="h-4 w-4" />
+                            </>
+                          )}
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -421,6 +575,83 @@ export default function Dashboard() {
           </AnimatePresence>
         </div>
       </section>
+
+      {/* Profile Update Dialog */}
+      <Dialog
+        open={showProfileUpdateDialog}
+        onClose={() => setShowProfileUpdateDialog(false)}
+        aria-labelledby="profile-update-dialog-title"
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            width: 520,
+            maxWidth: "90vw",
+            boxShadow:
+              "0 10px 30px rgba(2,6,23,0.25), 0 1px 0 rgba(2,6,23,0.05)",
+          },
+        }}
+      >
+        <DialogTitle id="profile-update-dialog-title" sx={{ pb: 1 }}>
+          <Box className="flex items-center gap-3">
+            <Box
+              sx={{
+                width: 36,
+                height: 36,
+                borderRadius: "9999px",
+                backgroundColor: "#fef3c7",
+                display: "grid",
+                placeItems: "center",
+              }}
+            >
+              <UserCog className="h-4 w-4" color="#d97706" />
+            </Box>
+            <Box>
+              <Typography sx={{ fontWeight: 700, fontSize: 18 }}>
+                Profile Update Required
+              </Typography>
+              <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
+                Complete your profile to join live sessions
+              </Typography>
+            </Box>
+          </Box>
+        </DialogTitle>
+        <DialogContent sx={{ pt: 1 }}>
+          <Box className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+            <Typography sx={{ fontSize: 13, color: "text.secondary" }}>
+              To join the live session, we need your first and last name. Please update your profile with this information.
+            </Typography>
+          </Box>
+        </DialogContent>
+        <Divider />
+        <DialogActions sx={{ px: 3, py: 2, gap: 1.5 }}>
+          <Button
+            variant="outlined"
+            onClick={() => setShowProfileUpdateDialog(false)}
+            sx={{ 
+              textTransform: "none",
+              borderColor: "#d1d5db",
+              color: "#6b7280",
+              "&:hover": { borderColor: "#9ca3af", backgroundColor: "#f9fafb" }
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            onClick={() => {
+              setShowProfileUpdateDialog(false);
+              router.push("/profile");
+            }}
+            sx={{
+              textTransform: "none",
+              backgroundColor: "#17152A",
+              "&:hover": { backgroundColor: "#8C0F0F" }
+            }}
+          >
+            Update Profile
+          </Button>
+        </DialogActions>
+      </Dialog>
     </div>
   );
 }
