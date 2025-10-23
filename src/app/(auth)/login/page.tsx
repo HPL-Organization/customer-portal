@@ -60,6 +60,10 @@ function LoginInner() {
 
   const [adminTargetNsId, setAdminTargetNsId] = useState("");
 
+  const [nameWarned, setNameWarned] = useState(false);
+  const [nameLookupKey, setNameLookupKey] = useState<string | null>(null);
+  const [nameLookupInFlight, setNameLookupInFlight] = useState(false);
+
   async function provisionAndRedirect() {
     await supabase.auth.getSession();
     let nsId: string | null = null;
@@ -99,6 +103,37 @@ function LoginInner() {
     await provisionAndRedirect();
   }
 
+  async function checkNameOnce() {
+    if (mode !== "signup") return;
+    const fn = firstName.trim();
+    const ln = lastName.trim();
+    if (!fn || !ln) return;
+    const key = `${fn}|${ln}`;
+    if (nameLookupKey === key || nameLookupInFlight) return;
+    setNameLookupInFlight(true);
+    try {
+      const r = await fetch("/api/auth/lookup-by-name", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ firstName: fn, lastName: ln }),
+      });
+      const j = await r.json().catch(() => null);
+      setNameLookupKey(key);
+      if (j?.ok && j.exists) {
+        setInfoMsg(
+          `You might already have an account. You can log in using ${j.masked}. If this isn’t you, you can continue to create a new account.`
+        );
+        setNameWarned(true);
+      } else {
+        if (nameWarned) setNameWarned(false);
+      }
+    } catch {
+      // ignore soft failures
+    } finally {
+      setNameLookupInFlight(false);
+    }
+  }
+
   async function onSignup(e: React.FormEvent) {
     e.preventDefault();
     setErrorMsg(null);
@@ -117,7 +152,55 @@ function LoginInner() {
       return;
     }
 
+    try {
+      const fn = firstName.trim();
+      const ln = lastName.trim();
+      if (fn && ln && !nameWarned) {
+        const r = await fetch("/api/admin/lookup-by-name", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ firstName: fn, lastName: ln }),
+        });
+        const j = await r.json().catch(() => null);
+        if (j?.ok && j.exists) {
+          setLoading(false);
+          setInfoMsg(
+            `You seem to already have an account. You can log in using ${j.masked}. If this isn’t you, submit again to continue creating a new account.`
+          );
+          setNameWarned(true);
+          return;
+        }
+      }
+    } catch {}
+
     const emailClean = email.trim().toLowerCase();
+
+    try {
+      const r = await fetch("/api/auth/check-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: emailClean }),
+      });
+      const j = await r.json().catch(() => null);
+
+      if (j?.ok && j.exists) {
+        setLoading(false);
+
+        if (j.confirmed) {
+          setMode("signin");
+          setInfoMsg(
+            `Looks like you already have an account (${j.masked}). Please sign in below, or use 'Send reset email' if you forgot your password.`
+          );
+        } else {
+          setConfirmBannerEmail(emailClean);
+          setInfoMsg(
+            "You started signing up earlier. Please confirm your email to finish. You can resend the confirmation below."
+          );
+        }
+        return;
+      }
+    } catch {}
+
     const emailRedirectTo =
       typeof window !== "undefined"
         ? `${window.location.origin}/callback?next=${encodeURIComponent(next)}`
@@ -136,14 +219,31 @@ function LoginInner() {
       },
     });
 
+    if (error) {
+      const msg = (error.message || "").toLowerCase();
+      if (msg.includes("already registered")) {
+        setMode("signin");
+        setLoading(false);
+        setInfoMsg(
+          "Looks like you already have an account with this email. Please sign in below, or use 'Send reset email' if you forgot your password."
+        );
+        return;
+      }
+      setLoading(false);
+      setErrorMsg(error.message);
+      return;
+    }
+
     setLoading(false);
-    if (error) return setErrorMsg(error.message);
 
     if (!data.session) {
       setConfirmBannerEmail(emailClean);
       setInfoMsg(null);
+      setNameWarned(false);
       return;
     }
+
+    setNameWarned(false);
     await provisionAndRedirect();
   }
 
@@ -348,6 +448,7 @@ function LoginInner() {
                       setErrorMsg(null);
                       setInfoMsg(null);
                       setConfirmBannerEmail(null);
+                      setNameWarned(false);
                     }}
                     className={`rounded-lg px-3 py-1 text-xs transition ${
                       mode === "signin"
@@ -363,6 +464,7 @@ function LoginInner() {
                       setErrorMsg(null);
                       setInfoMsg(null);
                       setConfirmBannerEmail(null);
+                      setNameWarned(false);
                     }}
                     className={`rounded-lg px-3 py-1 text-xs transition ${
                       mode === "signup"
@@ -378,6 +480,7 @@ function LoginInner() {
                       setErrorMsg(null);
                       setInfoMsg(null);
                       setConfirmBannerEmail(null);
+                      setNameWarned(false);
                     }}
                     className={`rounded-lg px-3 py-1 text-xs transition ${
                       mode === "admin"
@@ -558,7 +661,7 @@ function LoginInner() {
                   </div>
                 )}
                 {infoMsg && (
-                  <div className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm text-emerald-800">
+                  <div className="rounded-2xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm text-emerald-800">
                     {infoMsg}
                   </div>
                 )}
@@ -600,6 +703,9 @@ function LoginInner() {
                 continueWithGoogle={continueWithGoogle}
                 sendMagicLink={sendMagicLink}
                 resetPassword={resetPassword}
+                // Added: trigger one-time lookup when either name field loses focus
+                onFirstLastBlur={checkNameOnce}
+                nameLookupInFlight={nameLookupInFlight}
               />
             ) : null}
 
@@ -647,6 +753,9 @@ function AuthForm(props: {
   continueWithGoogle: () => void;
   sendMagicLink: () => void;
   resetPassword: () => void;
+  // Added:
+  onFirstLastBlur?: () => void;
+  nameLookupInFlight?: boolean;
 }) {
   const {
     mode,
@@ -672,6 +781,8 @@ function AuthForm(props: {
     continueWithGoogle,
     sendMagicLink,
     resetPassword,
+    onFirstLastBlur,
+    nameLookupInFlight,
   } = props;
 
   return (
@@ -699,6 +810,7 @@ function AuthForm(props: {
                   required
                   value={firstName}
                   onChange={(e) => setFirstName(e.target.value)}
+                  onBlur={onFirstLastBlur}
                   className="w-full rounded-xl border border-slate-300 bg-white px-9 py-2 text-sm text-slate-900 placeholder-slate-400 outline-none ring-0 transition focus:border-slate-400"
                   placeholder="Jane"
                 />
@@ -742,10 +854,21 @@ function AuthForm(props: {
                   required
                   value={lastName}
                   onChange={(e) => setLastName(e.target.value)}
+                  onBlur={onFirstLastBlur}
                   className="w-full rounded-xl border border-slate-300 bg-white px-9 py-2 text-sm text-slate-900 placeholder-slate-400 outline-none ring-0 transition focus:border-slate-400"
                   placeholder="Doe"
                 />
               </div>
+              {nameLookupInFlight && (
+                <div className="mt-2 text-[11px] text-slate-500">
+                  Checking for an existing account…
+                </div>
+              )}
+              {mode === "signup" && infoMsg && (
+                <div className="rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white mt-1">
+                  {infoMsg}
+                </div>
+              )}
             </div>
           </>
         )}
@@ -835,11 +958,6 @@ function AuthForm(props: {
         {errorMsg && (
           <div className="rounded-xl border border-red-500/30 bg-red-50 px-4 py-2 text-sm text-red-700">
             {errorMsg}
-          </div>
-        )}
-        {infoMsg && (
-          <div className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm text-emerald-800">
-            {infoMsg}
           </div>
         )}
 

@@ -6,7 +6,6 @@ import { Truck, CircleAlert, Copy } from "lucide-react";
 import { useOrderTracking } from "@/components/providers/OrderTrackingProvider";
 
 type FulfillmentLine = {
-  sku?: string;
   productName?: string;
   quantity?: number;
   comments?: string[];
@@ -59,18 +58,21 @@ async function copy(t: string) {
     await navigator.clipboard.writeText(t);
   } catch {}
 }
+function extractTrackingTokens(s?: string | null): string[] {
+  if (!s) return [];
+  const parts = String(s)
+    .split(/[,\s]+/)
+    .filter(Boolean);
+  return parts.filter(
+    (p) => !/^https?:\/\//i.test(p) && !/^[\w.-]+\.[a-z]{2,}$/i.test(p)
+  );
+}
 function getTrackingNumbers(ff: Fulfillment): string[] {
-  const fromItems =
-    (ff.items || [])
-      .map((it) => String(it.tracking || "").trim())
-      .filter(Boolean) || [];
-  const rootOne = ff.tracking ? [String(ff.tracking).trim()] : [];
-  const rootMany = Array.isArray(ff.tracking_urls)
-    ? (ff.tracking_urls as string[])
-        .map((u) => String(u || "").trim())
-        .filter(Boolean)
-    : [];
-  return unique([...fromItems, ...rootOne, ...rootMany]);
+  const fromItems = (ff.items || []).flatMap((it) =>
+    extractTrackingTokens(it.tracking)
+  );
+  const root = extractTrackingTokens(ff.tracking);
+  return unique([...fromItems, ...root]);
 }
 function getPrimaryStatus(ff: Fulfillment): string {
   return (ff.shipStatus || ff.status || "").trim();
@@ -97,7 +99,6 @@ export default function FulfillmentPeek({
         shipStatus: (f as any).shipStatus,
         shippedAt: (f as any).shippedAt,
         items: ((f as any).items || []).map((it: any) => ({
-          sku: it.sku,
           productName: it.productName,
           quantity: it.quantity,
           comments: it.comments,
@@ -179,7 +180,7 @@ export default function FulfillmentPeek({
 
       {!soId ? (
         <div className="rounded-xl border border-dashed border-[#BFBFBF] bg-[#FFFFEC] p-3 text-sm text-[#17152A]">
-          This invoice isn’t linked to a sales order yet.
+          This invoice isn't linked to a sales order yet.
         </div>
       ) : error ? (
         <div className="flex items-center gap-2 rounded-xl border border-[#BFBFBF] bg-[#FFFFEC] px-3 py-2 text-sm text-[#17152A]">
@@ -188,7 +189,7 @@ export default function FulfillmentPeek({
         </div>
       ) : empty ? (
         <div className="rounded-xl border border-dashed border-[#BFBFBF] bg-[#FFFFEC] p-3 text-sm text-[#17152A]">
-          We didn’t find a shipment tied to this order yet.
+          We didn't find a shipment tied to this order yet.
         </div>
       ) : (
         <ul className="space-y-3">
@@ -225,14 +226,14 @@ export default function FulfillmentPeek({
                       transition={{ duration: 0.25, ease: [0.2, 0.8, 0.2, 1] }}
                       className="mt-3 overflow-x-auto"
                     >
-                      <table className="min-w-[520px] w-full text-sm">
+                      <table className="min-w-[620px] w-full text-sm">
                         <thead className="bg-[#FFFFEC]">
                           <tr className="text-[#17152A]/75">
                             <th className="px-3 py-2 text-left text-[11px] font-bold uppercase tracking-wide">
-                              SKU
+                              Product
                             </th>
                             <th className="px-3 py-2 text-left text-[11px] font-bold uppercase tracking-wide">
-                              Product
+                              Details
                             </th>
                             <th className="px-3 py-2 text-right text-[11px] font-bold uppercase tracking-wide">
                               Qty
@@ -242,16 +243,11 @@ export default function FulfillmentPeek({
                         <tbody className="bg-white">
                           {(ff.items || []).slice(0, 6).map((it, idx) => (
                             <tr
-                              key={`${it.sku}-${idx}`}
+                              key={idx}
                               className={cx(
                                 idx % 2 === 0 ? "bg-white" : "bg-black/[0.02]"
                               )}
                             >
-                              <td className="px-3 py-2 text-[#17152A]/90">
-                                <code className="rounded bg-black/[0.06] px-1.5 py-0.5 text-[12px]">
-                                  {it.sku || "—"}
-                                </code>
-                              </td>
                               <td className="px-3 py-2 text-[#17152A]/90">
                                 <div
                                   className="max-w-[52ch] truncate"
@@ -259,6 +255,24 @@ export default function FulfillmentPeek({
                                 >
                                   {it.productName || "—"}
                                 </div>
+                              </td>
+                              <td className="px-3 py-2">
+                                {Array.isArray(it.comments) &&
+                                it.comments.length > 0 ? (
+                                  <div className="flex max-w-[60ch] flex-wrap gap-1.5">
+                                    {it.comments.map((c, i2) => (
+                                      <span
+                                        key={`${idx}-c-${i2}`}
+                                        title={c}
+                                        className="truncate rounded-md border border-[#BFBFBF]/60 bg-[#FFFFEC] px-1.5 py-0.5 text-[12px] text-[#17152A]"
+                                      >
+                                        {c}
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <span className="text-[#17152A]/50">—</span>
+                                )}
                               </td>
                               <td className="px-3 py-2 text-right font-semibold text-[#17152A] whitespace-nowrap">
                                 {it.quantity ?? "—"}
