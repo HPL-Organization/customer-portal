@@ -3,6 +3,7 @@
 import { Suspense, useState } from "react";
 import { createBrowserClient } from "@supabase/ssr";
 import { useRouter, useSearchParams } from "next/navigation";
+import PrivacyTermsModal from "@/components/UI/PrivacyTermsModal";
 import Image from "next/image";
 
 export const dynamic = "force-dynamic";
@@ -63,6 +64,11 @@ function LoginInner() {
   const [nameWarned, setNameWarned] = useState(false);
   const [nameLookupKey, setNameLookupKey] = useState<string | null>(null);
   const [nameLookupInFlight, setNameLookupInFlight] = useState(false);
+
+  const [showPolicies, setShowPolicies] = useState(false);
+  const [policiesTab, setPoliciesTab] = useState<
+    "summary" | "privacy" | "terms" | "accessibility"
+  >("summary");
 
   async function provisionAndRedirect() {
     await supabase.auth.getSession();
@@ -223,7 +229,6 @@ function LoginInner() {
     if (error) {
       const msg = (error.message || "").toLowerCase();
       if (msg.includes("already registered")) {
-        // ✅ Same treatment if GoTrue happens to throw this
         setMode("signin");
         setEmail(emailClean);
         setLoading(false);
@@ -706,15 +711,70 @@ function LoginInner() {
                 continueWithGoogle={continueWithGoogle}
                 sendMagicLink={sendMagicLink}
                 resetPassword={resetPassword}
-                // Added: trigger one-time lookup when either name field loses focus
                 onFirstLastBlur={checkNameOnce}
                 nameLookupInFlight={nameLookupInFlight}
               />
             ) : null}
 
-            <p className="mt-8 text-center text-[11px] leading-relaxed text-slate-500">
-              By continuing you agree to our Terms & Privacy.
-            </p>
+            <div className="mt-8 text-center text-[11px] leading-relaxed text-slate-600">
+              By continuing you agree to our{" "}
+              <button
+                type="button"
+                onClick={() => {
+                  setPoliciesTab("terms");
+                  setShowPolicies(true);
+                }}
+                className="font-medium text-slate-900 underline underline-offset-4 hover:opacity-80"
+              >
+                Terms & Conditions
+              </button>{" "}
+              and{" "}
+              <button
+                type="button"
+                onClick={() => {
+                  setPoliciesTab("privacy");
+                  setShowPolicies(true);
+                }}
+                className="font-medium text-slate-900 underline underline-offset-4 hover:opacity-80"
+              >
+                Privacy Policy
+              </button>
+              . Read the{" "}
+              <button
+                type="button"
+                onClick={() => {
+                  setPoliciesTab("summary");
+                  setShowPolicies(true);
+                }}
+                className="font-medium text-slate-900 underline underline-offset-4 hover:opacity-80"
+              >
+                Privacy Summary
+              </button>{" "}
+              and{" "}
+              <button
+                type="button"
+                onClick={() => {
+                  setPoliciesTab("accessibility");
+                  setShowPolicies(true);
+                }}
+                className="font-medium text-slate-900 underline underline-offset-4 hover:opacity-80"
+              >
+                Accessibility
+              </button>
+              .
+            </div>
+
+            <PrivacyTermsModal
+              open={showPolicies}
+              onClose={() => setShowPolicies(false)}
+              initialTab={policiesTab}
+              sources={{
+                summary: "/policies/summary.md",
+                privacy: "/policies/privacy.md",
+                terms: "/policies/terms.md",
+                accessibility: "/policies/accessibility.md",
+              }}
+            />
           </div>
         </section>
       </div>

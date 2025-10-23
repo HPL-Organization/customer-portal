@@ -20,19 +20,11 @@ import {
   TextField,
 } from "@mui/material";
 import { AnimatePresence, motion } from "framer-motion";
-import {
-  ArrowRight,
-  Clock,
-  PlayCircle,
-  Sparkles,
-  UserCog,
-  Users,
-} from "lucide-react";
+import { ArrowRight, Clock, PlayCircle, Sparkles, UserCog } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "react-toastify";
 import Image from "next/image";
-import Loader from "@/components/UI/Loader";
 import { createBrowserClient } from "@supabase/ssr";
 
 const supabase = createBrowserClient(
@@ -54,13 +46,14 @@ type ImageRule = { pattern: RegExp; src: string };
 const IMG_BASE = "/assets/events";
 
 const IMAGE_MAP_EXACT: Record<string, string> = {
-  monday_live_event: `${IMG_BASE}/Monday_event.png`,
-  cut_and_chat_live_event: `${IMG_BASE}/Thursday_Cut_and_Chat.png`,
-  thursday_afternoon_live_event: `${IMG_BASE}/Thursday_Cabochon_afternoon.png`,
-  friday_rough_rock_event: `${IMG_BASE}/Wednesday_Friday_Saturday_Rough_Rock.png`,
-  wednesday_rough_rock_event: `${IMG_BASE}/Wednesday_Friday_Saturday_Rough_Rock.png`,
-  saturday_slab_event: `${IMG_BASE}/Wednesday_Friday_Saturday_Rough_Rock.png`,
-  sphere_collectors_event: `${IMG_BASE}/Wednesday_Friday_Saturday_Rough_Rock.png`,
+  cut_and_chat_live_event: `${IMG_BASE}/cut_and_chat_live_event.png`,
+  friday_rough_rock_event: `${IMG_BASE}/friday_rough_rock_event.png`,
+  mineral_live_event: `${IMG_BASE}/mineral_live_event.png`,
+  monday_live_event: `${IMG_BASE}/monday_live_event.png`,
+  saturday_slab_event: `${IMG_BASE}/saturday_slab_event.png`,
+  sphere_collectors_event: `${IMG_BASE}/sphere_collectors_event.png`,
+  thursday_afternoon_live_event: `${IMG_BASE}/thursday_afternoon_live_event.png`,
+  wednesday_rough_rock_event: `${IMG_BASE}/wednesday_rough_rock_event.png`,
 };
 
 const IMAGE_FALLBACK_BY_KEYWORD: ImageRule[] = [
@@ -183,12 +176,12 @@ function CardSkeleton() {
     <div className="relative overflow-hidden rounded-2xl border border-[#EAEAEA] bg-white">
       <div className="absolute left-0 top-0 h-full w-1 bg-gradient-to-b from-[#8C0F0F] to-[#E01C24]" />
       <div className="animate-pulse">
-        <div className="aspect-[16/9] w-full bg-neutral-100" />
-        <div className="p-4 space-y-3">
+        <div className="aspect-[16/7] w-full bg-neutral-100" />
+        <div className="p-3.5 sm:p-4 space-y-2.5">
           <div className="h-4 w-24 rounded bg-neutral-100" />
-          <div className="h-6 w-2/3 rounded bg-neutral-100" />
+          <div className="h-5 w-2/3 rounded bg-neutral-100" />
           <div className="h-4 w-11/12 rounded bg-neutral-100" />
-          <div className="h-10 w-full rounded bg-neutral-100" />
+          <div className="h-9 w-full rounded bg-neutral-100" />
         </div>
       </div>
     </div>
@@ -260,51 +253,6 @@ export default function Dashboard() {
           fetchLiveEvents(),
         ]);
         if (!alive) return;
-
-        console.groupCollapsed("LiveSaleApp debug");
-        console.log("now", new Date().toISOString());
-        console.log("eventTypes", eventTypes);
-        console.log("liveEventsData (raw)", liveEventsData);
-        try {
-          const table = liveEventsData.map((e) => ({
-            id: e.id,
-            type: e.type,
-            startTime: e.startTime,
-            endTime: e.endTime,
-            isEnded: e.isEnded,
-            zoomMeetingId: e.zoomMeetingId,
-            totalSale: e.totalSale,
-            customers: e._count?.customers,
-          }));
-          console.table(table);
-          const byType = liveEventsData.reduce(
-            (acc: Record<string, number>, e) => {
-              acc[e.type] = (acc[e.type] || 0) + 1;
-              return acc;
-            },
-            {}
-          );
-          console.log("countsByType", byType);
-          const liveNow = liveEventsData.filter((e) => {
-            const now = Date.now();
-            const hasTZ = /Z|[+-]\d{2}:\d{2}$/.test(e.startTime || "");
-            const start = new Date(
-              hasTZ ? e.startTime : (e.startTime || "") + "Z"
-            ).getTime();
-            const end = e.endTime
-              ? new Date(
-                  /Z|[+-]\d{2}:\d{2}$/.test(e.endTime)
-                    ? e.endTime
-                    : e.endTime + "Z"
-                ).getTime()
-              : start + 3 * 60 * 60 * 1000;
-            return now >= start && now <= end;
-          });
-          console.log("liveNowDetectedClientSide", liveNow);
-        } catch (err) {
-          console.warn("debug table failed", err);
-        }
-        console.groupEnd();
 
         setLoaderProgress(62);
         setLiveEvents(liveEventsData);
@@ -405,11 +353,6 @@ export default function Dashboard() {
               category,
               _live: { isLive: sortKey === 0, badge, timeText, sortKey },
             };
-            console.log("eventTypeSelection", {
-              type: eventType.internalName,
-              chosen,
-              rendered: record,
-            });
             return record;
           })
           .sort((a, b) => {
@@ -448,9 +391,7 @@ export default function Dashboard() {
         }, 250);
       }
     })();
-    return () => {
-      alive = false;
-    };
+    return () => {};
   }, []);
 
   useEffect(() => {
@@ -552,26 +493,21 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="relative space-y-8">
-      {/* <Loader
-        show={pageLoading || !!loadingEventId}
-        label={loadingEventId ? "Joining live session…" : loaderLabel}
-        progress={loadingEventId ? null : loaderProgress}
-      /> */}
+    <div className="relative space-y-7">
       <div className="pointer-events-none absolute inset-0 -z-10 rounded-xl">
         <div className="absolute inset-0 bg-[radial-gradient(120%_140%_at_50%_-20%,#FFFFEC,transparent_60%),linear-gradient(180deg,#FFFFFF_0%,#FFFFEC_50%,#FFFFFF_100%)]" />
         <div className="absolute inset-0 bg-[radial-gradient(60%_40%_at_20%_10%,rgba(140,15,15,0.06),transparent_60%),radial-gradient(40%_30%_at_90%_20%,rgba(224,28,36,0.05),transparent_60%)]" />
       </div>
 
-      <header className="mb-1">
-        <h1 className="text-2xl font-bold text-[#17152A]">Your VIP Events</h1>
-        <div className="mt-2 h-0.5 w-16 rounded-full bg-gradient-to-r from-[#8C0F0F] to-[#E01C24]" />
+      <header className="mb-0.5">
+        <h1 className="text-[20px] font-bold text-[#17152A]">
+          Your VIP Events
+        </h1>
+        <div className="mt-2 h-0.5 w-14 rounded-full bg-gradient-to-r from-[#8C0F0F] to-[#E01C24]" />
       </header>
 
       <section>
-        <h3 className="mb-3 text-sm font-medium tracking-wide text-[#17152A]"></h3>
-
-        <div className="grid grid-cols-1 gap-4">
+        <div className="grid grid-cols-1 gap-3.5">
           <AnimatePresence initial={false}>
             {!events &&
               Array.from({ length: 3 }).map((_, i) => (
@@ -593,11 +529,11 @@ export default function Dashboard() {
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 8 }}
                   whileHover={{ y: -2 }}
-                  className="relative overflow-hidden rounded-2xl border border-[#EAEAEA] bg-white shadow-[0_8px_28px_rgba(0,0,0,0.06)]"
+                  className="relative overflow-hidden rounded-2xl border border-[#EAEAEA] bg-white shadow-[0_6px_22px_rgba(0,0,0,0.06)]"
                 >
                   <div className="absolute left-0 top-0 h-full w-1 bg-gradient-to-b from-[#8C0F0F] to-[#E01C24]" />
                   <div className="relative">
-                    <div className="relative aspect-[16/9] w-full overflow-hidden bg-[#FFFFF4]">
+                    <div className="relative aspect-[16/7] w-full overflow-hidden bg-[#FFFFF4]">
                       {src ? (
                         <Image
                           src={src}
@@ -608,40 +544,42 @@ export default function Dashboard() {
                           priority={false}
                         />
                       ) : (
-                        <div className="absolute inset-0 m-4 rounded-xl border-2 border-dashed border-[#E0E0CF] grid place-items-center">
-                          <span className="text-xs font-medium tracking-wide text-[#9A9985]">
+                        <div className="absolute inset-0 m-3.5 rounded-xl border-2 border-dashed border-[#E0E0CF] grid place-items-center">
+                          <span className="text-[11.5px] font-medium tracking-wide text-[#9A9985]">
                             Image coming soon
                           </span>
                         </div>
                       )}
                     </div>
-                    <div className="absolute left-3 top-3 inline-flex items-center gap-2 rounded-full border border-[#EFEFEF] bg-white/85 px-3 py-1 text-xs font-medium shadow-sm backdrop-blur">
+                    <div className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full border border-[#EFEFEF] bg-white/85 px-2.5 py-0.5 text-[11.5px] font-medium shadow-sm backdrop-blur">
                       <Sparkles className="h-3.5 w-3.5 text-[#8C0F0F]" />
                       <span
-                        className={pill.className + " rounded-full px-2 py-0.5"}
+                        className={
+                          pill.className + " rounded-full px-1.5 py-0.5"
+                        }
                       >
                         {pill.label}
                       </span>
                     </div>
                     {liveMeta?.isLive && (
-                      <div className="absolute right-3 top-3 inline-flex items-center gap-2 rounded-full border border-[#F7CACA] bg-[#FFF2F2] px-3 py-1 text-xs font-semibold text-[#8C0F0F] shadow-sm">
+                      <div className="absolute right-3 top-3 inline-flex items-center gap-1.5 rounded-full border border-[#F7CACA] bg-[#FFF2F2] px-2.5 py-0.5 text-[11.5px] font-semibold text-[#8C0F0F] shadow-sm">
                         Live now
                       </div>
                     )}
                   </div>
 
-                  <div className="p-4 sm:p-5">
+                  <div className="p-3.5 sm:p-4">
                     <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
                       <div>
-                        <h4 className="text-[16px] font-semibold text-[#17152A]">
+                        <h4 className="text-[15px] font-semibold text-[#17152A]">
                           {e.name}
                         </h4>
-                        <p className="mt-1 text-sm text-[#17152A]/70">
+                        <p className="mt-1 text-[13.5px] leading-5 text-[#17152A]/70">
                           {e.description}
                         </p>
-                        <div className="mt-3 flex flex-wrap items-center gap-2 text-[13px] text-[#17152A]">
+                        <div className="mt-2.5 flex flex-wrap items-center gap-1.5 text-[12.5px] text-[#17152A]">
                           <span
-                            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 border ${
+                            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 border ${
                               liveMeta?.isLive
                                 ? "bg-[#FFEFEF] border-[#F2D1D1]"
                                 : "bg-[#FAFAF7] border-[#EFEFE5]"
@@ -655,7 +593,7 @@ export default function Dashboard() {
                               : "TBA"}
                           </span>
                           <span
-                            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 border ${
+                            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 border ${
                               liveMeta?.isLive
                                 ? "bg-[#FFF2F2] border-[#F7CACA] text-[#8C0F0F]"
                                 : "bg-[#F0F4F8] border-[#E1E8F0] text-[#0F3D8C]/80"
@@ -663,11 +601,10 @@ export default function Dashboard() {
                           >
                             {liveMeta?.isLive ? "Live now" : "Not live"}
                           </span>
-                          <span className="inline-flex items-center gap-1 rounded-full bg-[#F8FAFF] px-2.5 py-1 border border-[#EAF0FF]"></span>
                         </div>
                       </div>
 
-                      <div className="sm:pt-1 w-full sm:w-auto">
+                      <div className="sm:pt-0.5 w-full sm:w-auto">
                         <button
                           title={
                             loadingEventId === e.id
@@ -734,7 +671,7 @@ export default function Dashboard() {
                             }
                           }}
                           disabled={loadingEventId === e.id}
-                          className={`cursor-pointer inline-flex w-full sm:w-auto items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium text-white transition-all ${
+                          className={`cursor-pointer inline-flex w-full sm:w-auto items-center justify-center gap-2 rounded-xl px-3.5 py-2 text-[13.5px] font-medium text-white transition-all ${
                             loadingEventId === e.id
                               ? "bg-gray-400 pointer-events-none"
                               : "bg-[#17152A] hover:bg-[#8C0F0F] active:scale-98"
@@ -766,21 +703,21 @@ export default function Dashboard() {
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 8 }}
-                className="relative overflow-hidden rounded-2xl border border-[#BFBFBF] bg-[#FFFFEC] p-10 text-center"
+                className="relative overflow-hidden rounded-2xl border border-[#BFBFBF] bg-[#FFFFEC] p-8 text-center"
               >
-                <div className="inline-flex items-center gap-2 rounded-full border border-[#BFBFBF] bg-white/60 px-4 py-1 text-xs text-[#17152A]">
+                <div className="inline-flex items-center gap-2 rounded-full border border-[#BFBFBF] bg-white/60 px-3.5 py-0.5 text-xs text-[#17152A]">
                   <Sparkles className="h-3.5 w-3.5 text-[#8C0F0F]" />
                   VIP Room
                 </div>
-                <h3 className="mt-4 text-2xl sm:text-3xl font-semibold text-[#17152A]">
+                <h3 className="mt-3.5 text-[22px] sm:text-[26px] font-semibold text-[#17152A]">
                   (Coming Soon) No upcoming events yet
                 </h3>
-                <p className="mt-2 text-[#17152A]/70">
+                <p className="mt-1.5 text-[#17152A]/70">
                   Subscribe to events and your personal VIP join banners will
                   appear here.
                 </p>
                 {error && (
-                  <p className="mt-4 text-[12px] text-[#8C0F0F]">{error}</p>
+                  <p className="mt-3 text-[12px] text-[#8C0F0F]">{error}</p>
                 )}
               </motion.div>
             )}
