@@ -188,8 +188,9 @@ function LoginInner() {
 
         if (j.confirmed) {
           setMode("signin");
-          setInfoMsg(
-            `Looks like you already have an account (${j.masked}). Please sign in below, or use 'Send reset email' if you forgot your password.`
+          setEmail(emailClean);
+          setErrorMsg(
+            `That email is already in use. Please sign in, or use "Send reset email" if you forgot your password.`
           );
         } else {
           setConfirmBannerEmail(emailClean);
@@ -222,10 +223,12 @@ function LoginInner() {
     if (error) {
       const msg = (error.message || "").toLowerCase();
       if (msg.includes("already registered")) {
+        // ✅ Same treatment if GoTrue happens to throw this
         setMode("signin");
+        setEmail(emailClean);
         setLoading(false);
-        setInfoMsg(
-          "Looks like you already have an account with this email. Please sign in below, or use 'Send reset email' if you forgot your password."
+        setErrorMsg(
+          `That email (${emailClean}) is already in use. Please sign in below, or use "Send reset email" if you forgot your password.`
         );
         return;
       }
