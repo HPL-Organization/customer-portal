@@ -75,7 +75,7 @@ export default function PrivacyTermsModal({
     return u.endsWith(".md") || u.endsWith(".markdown");
   };
 
-  const isDev = process.env.NODE_ENV !== "production";
+  const isDev = true;
 
   async function ensureLoaded(k: TabKey) {
     if (!isDev && cacheRef.current.has(k)) return;
@@ -88,7 +88,7 @@ export default function PrivacyTermsModal({
           ? window.location.origin
           : "http://localhost";
       const url = new URL(path, base);
-      if (isDev) url.searchParams.set("t", String(Date.now())); // dev cache-bust
+      if (isDev) url.searchParams.set("t", String(Date.now()));
 
       const r = await fetch(url.toString(), {
         cache: isDev ? "no-store" : "force-cache",
@@ -110,7 +110,6 @@ export default function PrivacyTermsModal({
 
   const content = cacheRef.current.get(tab) || "";
 
-  // Intercept Markdown links to switch tabs in-modal
   const goToHrefTab = (href?: string) => {
     if (!href) return false;
     try {
