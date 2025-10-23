@@ -461,7 +461,7 @@ function LoginInner() {
               </div>
             )}
 
-            {maintOn && showAdminForMaint ? (
+            {mode === "admin" || (maintOn && showAdminForMaint) ? (
               <form onSubmit={onAdminLogin} className="space-y-4">
                 <div>
                   <label className="mb-2 block text-xs font-medium tracking-wide text-slate-700">
