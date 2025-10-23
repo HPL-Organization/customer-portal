@@ -91,18 +91,19 @@ function whenText(iso: string) {
   const d = new Date(iso);
   if (isNaN(d.getTime())) return "TBA";
   const now = Date.now();
-  const diff = d.getTime() - now;
-  const mins = Math.round(Math.abs(diff) / 60000);
-  if (mins < 60) return diff > 0 ? `in ${mins}m` : `${mins}m ago`;
-  const hours = Math.round(mins / 60);
-  if (hours < 24) return diff > 0 ? `in ${hours}h` : `${hours}h ago`;
-  return d.toLocaleString(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
+  const diffMs = d.getTime() - now;
+  const minsAbs = Math.round(Math.abs(diffMs) / 60000);
+
+  if (diffMs > 0) {
+    if (minsAbs < 60) return `in ${minsAbs}m`;
+    const h = Math.floor(minsAbs / 60);
+    const m = minsAbs % 60;
+    return m === 0 ? `in ${h}h` : `in ${h}h ${m}m`;
+  } else {
+    if (minsAbs < 60) return `${minsAbs}m ago`;
+    const hours = Math.round(minsAbs / 60);
+    return `${hours}h ago`;
+  }
 }
 
 function categoryPill(c?: VipEvent["category"]) {
@@ -133,11 +134,13 @@ function classify(event?: LiveEvent) {
       sortKey: 3,
       startsAt: undefined as string | undefined,
     };
+
   const now = Date.now();
   const start = parseISO(event.startTime).getTime();
   const end = event.endTime
     ? parseISO(event.endTime).getTime()
     : start + 3 * 60 * 60 * 1000;
+
   if (now >= start && now <= end) {
     const mins = Math.max(0, Math.round((now - start) / 60000));
     return {
@@ -151,16 +154,26 @@ function classify(event?: LiveEvent) {
       startsAt: event.startTime,
     };
   }
+
   if (now < start) {
     const mins = Math.round((start - now) / 60000);
+    let timeText: string;
+    if (mins < 60) {
+      timeText = `in ${mins}m`;
+    } else {
+      const h = Math.floor(mins / 60);
+      const m = mins % 60;
+      timeText = m === 0 ? `in ${h}h` : `in ${h}h ${m}m`;
+    }
     return {
       isLive: false,
       badge: "Upcoming",
-      timeText: mins < 60 ? `in ${mins}m` : `in ${Math.round(mins / 60)}h`,
+      timeText,
       sortKey: 1,
       startsAt: event.startTime,
     };
   }
+
   const mins = Math.round((now - end) / 60000);
   return {
     isLive: false,
@@ -316,10 +329,15 @@ export default function Dashboard() {
                     : `started ${Math.round(mins / 60)}h ago`;
                 sortKey = 0;
               } else if (now < s) {
-                const mins = Math.round((s - now) / 60000);
+                const mins = Math.max(0, Math.round((s - now) / 60000));
                 badge = "Upcoming";
-                timeText =
-                  mins < 60 ? `in ${mins}m` : `in ${Math.round(mins / 60)}h`;
+                if (mins < 60) {
+                  timeText = `in ${mins}m`;
+                } else {
+                  const h = Math.floor(mins / 60);
+                  const m = mins % 60;
+                  timeText = m ? `in ${h}h ${m}m` : `in ${h}h`;
+                }
                 sortKey = 1;
               } else {
                 const mins = Math.round((now - end) / 60000);
