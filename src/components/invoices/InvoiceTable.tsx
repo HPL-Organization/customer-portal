@@ -773,53 +773,6 @@ function Details({ inv, mobile = false }: { inv: Invoice; mobile?: boolean }) {
       <div className="grid grid-cols-1 gap-6">
         <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
           <div className="border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-600">
-            Related Payments
-          </div>
-          <div className="overflow-x-auto">
-            {(inv.payments ?? []).length === 0 ? (
-              <div className="px-3 py-6 text-center text-sm text-slate-500">
-                No payments recorded.
-              </div>
-            ) : (
-              <table className="min-w-[560px] w-full table-auto text-sm">
-                <thead className="text-left text-slate-600">
-                  <tr>
-                    <th className="px-3 py-2">Transaction</th>
-                    <th className="px-3 py-2">Date</th>
-                    <th className="px-3 py-2">Method</th>
-                    <th className="px-3 py-2 text-right">Amount</th>
-                  </tr>
-                </thead>
-                <tbody className="[&>tr]:border-t [&>tr]:border-slate-200 [&>tr:nth-child(odd)]:bg-slate-50/60">
-                  {inv.payments.map((p, i: number) => (
-                    <tr key={i}>
-                      <td className="px-3 py-2">
-                        {p.tranId || p.paymentId || "Payment"}
-                        {p.status ? (
-                          <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
-                            {p.status}
-                          </span>
-                        ) : null}
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap">
-                        {fdate(p.paymentDate || p.date)}
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap">
-                        {p.paymentOption ?? "—"}
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap text-right font-medium">
-                        {fmt(p.amount)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-        </div>
-
-        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-          <div className="border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-600">
             Line Items
           </div>
 
@@ -910,6 +863,53 @@ function Details({ inv, mobile = false }: { inv: Invoice; mobile?: boolean }) {
                 </div>
               );
             })()}
+          </div>
+        </div>
+
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+          <div className="border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-600">
+            Related Payments
+          </div>
+          <div className="overflow-x-auto">
+            {(inv.payments ?? []).length === 0 ? (
+              <div className="px-3 py-6 text-center text-sm text-slate-500">
+                No payments recorded.
+              </div>
+            ) : (
+              <table className="min-w-[560px] w-full table-auto text-sm">
+                <thead className="text-left text-slate-600">
+                  <tr>
+                    <th className="px-3 py-2">Transaction</th>
+                    <th className="px-3 py-2">Date</th>
+                    <th className="px-3 py-2">Method</th>
+                    <th className="px-3 py-2 text-right">Amount</th>
+                  </tr>
+                </thead>
+                <tbody className="[&>tr]:border-t [&>tr]:border-slate-200 [&>tr:nth-child(odd)]:bg-slate-50/60">
+                  {inv.payments.map((p, i: number) => (
+                    <tr key={i}>
+                      <td className="px-3 py-2">
+                        {p.tranId || p.paymentId || "Payment"}
+                        {p.status ? (
+                          <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+                            {p.status}
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        {fdate(p.paymentDate || p.date)}
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        {p.paymentOption ?? "—"}
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap text-right font-medium">
+                        {fmt(p.amount)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
 

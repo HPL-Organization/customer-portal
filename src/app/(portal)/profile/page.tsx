@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { toast } from "react-toastify";
 import {
   Checkbox,
@@ -9,7 +9,14 @@ import {
   CircularProgress,
   LinearProgress,
   Box,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Divider,
+  Button as MUIButton,
 } from "@mui/material";
+import { Save } from "lucide-react";
 
 import InputField from "@/components/UI/inputField";
 import Button from "@/components/UI/button";
@@ -76,7 +83,15 @@ const InfoTab = () => {
     "Saving your information…",
     "Finishing up…",
   ]);
-  const timeoutRef = React.useRef<number | null>(null);
+  const timeoutRef = useRef<number | null>(null);
+
+  const [dirty, setDirty] = useState(false);
+  const allowNextNavRef = useRef(false);
+  const [navOpen, setNavOpen] = useState(false);
+  const navHrefRef = useRef<string | null>(null);
+  const navKindRef = useRef<"href" | "back" | null>(null);
+
+  const markDirty = () => setDirty(true);
 
   useEffect(() => {
     if (!saving) return;
@@ -170,9 +185,91 @@ const InfoTab = () => {
     })();
   }, [initialized, loading, contactId]);
 
+  useEffect(() => {
+    const isSameOrigin = (href: string) => {
+      try {
+        const u = new URL(href, window.location.href);
+        return u.origin === window.location.origin;
+      } catch {
+        return false;
+      }
+    };
+    const isInternalPath = (href: string) => {
+      try {
+        const u = new URL(href, window.location.href);
+        return isSameOrigin(href) && u.pathname !== window.location.pathname;
+      } catch {
+        return false;
+      }
+    };
+    const openPrompt = (kind: "href" | "back", href: string | null) => {
+      navKindRef.current = kind;
+      navHrefRef.current = href;
+      setNavOpen(true);
+    };
+    const handleClick = (e: MouseEvent) => {
+      if (!dirty || allowNextNavRef.current) return;
+      if (e.defaultPrevented) return;
+      if (e.button !== 0) return;
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      let el = e.target as HTMLElement | null;
+      while (el && el !== document.body) {
+        if (el instanceof HTMLAnchorElement && el.href) {
+          if (
+            !el.target &&
+            isInternalPath(el.href) &&
+            !el.href.startsWith("mailto:") &&
+            !el.href.startsWith("tel:")
+          ) {
+            e.preventDefault();
+            openPrompt("href", el.href);
+            return;
+          }
+          break;
+        }
+        el = el.parentElement;
+      }
+    };
+    const handlePopState = () => {
+      if (!dirty || allowNextNavRef.current) return;
+      history.pushState(null, "", window.location.href);
+      openPrompt("back", null);
+    };
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (!dirty) return;
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    document.addEventListener("click", handleClick, true);
+    window.addEventListener("popstate", handlePopState);
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => {
+      document.removeEventListener("click", handleClick, true);
+      window.removeEventListener("popstate", handlePopState);
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, [dirty]);
+
+  const proceedNavigation = () => {
+    allowNextNavRef.current = true;
+    setNavOpen(false);
+    if (navKindRef.current === "href" && navHrefRef.current) {
+      window.location.href = navHrefRef.current;
+    } else if (navKindRef.current === "back") {
+      history.back();
+    }
+  };
+
+  const cancelNavigation = () => {
+    setNavOpen(false);
+    navKindRef.current = null;
+    navHrefRef.current = null;
+  };
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
+    markDirty();
   };
 
   const handleAddressChange = (
@@ -184,6 +281,7 @@ const InfoTab = () => {
       ...prev,
       [type]: { ...prev[type], [field]: value },
     }));
+    markDirty();
   };
 
   const saveHubSpot = async (): Promise<{ ok: boolean; hsId?: string }> => {
@@ -298,13 +396,15 @@ const InfoTab = () => {
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         toast.error(`NetSuite failed: ${err.error || res.statusText}`);
-        return;
+        return { ok: false };
       }
 
       toast.success("Contact sent to NetSuite!");
+      return { ok: true };
     } catch (error) {
       console.error("NetSuite Save Error:", error);
       toast.error("Something went wrong while saving to NetSuite.");
+      return { ok: false };
     } finally {
       if (controlBackdrop) setSaving(false);
     }
@@ -323,8 +423,14 @@ const InfoTab = () => {
     setLoaderMsgs(["Saving your information…", "Finishing up…"]);
     setLoaderIdx(0);
 
-    await saveNetSuite(false, result.hsId);
+    const ns = await saveNetSuite(false, result.hsId);
     setSaving(false);
+    if (ns?.ok) {
+      setDirty(false);
+      allowNextNavRef.current = false;
+      navKindRef.current = null;
+      navHrefRef.current = null;
+    }
   };
 
   return (
@@ -425,6 +531,7 @@ const InfoTab = () => {
                     handleAddressChange("shipping", "zip", p.zip);
                     handleAddressChange("shipping", "country", p.country);
                     setShippingVerified(true);
+                    markDirty();
                   }}
                 />
               </GoogleMapsLoader>
@@ -470,6 +577,7 @@ const InfoTab = () => {
                     handleAddressChange("billing", "zip", p.zip);
                     handleAddressChange("billing", "country", p.country);
                     setBillingVerified(true);
+                    markDirty();
                   }}
                 />
               </GoogleMapsLoader>
@@ -521,6 +629,82 @@ const InfoTab = () => {
               <LinearProgress />
             </Box>
           </Backdrop>
+
+          <Dialog
+            open={navOpen}
+            onClose={() => {
+              cancelNavigation();
+            }}
+            aria-labelledby="unsaved-dialog-title"
+            PaperProps={{
+              sx: {
+                borderRadius: 3,
+                width: 520,
+                maxWidth: "90vw",
+                boxShadow:
+                  "0 10px 30px rgba(2,6,23,0.25), 0 1px 0 rgba(2,6,23,0.05)",
+              },
+            }}
+          >
+            <DialogTitle id="unsaved-dialog-title" sx={{ pb: 1 }}>
+              <Box className="flex items-center gap-3">
+                <Box
+                  sx={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: "9999px",
+                    backgroundColor: "#fee2e2",
+                    display: "grid",
+                    placeItems: "center",
+                  }}
+                >
+                  <Save className="h-4 w-4" color="#b91c1c" />
+                </Box>
+                <Box>
+                  <div style={{ fontWeight: 700, fontSize: 18 }}>
+                    Leave without saving?
+                  </div>
+                  <div style={{ fontSize: 12, color: "rgba(0,0,0,0.6)" }}>
+                    You have unsaved changes on this page.
+                  </div>
+                </Box>
+              </Box>
+            </DialogTitle>
+            <DialogContent sx={{ pt: 1 }}>
+              <Box className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <div style={{ fontSize: 13, color: "rgba(0,0,0,0.6)" }}>
+                  If you leave now, your changes will be discarded. To keep
+                  them, click Save first.
+                </div>
+              </Box>
+            </DialogContent>
+            <Divider />
+            <DialogActions sx={{ px: 3, py: 2, gap: 1.5 }}>
+              <MUIButton
+                onClick={cancelNavigation}
+                variant="outlined"
+                sx={{
+                  textTransform: "none",
+                  borderRadius: 2,
+                  borderColor: "rgba(100,116,139,0.4)",
+                }}
+              >
+                Stay on this page
+              </MUIButton>
+              <MUIButton
+                onClick={proceedNavigation}
+                variant="contained"
+                sx={{
+                  textTransform: "none",
+                  borderRadius: 2,
+                  backgroundColor: "#dc2626",
+                  "&:hover": { backgroundColor: "#b91c1c" },
+                }}
+              >
+                Discard & leave
+              </MUIButton>
+            </DialogActions>
+          </Dialog>
         </div>
       )}
     </>

@@ -805,7 +805,6 @@ export default function InvoicesPage() {
         >
           <Tab label="Unpaid Invoices" value={0} />
           <Tab label="Paid Invoices" value={1} />
-          <Tab label="Credits / Deposits" value={2} />
         </Tabs>
 
         {tab !== 2 && (
