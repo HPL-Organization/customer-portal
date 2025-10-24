@@ -244,6 +244,7 @@ function dedupeDetails(
 function extractIFLines(rec: any) {
   type Line = {
     line_id: number | null;
+    line_key: string | null;
     line_no: number;
     item_id: number | null;
     item_sku: string | null;
@@ -262,23 +263,28 @@ function extractIFLines(rec: any) {
   const rows: any[] = Array.isArray(firstPath) ? firstPath : [];
   const out: Line[] = [];
 
-  let idx = 0;
   for (const row of rows) {
-    const lineNo =
-      Number(row.line ?? row.lineSequenceNumber ?? row.lineNumber ?? idx + 1) ||
-      idx + 1;
+    const lineRaw = row?.line;
+    const lineKeyStr = lineRaw != null ? String(lineRaw) : null;
+    const lineNum = lineRaw != null ? Number(lineRaw) : NaN;
+    const lineId =
+      Number.isFinite(lineNum) && !Number.isNaN(lineNum) ? lineNum : null;
 
-    if (!Number.isFinite(lineNo)) {
-      idx++;
-      continue;
-    }
+    if (lineId == null) continue;
 
-    const lineId = Number(row.id ?? row.lineId ?? row.lineUniqueKey ?? NaN);
     const itemObj = row.item ?? row.itemRef ?? {};
     const itemId = Number(itemObj.id ?? itemObj.internalId ?? NaN);
-    const itemSku =
-      (itemObj.refName ?? itemObj.name ?? itemObj.text ?? row.itemid ?? null) &&
-      String(itemObj.refName ?? itemObj.name ?? itemObj.text ?? row.itemid);
+
+    let itemSku: string | null = null;
+    const skuCandidate =
+      itemObj?.refName ?? itemObj?.name ?? itemObj?.text ?? null;
+    if (skuCandidate != null) {
+      itemSku = String(skuCandidate);
+    } else if (row?.itemid != null) {
+      const s = String(row.itemid).trim();
+      if (/\D/.test(s)) itemSku = s;
+    }
+
     const disp =
       row.description ?? itemObj.displayName ?? itemObj.refName ?? null;
     const qty = Math.abs(Number(row.quantity ?? 0));
@@ -302,12 +308,14 @@ function extractIFLines(rec: any) {
         if (sn) serials.push(String(sn));
       }
     }
+
     const commentVal = row.custcolns_comment ?? row.comments ?? null;
     const comments = commentVal != null ? [String(commentVal)] : null;
 
     out.push({
-      line_id: Number.isFinite(lineId) ? lineId : null,
-      line_no: Math.trunc(lineNo),
+      line_id: lineId,
+      line_key: lineKeyStr,
+      line_no: lineId,
       item_id: Number.isFinite(itemId) ? itemId : null,
       item_sku: itemSku,
       item_display_name: disp ? String(disp) : null,
@@ -315,7 +323,6 @@ function extractIFLines(rec: any) {
       serial_numbers: serials.length ? Array.from(new Set(serials)) : null,
       comments,
     });
-    idx++;
   }
 
   return out;
@@ -583,6 +590,7 @@ export async function POST(req: NextRequest) {
     const detailHeaders = {
       Authorization: `Bearer ${token}`,
       Accept: "application/json",
+      Prefer: "transient",
     } as const;
 
     async function fetchDetail(id: number): Promise<{
@@ -697,6 +705,21 @@ export async function POST(req: NextRequest) {
       synced_at: string;
     }> = [];
 
+    type RawLine = {
+      fulfillment_id: number;
+      line_id: number | null;
+      line_key: string | null;
+      line_no: number;
+      item_id: number | null;
+      item_sku: string | null;
+      item_display_name: string | null;
+      quantity: number;
+      serial_numbers: string[] | null;
+      comments: string[] | null;
+    };
+
+    let rawLines: RawLine[] = [];
+
     let linesRows: Array<{
       fulfillment_id: number;
       line_id: number | null;
@@ -721,9 +744,10 @@ export async function POST(req: NextRequest) {
 
       for (const g of detail.lines) {
         if (!Number.isFinite(g.line_no)) continue;
-        linesRows.push({
+        rawLines.push({
           fulfillment_id: id,
           line_id: g.line_id,
+          line_key: g.line_key,
           line_no: Math.trunc(g.line_no),
           item_id: g.item_id,
           item_sku: g.item_sku,
@@ -751,20 +775,20 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    if (linesRows.length) {
-      const merged = new Map<string, (typeof linesRows)[number]>();
-      for (const row of linesRows) {
-        const key = `${row.fulfillment_id}::${row.line_no}`;
-        const prev = merged.get(key);
+    if (rawLines.length) {
+      const merged = new Map<string, RawLine>();
+      let uniq = 0;
+
+      for (const row of rawLines) {
+        const k =
+          row.line_key != null
+            ? `${row.fulfillment_id}::line=${row.line_key}`
+            : `${row.fulfillment_id}::uniq=${uniq++}`;
+
+        const prev = merged.get(k);
         if (!prev) {
-          merged.set(key, row);
+          merged.set(k, row);
         } else {
-          prev.quantity = row.quantity ?? prev.quantity;
-          prev.item_id = prev.item_id ?? row.item_id;
-          prev.item_sku = prev.item_sku ?? row.item_sku;
-          prev.item_display_name =
-            prev.item_display_name ?? row.item_display_name;
-          prev.line_id = prev.line_id ?? row.line_id;
           if (row.serial_numbers?.length) {
             const set = new Set([
               ...(prev.serial_numbers ?? []),
@@ -778,7 +802,10 @@ export async function POST(req: NextRequest) {
           }
         }
       }
-      linesRows = Array.from(merged.values());
+
+      linesRows = Array.from(merged.values()).map(
+        ({ line_key, ...rest }) => rest
+      );
     }
 
     {
@@ -819,16 +846,29 @@ export async function POST(req: NextRequest) {
         if (row.item_id != null) {
           const m = meta.get(row.item_id);
           if (m) {
-            if (!row.item_sku && m.sku) row.item_sku = m.sku;
+            const currentSku =
+              row.item_sku != null ? String(row.item_sku).trim() : "";
+            const isNumericSku =
+              currentSku !== "" && /^[0-9]+$/.test(currentSku);
+
+            if (!currentSku || isNumericSku) {
+              if (m.sku) row.item_sku = m.sku;
+            }
+
+            const currentDisp =
+              row.item_display_name != null
+                ? String(row.item_display_name).trim()
+                : "";
             if (
-              (!row.item_display_name ||
-                (row.item_sku && row.item_display_name === row.item_sku)) &&
-              m.displayName
+              !currentDisp ||
+              currentDisp === String(row.item_id) ||
+              currentDisp === currentSku
             ) {
-              row.item_display_name = m.displayName;
+              if (m.displayName) row.item_display_name = m.displayName;
             }
           }
         }
+
         if (!row.item_display_name && row.item_sku) {
           row.item_display_name = row.item_sku;
         }
@@ -852,7 +892,7 @@ export async function POST(req: NextRequest) {
       if (linesRows.length) {
         const { error: e2 } = await supabase
           .from("fulfillment_lines")
-          .upsert(linesRows as any, { onConflict: "fulfillment_id,line_no" });
+          .insert(linesRows as any);
         if (e2) throw e2;
       }
     }

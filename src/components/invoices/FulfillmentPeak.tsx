@@ -6,6 +6,7 @@ import { Truck, CircleAlert, Copy } from "lucide-react";
 import { useOrderTracking } from "@/components/providers/OrderTrackingProvider";
 
 type FulfillmentLine = {
+  sku?: string;
   productName?: string;
   quantity?: number;
   comments?: string[];
@@ -99,6 +100,7 @@ export default function FulfillmentPeek({
         shipStatus: (f as any).shipStatus,
         shippedAt: (f as any).shippedAt,
         items: ((f as any).items || []).map((it: any) => ({
+          sku: it.sku,
           productName: it.productName,
           quantity: it.quantity,
           comments: it.comments,
@@ -230,6 +232,9 @@ export default function FulfillmentPeek({
                         <thead className="bg-[#FFFFEC]">
                           <tr className="text-[#17152A]/75">
                             <th className="px-3 py-2 text-left text-[11px] font-bold uppercase tracking-wide">
+                              SKU
+                            </th>
+                            <th className="px-3 py-2 text-left text-[11px] font-bold uppercase tracking-wide">
                               Product
                             </th>
                             <th className="px-3 py-2 text-left text-[11px] font-bold uppercase tracking-wide">
@@ -248,6 +253,14 @@ export default function FulfillmentPeek({
                                 idx % 2 === 0 ? "bg-white" : "bg-black/[0.02]"
                               )}
                             >
+                              <td className="px-3 py-2 text-[#17152A]/90">
+                                <span
+                                  className="font-mono text-xs truncate inline-block max-w-[18ch]"
+                                  title={it.sku || "—"}
+                                >
+                                  {it.sku || "—"}
+                                </span>
+                              </td>
                               <td className="px-3 py-2 text-[#17152A]/90">
                                 <div
                                   className="max-w-[52ch] truncate"

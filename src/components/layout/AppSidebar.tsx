@@ -114,25 +114,44 @@ export default function AppSidebar() {
 
   async function handleLogout() {
     try {
-      await supabase.auth.signOut({ scope: "global" });
-    } catch {}
-    try {
       await fetch("/api/auth/sign-out", {
         method: "POST",
         credentials: "include",
+        cache: "no-store",
       });
     } catch {}
+
+    try {
+      await supabase.auth.signOut({ scope: "global" });
+    } catch {}
+
     try {
       Object.keys(localStorage).forEach((k) => {
-        if (k.startsWith("sb-") || k.includes("supabase") || k === "nsId")
+        if (
+          k.startsWith("sb-") ||
+          k.includes("supabase") ||
+          k === "nsId" ||
+          k === "hsId"
+        ) {
           localStorage.removeItem(k);
+        }
       });
       sessionStorage.removeItem("name_prefill");
     } catch {}
-    const u = new URL(window.location.href);
-    window.location.replace(
-      `/login?next=${encodeURIComponent(u.pathname + u.search)}`
-    );
+
+    const url = new URL(window.location.href);
+    [
+      "nsId",
+      "netsuiteId",
+      "netsuite_contact_id",
+      "hsId",
+      "hubspotId",
+      "contactId",
+    ].forEach((p) => url.searchParams.delete(p));
+    const cleanSearch = url.searchParams.toString();
+    const sanitizedNext = url.pathname + (cleanSearch ? `?${cleanSearch}` : "");
+
+    window.location.replace(`/login?next=${encodeURIComponent(sanitizedNext)}`);
   }
 
   const headerText = portalLabel ? `${portalLabel} Portal` : "Customer Portal";

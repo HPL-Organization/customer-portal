@@ -200,6 +200,100 @@ async function netsuiteQuery(
     }
   }
 }
+async function fetchAllInvoiceIdsForEntities(
+  headers: Record<string, string>,
+  entityIdsCsv: string,
+  dateFilterSql: string
+): Promise<number[]> {
+  const out: number[] = [];
+  let lastId = 0;
+  for (;;) {
+    const q = `
+      SELECT T.id AS invoiceId
+      FROM transaction T
+      WHERE T.type = 'CustInvc'
+        AND T.entity IN (${entityIdsCsv})
+        ${dateFilterSql}
+        AND T.id > ${lastId}
+      ORDER BY T.id ASC
+      FETCH NEXT 1000 ROWS ONLY
+    `;
+    const r = await netsuiteQuery(q, headers, "forceAllIdsPage");
+    const items = r?.data?.items || [];
+    if (!items.length) break;
+    for (const row of items) {
+      const id = Number(row.invoiceid);
+      if (Number.isFinite(id)) {
+        out.push(id);
+        lastId = id;
+      }
+    }
+    await sleep(120);
+    if (items.length < 1000) break;
+  }
+  return out;
+}
+
+async function resolveCustomerInternalIds(
+  headers: Record<string, string>,
+  inputIds: number[]
+): Promise<number[]> {
+  if (!inputIds.length) return [];
+  const out = new Set<number>();
+
+  for (const batch of chunk<number>(inputIds, 900)) {
+    const csv = batch.join(",");
+
+    const likeAny = batch.map((n) => `C.entityid LIKE '${n} %'`).join(" OR ");
+    const q = `
+  SELECT C.id AS id, C.entityid AS entityNum
+  FROM customer C
+  WHERE C.id IN (${csv})
+     OR C.entityid IN (${batch.map((n) => `'${n}'`).join(",")})
+     OR (${likeAny})
+`;
+
+    const r = await netsuiteQuery(q, headers, "resolveCustomerInternalIds");
+    for (const row of r?.data?.items || []) {
+      const id = Number(row.id);
+      if (Number.isFinite(id)) out.add(id);
+    }
+    await sleep(120);
+  }
+  return Array.from(out);
+}
+
+async function fetchAllInvoiceIdsAllCustomers(
+  headers: Record<string, string>,
+  dateFilterSql: string
+): Promise<number[]> {
+  const out: number[] = [];
+  let lastId = 0;
+  for (;;) {
+    const q = `
+      SELECT T.id AS invoiceId
+      FROM transaction T
+      WHERE T.type = 'CustInvc'
+        ${dateFilterSql}
+        AND T.id > ${lastId}
+      ORDER BY T.id ASC
+      FETCH NEXT 1000 ROWS ONLY
+    `;
+    const r = await netsuiteQuery(q, headers, "forceAllIdsPageAll");
+    const items = r?.data?.items || [];
+    if (!items.length) break;
+    for (const row of items) {
+      const id = Number(row.invoiceid);
+      if (Number.isFinite(id)) {
+        out.push(id);
+        lastId = id;
+      }
+    }
+    await sleep(120);
+    if (items.length < 1000) break;
+  }
+  return out;
+}
 
 async function reconcileDeletedInvoices(
   supabase: SupabaseClient<Database>,
@@ -353,7 +447,30 @@ export async function POST(req: NextRequest) {
   let foundModified = 0;
   let foundCreatedToday = 0;
   let foundFallbackToday = 0;
+  const resolveIds = req.nextUrl.searchParams.get("resolveIds") === "1";
 
+  let effectiveCustomerIds = customerIds;
+  if (resolveIds && customerIds.length) {
+    effectiveCustomerIds = await resolveCustomerInternalIds(
+      headers,
+      customerIds
+    );
+  }
+  const effectiveCustomerSet = new Set<number>(effectiveCustomerIds);
+
+  const debug = req.nextUrl.searchParams.get("debug") === "1";
+  if (debug) {
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        count_profiles: customerIds.length,
+        count_effective: effectiveCustomerIds.length,
+        includes_5080: effectiveCustomerIds.includes(5080),
+        sample: effectiveCustomerIds.slice(0, 20),
+      }),
+      { status: 200 }
+    );
+  }
   if (idsParam) {
     idsParam
       .split(",")
@@ -361,28 +478,28 @@ export async function POST(req: NextRequest) {
       .filter((n) => Number.isFinite(n) && n > 0)
       .forEach((n) => idSet.add(n));
   } else if (forceAll) {
-    for (const entBatch of chunk<number>(customerIds, 900)) {
-      const entList = entBatch.join(",");
-      const dateFilter = forceSince
-        ? `AND T.trandate >= TO_DATE('${forceSince}','YYYY-MM-DD')`
-        : "";
-      const q = `
-        SELECT T.id AS invoiceId
-        FROM transaction T
-        WHERE T.type = 'CustInvc'
-          AND T.entity IN (${entList})
-          ${dateFilter}
-        ORDER BY T.trandate DESC
-      `;
-      const r = await netsuiteQuery(q, headers, "forceAllIds");
-      for (const row of r?.data?.items || []) {
-        const id = Number(row.invoiceid);
-        if (Number.isFinite(id)) idSet.add(id);
+    const dateFilter = forceSince
+      ? `AND T.trandate >= TO_DATE('${forceSince}','YYYY-MM-DD')`
+      : "";
+
+    const scope = req.nextUrl.searchParams.get("scope");
+
+    if (scope === "all") {
+      const ids = await fetchAllInvoiceIdsAllCustomers(headers, dateFilter);
+      ids.forEach((n) => idSet.add(n));
+    } else {
+      for (const entBatch of chunk<number>(effectiveCustomerIds, 900)) {
+        const entList = entBatch.join(",");
+        const ids = await fetchAllInvoiceIdsForEntities(
+          headers,
+          entList,
+          dateFilter
+        );
+        ids.forEach((n) => idSet.add(n));
       }
-      await sleep(120);
     }
   } else {
-    for (const entBatch of chunk<number>(customerIds, 900)) {
+    for (const entBatch of chunk<number>(effectiveCustomerIds, 900)) {
       const entList = entBatch.join(",");
       const idsModQ = `
         SELECT
@@ -429,7 +546,7 @@ export async function POST(req: NextRequest) {
     for (const row of fb?.data?.items || []) {
       const id = Number(row.invoiceid);
       const cid = Number(row.customerid);
-      if (Number.isFinite(id) && customerSet.has(cid)) {
+      if (Number.isFinite(id) && effectiveCustomerSet.has(cid)) {
         idSet.add(id);
         foundFallbackToday++;
       }
@@ -441,7 +558,7 @@ export async function POST(req: NextRequest) {
     const { checked, softDeleted } = await reconcileDeletedInvoices(
       supabase,
       headers,
-      customerIds,
+      effectiveCustomerIds,
       dry
     );
     if (!dry) {
@@ -734,7 +851,7 @@ export async function POST(req: NextRequest) {
   const { checked, softDeleted } = await reconcileDeletedInvoices(
     supabase,
     headers,
-    customerIds,
+    effectiveCustomerIds,
     dry
   );
 
