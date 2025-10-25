@@ -659,12 +659,18 @@ export async function POST(req: NextRequest) {
     `;
 
     const paymentsQ = `
-      SELECT TL.createdfrom AS invoiceId, P.id AS paymentId, P.tranid AS tranId, P.trandate AS paymentDate,
-             BUILTIN.DF(P.status) AS status, P.total AS amount, BUILTIN.DF(P.paymentoption) AS paymentOption
-      FROM transaction P
-      JOIN transactionline TL ON TL.transaction = P.id
-      WHERE P.type = 'CustPymt' AND TL.createdfrom IN (${idList})
-    `;
+  SELECT DISTINCT
+         TL.createdfrom AS invoiceId,
+         P.id          AS paymentId,
+         P.tranid      AS tranId,
+         P.trandate    AS paymentDate,
+         BUILTIN.DF(P.status)        AS status,
+         P.total                      AS amount,
+         BUILTIN.DF(P.paymentoption)  AS paymentOption
+  FROM transaction P
+  JOIN transactionline TL ON TL.transaction = P.id
+  WHERE P.type = 'CustPymt' AND TL.createdfrom IN (${idList})
+`;
 
     const soLinkQ = `
       SELECT PTL.NextDoc AS invoiceId, PTL.PreviousDoc AS soId, S.tranid AS soTranId
