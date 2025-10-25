@@ -180,7 +180,7 @@ export default function FulfillmentPeek({
         )}
       </div>
 
-      {!soId ? (
+      {/* {!soId ? (
         <div className="rounded-xl border border-dashed border-[#BFBFBF] bg-[#FFFFEC] p-3 text-sm text-[#17152A]">
           This invoice isn't linked to a sales order yet.
         </div>
@@ -301,7 +301,7 @@ export default function FulfillmentPeek({
             </li>
           ))}
         </ul>
-      )}
+      )} */}
     </div>
   );
 }
