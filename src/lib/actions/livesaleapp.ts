@@ -158,10 +158,9 @@ export async function isEventCurrentlyLive(event: LiveEvent): Promise<boolean> {
   const startTime = new Date(event.startTime);
   const endTime = new Date(event.endTime);
 
-  // Add 12-hour threshold to both start and end times
-  const TWELVE_HOURS_MS = 12 * 60 * 60 * 1000;
-  const thresholdStartTime = new Date(startTime.getTime() - TWELVE_HOURS_MS);
-  const thresholdEndTime = new Date(endTime.getTime() + TWELVE_HOURS_MS);
+  const HALF_HOUR_MS = 0.5 * 60 * 60 * 1000;
+  const thresholdStartTime = new Date(startTime.getTime() - HALF_HOUR_MS);
+  const thresholdEndTime = new Date(endTime.getTime() + HALF_HOUR_MS);
 
   return now >= thresholdStartTime && now <= thresholdEndTime;
 }

@@ -16,16 +16,16 @@ import {
   DialogContent,
   DialogTitle,
   Divider,
-  Typography,
   TextField,
+  Typography,
 } from "@mui/material";
+import { createBrowserClient } from "@supabase/ssr";
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowRight, Clock, PlayCircle, Sparkles, UserCog } from "lucide-react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "react-toastify";
-import Image from "next/image";
-import { createBrowserClient } from "@supabase/ssr";
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -256,7 +256,7 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
-    let alive = true;
+    const alive = true;
     (async () => {
       try {
         setLoaderLabel("Cutting your rock…");
@@ -480,10 +480,22 @@ export default function Dashboard() {
         (a, b) =>
           new Date(b.startTime).getTime() - new Date(a.startTime).getTime()
       )[0];
+      if (latestEvent.isEnded) {
+        toast.error("This event has already ended.");
+        return;
+      }
+      if (!latestEvent.startTime) {
+        toast.error("This event has no start time.");
+        return;
+      }
+      if (Date.now() < new Date(latestEvent.startTime).getTime()) {
+        toast.error("This event has not started yet.");
+        return;
+      }
       const isJoinable = await isEventCurrentlyLive(latestEvent);
       if (!isJoinable) {
         toast.error(
-          "This event is not currently available to join. Please check back within 12 hours of the event time."
+          "This event is not currently available to join. Please check back within 30 minutes of the event time."
         );
         return;
       }
@@ -651,12 +663,24 @@ export default function Dashboard() {
                                   new Date(b.startTime).getTime() -
                                   new Date(a.startTime).getTime()
                               )[0];
+                              if (latestEvent.isEnded) {
+                                toast.error("This event has already ended.");
+                                return;
+                              }
+                              if (!latestEvent.startTime) {
+                                toast.error("This event has no start time.");
+                                return;
+                              }
+                              if (Date.now() < new Date(latestEvent.startTime).getTime()) {
+                                toast.error("This event has not started yet.");
+                                return;
+                              }
                               const isJoinable = await isEventCurrentlyLive(
                                 latestEvent
                               );
                               if (!isJoinable) {
                                 toast.error(
-                                  "This event is not currently available to join. Please check back within 12 hours of the event time."
+                                  "This event is not currently available to join. Please check back within 30 minutes of the event time."
                                 );
                                 return;
                               }
