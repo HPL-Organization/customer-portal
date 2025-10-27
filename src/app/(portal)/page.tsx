@@ -480,18 +480,18 @@ export default function Dashboard() {
         (a, b) =>
           new Date(b.startTime).getTime() - new Date(a.startTime).getTime()
       )[0];
-      if (latestEvent.isEnded) {
-        toast.error("This event has already ended.");
-        return;
-      }
-      if (!latestEvent.startTime) {
-        toast.error("This event has no start time.");
-        return;
-      }
-      if (Date.now() < new Date(latestEvent.startTime).getTime()) {
-        toast.error("This event has not started yet.");
-        return;
-      }
+      // if (latestEvent.isEnded) {
+      //   toast.error("This event has already ended.");
+      //   return;
+      // }
+      // if (!latestEvent.startTime) {
+      //   toast.error("This event has no start time.");
+      //   return;
+      // }
+      // if (Date.now() < new Date(latestEvent.startTime).getTime()) {
+      //   toast.error("This event has not started yet.");
+      //   return;
+      // }
       const isJoinable = await isEventCurrentlyLive(latestEvent);
       if (!isJoinable) {
         toast.error(
@@ -663,18 +663,18 @@ export default function Dashboard() {
                                   new Date(b.startTime).getTime() -
                                   new Date(a.startTime).getTime()
                               )[0];
-                              if (latestEvent.isEnded) {
-                                toast.error("This event has already ended.");
-                                return;
-                              }
-                              if (!latestEvent.startTime) {
-                                toast.error("This event has no start time.");
-                                return;
-                              }
-                              if (Date.now() < new Date(latestEvent.startTime).getTime()) {
-                                toast.error("This event has not started yet.");
-                                return;
-                              }
+                              // if (latestEvent.isEnded) {
+                              //   toast.error("This event has already ended.");
+                              //   return;
+                              // }
+                              // if (!latestEvent.startTime) {
+                              //   toast.error("This event has no start time.");
+                              //   return;
+                              // }
+                              // if (Date.now() < new Date(latestEvent.startTime).getTime()) {
+                              //   toast.error("This event has not started yet.");
+                              //   return;
+                              // }
                               const isJoinable = await isEventCurrentlyLive(
                                 latestEvent
                               );
