@@ -120,7 +120,8 @@ export async function fetchLiveEvents(page: number = 1): Promise<LiveEvent[]> {
     }
 
     const response = await fetch(
-      `${LIVESALEAPP_BASE_URL}/live-event?page=${page}`,
+      `${LIVESALEAPP_BASE_URL}/live-event?page=${page}&distinctType=true&take=20`,
+      // `${LIVESALEAPP_BASE_URL}/live-event?page=${page}&take=20`,
       {
         method: "GET",
         headers: {

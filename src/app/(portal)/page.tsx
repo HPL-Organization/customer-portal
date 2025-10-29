@@ -469,17 +469,22 @@ export default function Dashboard() {
       setAuthLastName(lastName);
       setShowProfileUpdateDialog(false);
 
-      const matchingLiveEvents = liveEvents.filter(
-        (le) => le.type === targetEventId
-      );
-      if (matchingLiveEvents.length === 0) {
+      const latestEvent = liveEvents.find((le) => le.type === targetEventId);
+      if (!latestEvent) {
         toast.error("No live events found for this event type");
         return;
       }
-      const latestEvent = matchingLiveEvents.sort(
-        (a, b) =>
-          new Date(b.startTime).getTime() - new Date(a.startTime).getTime()
-      )[0];
+      // const matchingLiveEvents = liveEvents.filter(
+      //   (le) => le.type === targetEventId
+      // );
+      // if (matchingLiveEvents.length === 0) {
+      //   toast.error("No live events found for this event type");
+      //   return;
+      // }
+      // const latestEvent = matchingLiveEvents.sort(
+      //   (a, b) =>
+      //     new Date(b.startTime).getTime() - new Date(a.startTime).getTime()
+      // )[0];
       // if (latestEvent.isEnded) {
       //   toast.error("This event has already ended.");
       //   return;
@@ -651,18 +656,13 @@ export default function Dashboard() {
                               setLoaderLabel("Joining live session…");
                               const names = await ensureNames();
                               if (!names) return;
-                              const matchingLiveEvents = liveEvents.filter(
+                              const latestEvent = liveEvents.find(
                                 (le) => le.type === e.id
                               );
-                              if (matchingLiveEvents.length === 0)
-                                throw new Error(
-                                  "No live events found for this event type"
-                                );
-                              const latestEvent = matchingLiveEvents.sort(
-                                (a, b) =>
-                                  new Date(b.startTime).getTime() -
-                                  new Date(a.startTime).getTime()
-                              )[0];
+                              if (!latestEvent) {
+                                toast.error("No live events found for this event type");
+                                return;
+                              }
                               // if (latestEvent.isEnded) {
                               //   toast.error("This event has already ended.");
                               //   return;
