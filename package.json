@@ -16,9 +16,11 @@
     "@react-google-maps/api": "^2.20.7",
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.75.0",
+    "await-to-js": "^3.0.0",
     "axios": "^1.12.0",
     "clsx": "^2.1.1",
     "framer-motion": "^12.23.22",
+    "got": "^14.6.1",
     "jose": "^6.1.0",
     "jspdf": "^3.0.3",
     "lucide-react": "^0.543.0",
@@ -27,7 +29,8 @@
     "react-dom": "19.1.0",
     "react-markdown": "^10.1.0",
     "react-toastify": "^11.0.5",
-    "remark-gfm": "^4.0.1"
+    "remark-gfm": "^4.0.1",
+    "winston": "^3.18.3"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
