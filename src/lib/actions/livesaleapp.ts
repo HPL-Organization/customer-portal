@@ -1,6 +1,22 @@
 "use server";
 
+import logger from '@/lib/logger';
+import to from 'await-to-js';
+import got, { HTTPError } from 'got';
+
 const LIVESALEAPP_BASE_URL = "https://bademail.onrender.com/v1";
+
+// Create a got instance with default authorization header
+const livesaleappGot = got.extend({
+  prefixUrl: LIVESALEAPP_BASE_URL,
+  headers: {
+    'Content-Type': 'application/json',
+    ...(process.env.LIVESALEAPP_TOKEN && {
+      Authorization: `Bearer ${process.env.LIVESALEAPP_TOKEN}`,
+    }),
+  },
+  responseType: 'json',
+});
 
 export interface LiveEventType {
   internalName: string;
@@ -111,37 +127,29 @@ const liveEventTypes: LiveEventType[] = [
   },
 ];
 
-export async function fetchLiveEvents(page: number = 1): Promise<LiveEvent[]> {
-  try {
-    const token = process.env.LIVESALEAPP_TOKEN;
+export async function fetchLiveEvents(page: number = 1) {
+  const [error, resp] = await to(
+    livesaleappGot.get('live-event', {
+      searchParams: {
+        page: page.toString(),
+        distinctType: 'true',
+        take: '20'
+      },
+    }).json<LiveEventsResponse>()
+  );
 
-    if (!token) {
-      throw new Error("LiveSaleApp token not configured");
-    }
-
-    const response = await fetch(
-      `${LIVESALEAPP_BASE_URL}/live-event?page=${page}&distinctType=true&take=20`,
-      // `${LIVESALEAPP_BASE_URL}/live-event?page=${page}&take=20`,
-      {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        cache: "no-store", // Ensure fresh data
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error(`LiveSaleApp API error: ${response.status}`);
-    }
-
-    const resp = await response.json();
-    return resp?.results || [];
-  } catch (error) {
-    console.error("LiveSaleApp API error:", error);
-    throw error;
+  if (error) {
+    logger.error("LiveSaleApp API error", { error });
+    return {
+      success: false,
+      message: "Failed to fetch live events. Please try again later.",
+    };
   }
+
+  return {
+    success: true,
+    events: resp?.results || [],
+  } satisfies LiveEventsResult;
 }
 
 export async function getEventTypes(): Promise<LiveEventType[]> {
@@ -155,6 +163,9 @@ export async function getEventTypeByInternalName(
 }
 
 export async function isEventCurrentlyLive(event: LiveEvent): Promise<boolean> {
+  if (event.isEnded) {
+    return false;
+  }
   const now = new Date();
   const startTime = new Date(event.startTime);
   const endTime = new Date(event.endTime);
@@ -172,89 +183,110 @@ interface JoinLiveSessionArgs {
   lastName: string;
 }
 
+interface JoinLiveSessionResult {
+  success: boolean;
+  joinUrl?: string;
+  message: string;
+}
+
+interface LiveEventsResponse {
+  results?: LiveEvent[];
+}
+
+interface LiveEventsResult {
+  success: boolean;
+  events?: LiveEvent[];
+  message?: string;
+}
+
+interface ZoomJoinUrlResponse {
+  data?: {
+    joinUrl?: string;
+  };
+  code?: string;
+}
+
 export async function joinLiveSession(
   eventId: string,
   args: JoinLiveSessionArgs
-) {
-  try {
-    const token = process.env.LIVESALEAPP_TOKEN;
+): Promise<JoinLiveSessionResult> {
+  const { email, firstName, lastName } = args;
 
-    if (!token) {
-      throw new Error("LiveSaleApp token not configured");
+  // First, try to get existing zoom join url
+  logger.info("Getting zoom join URL", { eventId, email });
+
+  let joinUrlData;
+  const [getUrlError, getUrlResponse] = await to(
+    livesaleappGot
+      .post(`live-event/${eventId}/get-zoom-join-url`, {
+        json: { email },
+      })
+      .json<ZoomJoinUrlResponse>()
+  );
+
+  if (getUrlError) {
+    // got throws HTTPError for non-2xx responses
+    if (getUrlError instanceof HTTPError && getUrlError.response) {
+      joinUrlData = getUrlError.response.body as ZoomJoinUrlResponse;
+    } else {
+      logger.error("Unexpected error getting zoom join URL", { error: getUrlError });
+      return {
+        success: false,
+        message: "An unexpected error occurred. Please try again later.",
+      };
     }
-    const { email, firstName, lastName } = args;
+  } else {
+    joinUrlData = getUrlResponse;
+    logger.info("Retrieved existing zoom join URL", { joinUrlData });
 
-    // First, try to get existing zoom join url
-    console.log(`Getting zoom join URL for event: ${eventId}, email: ${email}`);
-
-    const getJoinUrlResponse = await fetch(
-      `${LIVESALEAPP_BASE_URL}/live-event/${eventId}/get-zoom-join-url`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ email }),
-      }
-    );
-
-    const joinUrlData = await getJoinUrlResponse.json();
-
-    if (getJoinUrlResponse.ok) {
-      console.log("Got existing zoom join URL:", joinUrlData);
-
-      if (joinUrlData.data?.joinUrl) {
-        return {
-          success: true,
-          joinUrl: joinUrlData.data.joinUrl,
-          message: "Successfully retrieved existing join URL",
-        };
-      }
+    if (joinUrlData.data?.joinUrl) {
+      return {
+        success: true,
+        joinUrl: joinUrlData.data.joinUrl,
+        message: "Successfully retrieved existing join URL",
+      };
     }
+  }
 
-    // Check if the response indicates no join URL found
-    if (joinUrlData.code === "ZOOM_JOIN_URL_NOT_FOUND") {
-      console.log("No existing join URL found, creating new one...");
+  // Check if the response indicates no join URL found
+  if ((joinUrlData as ZoomJoinUrlResponse).code === "ZOOM_JOIN_URL_NOT_FOUND") {
+    logger.info("No existing join URL found, creating new one", { eventId, email, firstName, lastName });
 
-      // Call the zoom-join-by-email API to create a new join URL
-      const createJoinResponse = await fetch(
-        `${LIVESALEAPP_BASE_URL}/live-event/${eventId}/zoom-join-by-email`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
+    // Call the zoom-join-by-email API to create a new join URL
+    const [createError, createJoinData] = await to(
+      livesaleappGot
+        .post(`live-event/${eventId}/zoom-join-by-email`, {
+          json: {
             email,
             firstName: firstName || "",
             lastName: lastName || "",
-          }),
-        }
-      );
+          },
+        })
+        .json<ZoomJoinUrlResponse>()
+    );
 
-      if (!createJoinResponse.ok) {
-        throw new Error(
-          `Failed to create zoom join URL: ${createJoinResponse.status}`
-        );
-      }
-
-      const createJoinData = await createJoinResponse.json();
-      console.log("Created new zoom join URL:", createJoinData);
-
-      if (createJoinData.data?.joinUrl) {
-        return {
-          success: true,
-          joinUrl: createJoinData.data.joinUrl,
-          message: "Successfully created new join URL",
-        };
-      }
+    if (createError) {
+      logger.error("Failed to create zoom join URL", { error: createError, eventId, email });
+      return {
+        success: false,
+        message: "Unable to join the live event at this time. Please try again later.",
+      };
     }
 
-    throw new Error("Failed to get or create zoom join URL");
-  } catch (error) {
-    console.error("Join session error:", error);
-    throw error;
+    logger.info("Created new zoom join URL", { createJoinData });
+
+    if (createJoinData?.data?.joinUrl) {
+      return {
+        success: true,
+        joinUrl: createJoinData.data.joinUrl,
+        message: "Successfully created new join URL",
+      };
+    }
   }
+
+  logger.error("Failed to get or create zoom join URL - no valid response received", { eventId, email });
+  return {
+    success: false,
+    message: "Unable to join the live event. Please try again later.",
+  };
 }
