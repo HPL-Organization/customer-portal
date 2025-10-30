@@ -61,16 +61,26 @@ export function whenText(iso: string) {
   const now = Date.now();
   const diffMs = d.getTime() - now;
   const minsAbs = Math.round(Math.abs(diffMs) / 60000);
+  const hoursAbs = Math.floor(minsAbs / 60);
 
   if (diffMs > 0) {
     if (minsAbs < 60) return `in ${minsAbs}m`;
-    const h = Math.floor(minsAbs / 60);
+    if (hoursAbs >= 24) {
+      const days = Math.floor(hoursAbs / 24);
+      const remH = hoursAbs % 24;
+      return remH ? `in ${days}d ${remH}h` : `in ${days}d`;
+    }
+    const h = hoursAbs;
     const m = minsAbs % 60;
     return m === 0 ? `in ${h}h` : `in ${h}h ${m}m`;
   } else {
     if (minsAbs < 60) return `${minsAbs}m ago`;
-    const hours = Math.round(minsAbs / 60);
-    return `${hours}h ago`;
+    if (hoursAbs >= 24) {
+      const days = Math.floor(hoursAbs / 24);
+      const remH = hoursAbs % 24;
+      return remH ? `${days}d ${remH}h ago` : `${days}d ago`;
+    }
+    return `${hoursAbs}h ago`;
   }
 }
 
@@ -130,8 +140,14 @@ export function classify(event?: LiveEvent) {
       timeText = `in ${mins}m`;
     } else {
       const h = Math.floor(mins / 60);
-      const m = mins % 60;
-      timeText = m === 0 ? `in ${h}h` : `in ${h}h ${m}m`;
+      if (h >= 24) {
+        const d = Math.floor(h / 24);
+        const rh = h % 24;
+        timeText = rh ? `in ${d}d ${rh}h` : `in ${d}d`;
+      } else {
+        const m = mins % 60;
+        timeText = m ? `in ${h}h ${m}m` : `in ${h}h`;
+      }
     }
     return {
       isLive: false,
@@ -143,10 +159,23 @@ export function classify(event?: LiveEvent) {
   }
 
   const mins = Math.round((now - end) / 60000);
+  let timeText: string;
+  if (mins < 60) {
+    timeText = `${mins}m ago`;
+  } else {
+    const h = Math.floor(mins / 60);
+    if (h >= 24) {
+      const d = Math.floor(h / 24);
+      const rh = h % 24;
+      timeText = rh ? `${d}d ${rh}h ago` : `${d}d ago`;
+    } else {
+      timeText = `${h}h ago`;
+    }
+  }
   return {
     isLive: false,
     badge: "Ended",
-    timeText: mins < 60 ? `${mins}m ago` : `${Math.round(mins / 60)}h ago`,
+    timeText,
     sortKey: 2,
     startsAt: event.startTime,
   };
@@ -187,18 +216,21 @@ export function processEvents(
         return now >= s && now <= end;
       });
       if (!chosen && matches.length > 0) {
-        chosen = matches.slice().sort((a, b) => {
-          const az = /Z|[+-]\d{2}:\d{2}$/.test(a.startTime || "");
-          const bz = /Z|[+-]\d{2}:\d{2}$/.test(b.startTime || "");
-          return (
-            new Date(
-              (bz ? "" : "") + (b.startTime || "") + (bz ? "" : "Z")
-            ).getTime() -
-            new Date(
-              (az ? "" : "") + (a.startTime || "") + (az ? "" : "Z")
-            ).getTime()
-          );
-        })[0];
+        const nowMs = Date.now();
+        const withMs = (x: LiveEvent) => {
+          const hasTz = /Z|[+-]\d{2}:\d{2}$/.test(x.startTime || "");
+          return new Date(
+            hasTz ? x.startTime : (x.startTime || "") + "Z"
+          ).getTime();
+        };
+        const future = matches
+          .filter((m) => withMs(m) > nowMs)
+          .sort((a, b) => withMs(a) - withMs(b));
+        if (future.length > 0) {
+          chosen = future[0];
+        } else {
+          chosen = matches.sort((a, b) => withMs(b) - withMs(a))[0];
+        }
       }
       const now = Date.now();
       let sortKey = 99;
@@ -219,28 +251,49 @@ export function processEvents(
           : s + 3 * 60 * 60 * 1000;
         if (now >= s && now <= end) {
           const mins = Math.max(0, Math.round((now - s) / 60000));
+          const hours = Math.floor(mins / 60);
           badge = "Live now";
           timeText =
             mins < 60
               ? `started ${mins}m ago`
-              : `started ${Math.round(mins / 60)}h ago`;
+              : hours >= 24
+              ? (() => {
+                  const d = Math.floor(hours / 24);
+                  const rh = hours % 24;
+                  return rh
+                    ? `started ${d}d ${rh}h ago`
+                    : `started ${d}d ago`;
+                })()
+              : `started ${hours}h ago`;
           sortKey = 0;
         } else if (now < s) {
           const mins = Math.max(0, Math.round((s - now) / 60000));
+          const hours = Math.floor(mins / 60);
           badge = "Upcoming";
           if (mins < 60) {
             timeText = `in ${mins}m`;
+          } else if (hours >= 24) {
+            const d = Math.floor(hours / 24);
+            const rh = hours % 24;
+            timeText = rh ? `in ${d}d ${rh}h` : `in ${d}d`;
           } else {
-            const h = Math.floor(mins / 60);
             const m = mins % 60;
-            timeText = m ? `in ${h}h ${m}m` : `in ${h}h`;
+            timeText = m ? `in ${hours}h ${m}m` : `in ${hours}h`;
           }
           sortKey = 1;
         } else {
           const mins = Math.round((now - end) / 60000);
+          const hours = Math.floor(mins / 60);
           badge = "Ended";
-          timeText =
-            mins < 60 ? `${mins}m ago` : `${Math.round(mins / 60)}h ago`;
+          if (mins < 60) {
+            timeText = `${mins}m ago`;
+          } else if (hours >= 24) {
+            const d = Math.floor(hours / 24);
+            const rh = hours % 24;
+            timeText = rh ? `${d}d ${rh}h ago` : `${d}d ago`;
+          } else {
+            timeText = `${hours}h ago`;
+          }
           sortKey = 2;
         }
       }
@@ -288,6 +341,8 @@ export function processEvents(
               : b.startsAt + "Z"
           ).getTime()
         : 0;
-      return bt - at;
+      if (ak === 1) return at - bt;
+      if (ak === 2) return bt - at;
+      return at - bt;
     });
 }

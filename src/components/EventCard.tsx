@@ -51,46 +51,111 @@ export function EventCard({ event, onJoinClick, loadingEventId }: EventCardProps
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: 8 }}
       whileHover={{ y: -2 }}
-      className="relative overflow-hidden rounded-2xl border border-[#EAEAEA] bg-white shadow-[0_6px_22px_rgba(0,0,0,0.06)]"
+      className={`relative mx-auto w-[90%] sm:w-[86%] lg:w-[70%] max-w-[920px] overflow-visible rounded-2xl bg-white shadow-[0_6px_22px_rgba(0,0,0,0.06)] ${
+        liveMeta?.isLive
+          ? "border-transparent"
+          : "border border-[#EAEAEA]"
+      }`}
     >
-      <div className="absolute left-0 top-0 h-full w-1 bg-gradient-to-b from-[#8C0F0F] to-[#E01C24]" />
-      <div className="relative">
-        <div className="relative aspect-[16/7] w-full overflow-hidden bg-[#FFFFF4]">
-          {src ? (
-            <Image
-              src={src}
-              alt={event.name}
-              fill
-              sizes="100vw"
-              className="object-cover"
-              priority={false}
-            />
-          ) : (
-            <div className="absolute inset-0 m-3.5 rounded-xl border-2 border-dashed border-[#E0E0CF] grid place-items-center">
-              <span className="text-[11.5px] font-medium tracking-wide text-[#9A9985]">
-                Image coming soon
+      {/* full-card halo + outline (visible, tasteful) */}
+      {liveMeta?.isLive && (
+        <>
+          {/* soft glow */}
+          <motion.div
+            aria-hidden
+            className="pointer-events-none absolute -inset-4 rounded-[26px] blur-2xl"
+            style={{
+              background:
+                "radial-gradient(120% 120% at 50% 50%, rgba(224,28,36,0.28) 0%, rgba(224,28,36,0.18) 40%, rgba(224,28,36,0.08) 70%, transparent 100%)",
+            }}
+            animate={{
+              opacity: [0.6, 0.9, 0.6],
+              scale: [0.99, 1.01, 0.99],
+            }}
+            transition={{
+              duration: 1.7,
+              repeat: Infinity,
+              ease: "easeInOut",
+            }}
+          />
+          {/* crisp outline with offset (thicker) */}
+          <motion.div
+            aria-hidden
+            className="pointer-events-none absolute -inset-[2px] rounded-[22px]"
+            style={{
+              boxShadow:
+                "0 0 0 3px rgba(224,28,36,0.85), 0 0 30px 3px rgba(224,28,36,0.18)",
+            }}
+            animate={{ opacity: [0.9, 1, 0.9] }}
+            transition={{
+              duration: 1.7,
+              repeat: Infinity,
+              ease: "easeInOut",
+            }}
+          />
+        </>
+      )}
+
+      {/* hide the left accent stripe when live to avoid clashing */}
+      {!liveMeta?.isLive && (
+        <div className="absolute left-0 top-0 h-full w-1 bg-gradient-to-b from-[#8C0F0F] to-[#E01C24]" />
+      )}
+
+      <div className="relative z-10">
+        <div className="relative mx-auto w-full max-w-none">
+          <div className="relative overflow-hidden rounded-t-2xl">
+            {src ? (
+              <Image
+                src={src}
+                alt={event.name}
+                width={1600}
+                height={900}
+                sizes="100vw"
+                className="w-full h-auto max-h-[360px] object-contain sm:h-[340px] sm:max-h-none sm:object-cover md:h-[360px] lg:h-[380px] object-center"
+                priority={false}
+              />
+            ) : (
+              <div className="grid place-items-center p-6">
+                <span className="text-[11.5px] font-medium tracking-wide text-[#9A9985]">
+                  Image coming soon
+                </span>
+              </div>
+            )}
+          </div>
+
+          <div className="absolute left-2 top-2 inline-flex items-center gap-1.5 rounded-full border border-[#EFEFEF] bg-white/85 px-2.5 py-0.5 text-[11.5px] font-medium shadow-sm backdrop-blur">
+            <Sparkles className="h-3.5 w-3.5 text-[#8C0F0F]" />
+            <span
+              className={
+                pill.className + " rounded-full px-1.5 py-0.5"
+              }
+            >
+              {pill.label}
+            </span>
+          </div>
+
+          {liveMeta?.isLive && (
+            <motion.div
+              initial={{ scale: 1, y: 0 }}
+              animate={{ scale: [1, 1.06, 1], y: [0, -1, 0] }}
+              transition={{
+                duration: 1.2,
+                repeat: Infinity,
+                ease: "easeInOut",
+              }}
+              className="absolute right-2 top-2 inline-flex items-center gap-2 rounded-full border border-[#F7CACA] bg-[#FFF2F2] px-2.5 py-0.5 text-[11.5px] font-semibold text-[#8C0F0F] shadow-[0_0_0_2px_rgba(224,28,36,0.12)]"
+            >
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="absolute inline-flex h-full w-full rounded-full bg-[#E01C24]/45 animate-ping" />
+                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-[#E01C24]" />
               </span>
-            </div>
+              Live now
+            </motion.div>
           )}
         </div>
-        <div className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full border border-[#EFEFEF] bg-white/85 px-2.5 py-0.5 text-[11.5px] font-medium shadow-sm backdrop-blur">
-          <Sparkles className="h-3.5 w-3.5 text-[#8C0F0F]" />
-          <span
-            className={
-              pill.className + " rounded-full px-1.5 py-0.5"
-            }
-          >
-            {pill.label}
-          </span>
-        </div>
-        {liveMeta?.isLive && (
-          <div className="absolute right-3 top-3 inline-flex items-center gap-1.5 rounded-full border border-[#F7CACA] bg-[#FFF2F2] px-2.5 py-0.5 text-[11.5px] font-semibold text-[#8C0F0F] shadow-sm">
-            Live now
-          </div>
-        )}
       </div>
 
-      <div className="p-3.5 sm:p-4">
+      <div className="relative z-10 p-3.5 sm:p-4">
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
           <div>
             <h4 className="text-[15px] font-semibold text-[#17152A]">
