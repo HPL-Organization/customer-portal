@@ -172,6 +172,7 @@ export async function GET(req: NextRequest) {
           lines: linesByInv.get(id) || [],
           payments: pmts,
           netsuiteUrl: h.netsuite_url ?? invoiceUrl(id),
+          payment_processing: (h as any).payment_processing === true,
         };
       });
 

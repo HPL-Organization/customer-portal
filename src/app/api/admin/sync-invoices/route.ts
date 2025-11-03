@@ -25,6 +25,7 @@ type Database = {
           sales_rep: string | null;
           ship_address: string | null;
           so_reference: string | null;
+          payment_processing: boolean | null;
         };
         Insert: Partial<Database["public"]["Tables"]["invoices"]["Row"]>;
         Update: Partial<Database["public"]["Tables"]["invoices"]["Row"]>;
@@ -475,6 +476,7 @@ export async function POST(req: NextRequest) {
   let foundModified = 0;
   let foundCreatedToday = 0;
   let foundFallbackToday = 0;
+  let foundPaid = 0;
   const resolveIds = req.nextUrl.searchParams.get("resolveIds") === "1";
 
   let effectiveCustomerIds = customerIds;
@@ -499,6 +501,12 @@ export async function POST(req: NextRequest) {
       { status: 200 }
     );
   }
+
+  // --- NEW: allow scope=all for incremental path too ---
+  const scope = req.nextUrl.searchParams.get("scope");
+  const allScope = scope === "all";
+  // -----------------------------------------------------
+
   if (idsParam) {
     idsParam
       .split(",")
@@ -510,9 +518,7 @@ export async function POST(req: NextRequest) {
       ? `AND T.trandate >= TO_DATE('${forceSince}','YYYY-MM-DD')`
       : "";
 
-    const scope = req.nextUrl.searchParams.get("scope");
-
-    if (scope === "all") {
+    if (allScope) {
       const ids = await fetchAllInvoiceIdsAllCustomers(headers, dateFilter);
       ids.forEach((n) => idSet.add(n));
     } else {
@@ -527,56 +533,165 @@ export async function POST(req: NextRequest) {
       }
     }
   } else {
-    for (const entBatch of chunk<number>(effectiveCustomerIds, 900)) {
-      const entList = entBatch.join(",");
-      const idsModQ = `
+    // INCREMENTAL: if scope=all, do global queries without customer filters
+    if (allScope) {
+      const idsModQAll = `
         SELECT
           T.id AS invoiceId,
           TO_CHAR(T.lastmodifieddate,'YYYY-MM-DD"T"HH24:MI:SS.FF3TZH:TZM') AS lmIso
         FROM transaction T
         WHERE T.type = 'CustInvc'
-          AND T.entity IN (${entList})
           AND T.lastmodifieddate >= TO_TIMESTAMP_TZ('${sinceIso}','YYYY-MM-DD"T"HH24:MI:SS.FF3"Z"')
         ORDER BY T.lastmodifieddate ASC
       `;
-      const r1 = await netsuiteQuery(idsModQ, headers, "idsModified");
-      for (const row of r1?.data?.items || []) {
+      const rModAll = await netsuiteQuery(
+        idsModQAll,
+        headers,
+        "idsModifiedAll"
+      );
+      for (const row of rModAll?.data?.items || []) {
         const id = Number(row.invoiceid);
         if (Number.isFinite(id)) idSet.add(id);
         foundModified++;
       }
       await sleep(120);
 
-      const idsCreatedTodayQ = `
+      const idsCreatedTodayQAll = `
         SELECT T.id AS invoiceId
         FROM transaction T
         WHERE T.type = 'CustInvc'
-          AND T.entity IN (${entList})
           AND T.trandate >= TO_DATE('${sinceDate}','YYYY-MM-DD')
         ORDER BY T.trandate ASC
       `;
-      const r2 = await netsuiteQuery(idsCreatedTodayQ, headers, "idsCreated");
-      for (const row of r2?.data?.items || []) {
+      const rNewAll = await netsuiteQuery(
+        idsCreatedTodayQAll,
+        headers,
+        "idsCreatedAll"
+      );
+      for (const row of rNewAll?.data?.items || []) {
         const id = Number(row.invoiceid);
         if (Number.isFinite(id)) idSet.add(id);
         foundCreatedToday++;
       }
       await sleep(120);
-    }
 
-    const fallbackQ = `
-      SELECT T.id AS invoiceId, T.entity AS customerId
-      FROM transaction T
-      WHERE T.type = 'CustInvc'
-        AND T.trandate >= TO_DATE('${sinceDate}','YYYY-MM-DD')
-    `;
-    const fb = await netsuiteQuery(fallbackQ, headers, "fallbackIds");
-    for (const row of fb?.data?.items || []) {
-      const id = Number(row.invoiceid);
-      const cid = Number(row.customerid);
-      if (Number.isFinite(id) && effectiveCustomerSet.has(cid)) {
-        idSet.add(id);
-        foundFallbackToday++;
+      const idsPaidQ = `
+        SELECT DISTINCT
+               TL.createdfrom AS invoiceId
+        FROM transactionline TL
+        JOIN transaction P
+          ON P.id = TL.transaction
+        WHERE P.type = 'CustPymt'
+          AND TL.createdfrom IS NOT NULL
+          AND P.lastmodifieddate >= TO_TIMESTAMP_TZ('${sinceIso}','YYYY-MM-DD"T"HH24:MI:SS.FF3"Z"')
+      `;
+      const rPaidAll = await netsuiteQuery(idsPaidQ, headers, "idsPaidAll");
+      let batchPaid = 0;
+      for (const row of rPaidAll?.data?.items || []) {
+        const id = Number(row.invoiceid);
+        if (Number.isFinite(id)) {
+          idSet.add(id);
+          foundPaid++;
+          batchPaid++;
+        }
+      }
+      console.log(`[idsPaid] added=${batchPaid}`);
+      await sleep(120);
+
+      const fallbackQAll = `
+        SELECT T.id AS invoiceId
+        FROM transaction T
+        WHERE T.type = 'CustInvc'
+          AND T.trandate >= TO_DATE('${sinceDate}','YYYY-MM-DD')
+      `;
+      const fbAll = await netsuiteQuery(
+        fallbackQAll,
+        headers,
+        "fallbackIdsAll"
+      );
+      for (const row of fbAll?.data?.items || []) {
+        const id = Number(row.invoiceid);
+        if (Number.isFinite(id)) {
+          idSet.add(id);
+          foundFallbackToday++;
+        }
+      }
+    } else {
+      // existing per-customer incremental behavior
+      for (const entBatch of chunk<number>(effectiveCustomerIds, 900)) {
+        const entList = entBatch.join(",");
+        const idsModQ = `
+          SELECT
+            T.id AS invoiceId,
+            TO_CHAR(T.lastmodifieddate,'YYYY-MM-DD"T"HH24:MI:SS.FF3TZH:TZM') AS lmIso
+          FROM transaction T
+          WHERE T.type = 'CustInvc'
+            AND T.entity IN (${entList})
+            AND T.lastmodifieddate >= TO_TIMESTAMP_TZ('${sinceIso}','YYYY-MM-DD"T"HH24:MI:SS.FF3"Z"')
+          ORDER BY T.lastmodifieddate ASC
+        `;
+        const r1 = await netsuiteQuery(idsModQ, headers, "idsModified");
+        for (const row of r1?.data?.items || []) {
+          const id = Number(row.invoiceid);
+          if (Number.isFinite(id)) idSet.add(id);
+          foundModified++;
+        }
+        await sleep(120);
+
+        const idsCreatedTodayQ = `
+          SELECT T.id AS invoiceId
+          FROM transaction T
+          WHERE T.type = 'CustInvc'
+            AND T.entity IN (${entList})
+            AND T.trandate >= TO_DATE('${sinceDate}','YYYY-MM-DD')
+          ORDER BY T.trandate ASC
+        `;
+        const r2 = await netsuiteQuery(idsCreatedTodayQ, headers, "idsCreated");
+        for (const row of r2?.data?.items || []) {
+          const id = Number(row.invoiceid);
+          if (Number.isFinite(id)) idSet.add(id);
+          foundCreatedToday++;
+        }
+        await sleep(120);
+
+        const idsPaidQ = `
+          SELECT DISTINCT
+                 TL.createdfrom AS invoiceId
+          FROM transactionline TL
+          JOIN transaction P
+            ON P.id = TL.transaction
+          WHERE P.type = 'CustPymt'
+            AND TL.createdfrom IS NOT NULL
+            AND P.lastmodifieddate >= TO_TIMESTAMP_TZ('${sinceIso}','YYYY-MM-DD"T"HH24:MI:SS.FF3"Z"')
+        `;
+        const r3 = await netsuiteQuery(idsPaidQ, headers, "idsPaid");
+        let batchPaid = 0;
+        for (const row of r3?.data?.items || []) {
+          const id = Number(row.invoiceid);
+          if (Number.isFinite(id)) {
+            idSet.add(id);
+            foundPaid++;
+            batchPaid++;
+          }
+        }
+        console.log(`[idsPaid] added=${batchPaid}`);
+        await sleep(120);
+      }
+
+      const fallbackQ = `
+        SELECT T.id AS invoiceId, T.entity AS customerId
+        FROM transaction T
+        WHERE T.type = 'CustInvc'
+          AND T.trandate >= TO_DATE('${sinceDate}','YYYY-MM-DD')
+      `;
+      const fb = await netsuiteQuery(fallbackQ, headers, "fallbackIds");
+      for (const row of fb?.data?.items || []) {
+        const id = Number(row.invoiceid);
+        const cid = Number(row.customerid);
+        if (Number.isFinite(id) && effectiveCustomerSet.has(cid)) {
+          idSet.add(id);
+          foundFallbackToday++;
+        }
       }
     }
   }
@@ -614,6 +729,7 @@ export async function POST(req: NextRequest) {
           foundModified,
           foundCreatedToday,
           foundFallbackToday,
+          foundPaid,
           checked,
           softDeleted,
           forceAll,
@@ -629,6 +745,7 @@ export async function POST(req: NextRequest) {
           foundModified,
           foundCreatedToday,
           foundFallbackToday,
+          foundPaid,
           checked,
           softDeleted,
           forceAll,
@@ -687,18 +804,18 @@ export async function POST(req: NextRequest) {
     `;
 
     const paymentsQ = `
-  SELECT DISTINCT
-         TL.createdfrom AS invoiceId,
-         P.id          AS paymentId,
-         P.tranid      AS tranId,
-         P.trandate    AS paymentDate,
-         BUILTIN.DF(P.status)        AS status,
-         P.total                      AS amount,
-         BUILTIN.DF(P.paymentoption)  AS paymentOption
-  FROM transaction P
-  JOIN transactionline TL ON TL.transaction = P.id
-  WHERE P.type = 'CustPymt' AND TL.createdfrom IN (${idList})
-`;
+      SELECT DISTINCT
+             TL.createdfrom AS invoiceId,
+             P.id          AS paymentId,
+             P.tranid      AS tranId,
+             P.trandate    AS paymentDate,
+             BUILTIN.DF(P.status)        AS status,
+             P.total                      AS amount,
+             BUILTIN.DF(P.paymentoption)  AS paymentOption
+      FROM transaction P
+      JOIN transactionline TL ON TL.transaction = P.id
+      WHERE P.type = 'CustPymt' AND TL.createdfrom IN (${idList})
+    `;
 
     const soLinkQ = `
       SELECT PTL.NextDoc AS invoiceId, PTL.PreviousDoc AS soId, S.tranid AS soTranId
@@ -808,7 +925,13 @@ export async function POST(req: NextRequest) {
     const invoicesRows: HeaderRow[] = [];
     const linesRows: LineRow[] = [];
     const paymentsRows: PaymentRow[] = [];
-    const newUnpaidInvoices: Array<{ invoice_id: number; customer_id: number | null; total: number; amount_remaining: number; tran_id: string | null }> = [];
+    const newUnpaidInvoices: Array<{
+      invoice_id: number;
+      customer_id: number | null;
+      total: number;
+      amount_remaining: number;
+      tran_id: string | null;
+    }> = [];
 
     for (const id of ids) {
       const head = headerMap.get(id);
@@ -842,8 +965,11 @@ export async function POST(req: NextRequest) {
 
       invoicesRows.push(invoiceRow);
 
-      // Track new unpaid invoices for email notifications
-      if (!existingInvoiceIds.has(id) && invoiceRow.amount_remaining > 0 && invoiceRow.customer_id) {
+      if (
+        !existingInvoiceIds.has(id) &&
+        invoiceRow.amount_remaining > 0 &&
+        invoiceRow.customer_id
+      ) {
         newUnpaidInvoices.push({
           invoice_id: id,
           customer_id: invoiceRow.customer_id,
@@ -892,21 +1018,32 @@ export async function POST(req: NextRequest) {
           );
         if (e3) throw e3;
       }
+      await supabase
+        .from("invoices")
+        .update({ payment_processing: false })
+        .in("invoice_id", ids)
+        .is("payment_processing", true);
     }
 
     upsertedCount += invoicesRows.length;
 
-    // Send email notifications for new unpaid invoices
     if (!dry && newUnpaidInvoices.length > 0) {
-      console.log(`Sending email notifications for ${newUnpaidInvoices.length} new unpaid invoices`);
+      console.log(
+        `Sending email notifications for ${newUnpaidInvoices.length} new unpaid invoices`
+      );
 
-      // Get unique customer IDs
-      const customerIds = Array.from(new Set(newUnpaidInvoices.map(inv => inv.customer_id).filter(Boolean))) as number[];
+      const customerIds = Array.from(
+        new Set(newUnpaidInvoices.map((inv) => inv.customer_id).filter(Boolean))
+      ) as number[];
 
-      // Get customer info in batches
-      const customerInfoMap = new Map<number, { firstName: string; email: string }>();
+      const customerInfoMap = new Map<
+        number,
+        { firstName: string; email: string }
+      >();
       for (const batch of chunk<number>(customerIds, 50)) {
-        const promises = batch.map(customerId => getCustomerInfo(customerId, headers));
+        const promises = batch.map((customerId) =>
+          getCustomerInfo(customerId, headers)
+        );
         const results = await Promise.all(promises);
 
         batch.forEach((customerId, index) => {
@@ -919,23 +1056,24 @@ export async function POST(req: NextRequest) {
         await sleep(120);
       }
 
-      // Send emails
       let emailSentCount = 0;
       for (const invoice of newUnpaidInvoices) {
-        const customerInfo = invoice.customer_id ? customerInfoMap.get(invoice.customer_id) : null;
+        const customerInfo = invoice.customer_id
+          ? customerInfoMap.get(invoice.customer_id)
+          : null;
         if (!customerInfo) {
-          console.warn(`No customer info found for invoice ${invoice.invoice_id}, customer ${invoice.customer_id}`);
+          console.warn(
+            `No customer info found for invoice ${invoice.invoice_id}, customer ${invoice.customer_id}`
+          );
           continue;
         }
 
-        // Test emails for development - only send to these addresses
         const testEmails = [
-          'sherman@hplapidary.com',
-          'raktim.verma@gmail.com',
-          'vinh_nguyen1211@yahoo.com.vn'
+          "sherman@hplapidary.com",
+          "raktim.verma@gmail.com",
+          "vinh_nguyen1211@yahoo.com.vn",
         ];
 
-        // Only send email if customer's email is in the test email list
         if (testEmails.includes(customerInfo.email)) {
           try {
             await sendUnpaidInvoiceNotification(
@@ -950,16 +1088,25 @@ export async function POST(req: NextRequest) {
               }
             );
             emailSentCount++;
-            console.log(`Email sent for invoice ${invoice.invoice_id} to ${customerInfo.email}`);
+            console.log(
+              `Email sent for invoice ${invoice.invoice_id} to ${customerInfo.email}`
+            );
           } catch (error) {
-            console.error(`Failed to send email for invoice ${invoice.invoice_id}:`, error);
+            console.error(
+              `Failed to send email for invoice ${invoice.invoice_id}:`,
+              error
+            );
           }
         } else {
-          console.log(`Skipping email for invoice ${invoice.invoice_id} - customer email ${customerInfo.email} not in test list`);
+          console.log(
+            `Skipping email for invoice ${invoice.invoice_id} - customer email ${customerInfo.email} not in test list`
+          );
         }
       }
 
-      console.log(`Email notifications sent: ${emailSentCount}/${newUnpaidInvoices.length}`);
+      console.log(
+        `Email notifications sent: ${emailSentCount}/${newUnpaidInvoices.length}`
+      );
     }
 
     await sleep(300);
@@ -997,6 +1144,7 @@ export async function POST(req: NextRequest) {
         foundModified,
         foundCreatedToday,
         foundFallbackToday,
+        foundPaid,
         checked,
         softDeleted,
         forceAll,
@@ -1013,6 +1161,7 @@ export async function POST(req: NextRequest) {
       foundModified,
       foundCreatedToday,
       foundFallbackToday,
+      foundPaid,
       checked,
       softDeleted,
       forceAll,

@@ -114,6 +114,7 @@ function normalizeInvoice(raw: any): Invoice {
       raw.createdFromSoTranId != null ? String(raw.createdFromSoTranId) : null,
     createdFromSoUrl:
       raw.createdFromSoUrl != null ? String(raw.createdFromSoUrl) : undefined,
+    paymentProcessing: Boolean((raw.payment_processing ?? false) === true),
   };
   return inv as Invoice;
 }

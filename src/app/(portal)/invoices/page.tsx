@@ -23,7 +23,21 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowUp, ArrowDown, Search as SearchIcon } from "lucide-react";
 
+import { createBrowserClient } from "@supabase/ssr";
+const supabase = createBrowserClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
+
 type SortKey = "trandate" | "tranId" | "amountRemaining" | "total";
+
+const TAB = {
+  UNPAID: 0 as const,
+  PROCESSING: 1 as const,
+  PAID: 2 as const,
+  DEPOSITS: 3 as const,
+};
+type TabKey = (typeof TAB)[keyof typeof TAB];
 
 function fmt(n: number) {
   return new Intl.NumberFormat(undefined, {
@@ -110,7 +124,14 @@ function buildInvoicesCsv(allInvoices: Invoice[]) {
     const total = subtotal + tax;
     const paid = Number(inv.amountPaid || 0);
     const remaining = Number(inv.amountRemaining || Math.max(total - paid, 0));
-    const status = remaining > 0 ? "Unpaid" : "Paid";
+
+    const processing = Boolean((inv as any).paymentProcessing);
+    const status = processing
+      ? "Processing"
+      : remaining > 0
+      ? "Unpaid"
+      : "Paid";
+
     const invMemo = String(
       (inv as any).memo ?? (inv as any).message ?? (inv as any).comments ?? ""
     ).trim();
@@ -184,7 +205,7 @@ export default function InvoicesPage() {
     refresh,
   } = useBilling();
 
-  const [tab, setTab] = React.useState<0 | 1 | 2>(0);
+  const [tab, setTab] = React.useState<TabKey>(TAB.UNPAID);
   const [query, setQuery] = React.useState("");
   const [sortBy, setSortBy] = React.useState<SortKey>("trandate");
   const [sortDir, setSortDir] = React.useState<"asc" | "desc">("desc");
@@ -194,10 +215,24 @@ export default function InvoicesPage() {
     [cachedInvoices, cachedDeposits]
   );
 
-  const openInvoices = React.useMemo(
-    () => data.invoices.filter((i) => Number(i.amountRemaining) > 0),
+  const processingInvoices = React.useMemo(
+    () =>
+      data.invoices.filter((i) =>
+        Boolean((i as any).paymentProcessing === true)
+      ),
     [data.invoices]
   );
+
+  const openInvoices = React.useMemo(
+    () =>
+      data.invoices.filter(
+        (i) =>
+          Number(i.amountRemaining) > 0 &&
+          !Boolean((i as any).paymentProcessing === true)
+      ),
+    [data.invoices]
+  );
+
   const closedInvoices = React.useMemo(
     () => data.invoices.filter((i) => Number(i.amountRemaining) <= 0),
     [data.invoices]
@@ -286,9 +321,11 @@ export default function InvoicesPage() {
   }
 
   const viewInvoices =
-    tab === 0
+    tab === TAB.UNPAID
       ? filterSort(openInvoices)
-      : tab === 1
+      : tab === TAB.PROCESSING
+      ? filterSort(processingInvoices)
+      : tab === TAB.PAID
       ? filterSort(closedInvoices)
       : [];
 
@@ -394,6 +431,7 @@ export default function InvoicesPage() {
         throw new Error("Invalid amount or invoice.");
       }
       const externalId = `HPL_${numericInvoiceId}_${Date.now()}`;
+
       const res = await fetch("/api/netsuite/record-payment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -413,13 +451,26 @@ export default function InvoicesPage() {
           json?.details || json?.error || "Failed to record payment"
         );
       }
+
+      try {
+        await supabase
+          .from("invoices")
+          .update({ payment_processing: true })
+          .eq("invoice_id", numericInvoiceId);
+      } catch (e) {
+        console.warn("Could not set payment_processing flag:", e);
+      }
+
       toast.success(
         `Payment recorded: ${fmt(Number(amount))} applied to ${invoice.tranId}`
       );
       setPayOpen(false);
       setPayInvoice(null);
       lastPaidIdRef.current = invoice.invoiceId;
+
       await refresh();
+
+      setTab(TAB.PROCESSING);
     } catch (e: any) {
       console.error(e);
       toast.error(e?.message || "Payment failed");
@@ -476,6 +527,10 @@ export default function InvoicesPage() {
   const decoratedOpen = React.useMemo(
     () => decorateInvoices(filterSort(openInvoices)),
     [openInvoices, query, sortBy, sortDir]
+  );
+  const decoratedProcessing = React.useMemo(
+    () => decorateInvoices(filterSort(processingInvoices)),
+    [processingInvoices, query, sortBy, sortDir]
   );
   const decoratedClosed = React.useMemo(
     () => decorateInvoices(filterSort(closedInvoices)),
@@ -602,6 +657,8 @@ export default function InvoicesPage() {
           cursorY = 60;
           doc.setFont("helvetica", "bold");
           doc.setFontSize(11);
+          const headers = ["Item", "Qty", "Rate", "Amount"];
+          const colX = [marginX, 380, 440, 500];
           headers.forEach((h, idx) => doc.text(h, colX[idx], cursorY));
           cursorY += 12;
           doc.setDrawColor(191, 191, 191);
@@ -612,7 +669,10 @@ export default function InvoicesPage() {
         }
         const name = r.name || "";
         const maxNameWidth = colX[1] - colX[0] - 8;
-        const nameLines = doc.splitTextToSize(name, maxNameWidth) as string[];
+        const nameLines = (doc.splitTextToSize(
+          name,
+          maxNameWidth
+        ) as string[]) || [name];
         const blockHeight = Math.max(lineHeight, nameLines.length * lineHeight);
         nameLines.forEach((ln, i) =>
           doc.text(ln, colX[0], cursorY + i * lineHeight)
@@ -761,6 +821,7 @@ export default function InvoicesPage() {
           {[
             { label: `Open Balance: ${fmt(openBalance)}` },
             { label: `Open: ${openInvoices.length}` },
+            { label: `Processing: ${processingInvoices.length}` }, // NEW
             { label: `Paid: ${closedInvoices.length}` },
             { label: `Deposits: ${data.deposits.length}` },
           ].map((c, i) => (
@@ -803,11 +864,13 @@ export default function InvoicesPage() {
             },
           }}
         >
-          <Tab label="Unpaid Invoices" value={0} />
-          <Tab label="Paid Invoices" value={1} />
+          <Tab label="Unpaid Invoices" value={TAB.UNPAID} />
+          <Tab label="Payment Processing" value={TAB.PROCESSING} />
+          <Tab label="Paid Invoices" value={TAB.PAID} />
+          {/*<Tab label="Deposits" value={TAB.DEPOSITS} />*/}
         </Tabs>
 
-        {tab !== 2 && (
+        {tab !== TAB.DEPOSITS && (
           <div className="flex flex-col gap-2 md:flex-row md:items-center">
             <div className="relative">
               <motion.button
@@ -871,7 +934,7 @@ export default function InvoicesPage() {
         )}
       </div>
 
-      {tab === 0 && (
+      {tab === TAB.UNPAID && (
         <InvoicesTable
           loading={billingLoading || !initialized}
           invoices={decoratedOpen}
@@ -880,7 +943,17 @@ export default function InvoicesPage() {
           variant="open"
         />
       )}
-      {tab === 1 && (
+      {tab === TAB.PROCESSING && (
+        <InvoicesTable
+          loading={billingLoading || !initialized}
+          invoices={decoratedProcessing}
+          // You can keep variant="open" so Pay remains available,
+          // or change to a dedicated "processing" if your table supports it.
+          variant="open"
+          onDownload={downloadInvoicePdf}
+        />
+      )}
+      {tab === TAB.PAID && (
         <InvoicesTable
           loading={billingLoading || !initialized}
           invoices={decoratedClosed}
@@ -888,7 +961,7 @@ export default function InvoicesPage() {
           variant="closed"
         />
       )}
-      {tab === 2 && (
+      {tab === TAB.DEPOSITS && (
         <DepositsTable
           loading={billingLoading || !initialized}
           deposits={data.deposits}
