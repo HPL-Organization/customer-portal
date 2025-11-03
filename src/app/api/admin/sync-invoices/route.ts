@@ -191,6 +191,20 @@ async function getCustomerInfo(
   }
 }
 
+function parseRetryAfterMs(val: string | number | undefined): number | null {
+  if (val == null) return null;
+  const s = typeof val === "number" ? String(val) : String(val).trim();
+  if (/^\d+$/.test(s)) {
+    return Math.max(0, parseInt(s, 10) * 1000);
+  }
+  const t = Date.parse(s);
+  if (!Number.isNaN(t)) {
+    const diff = t - Date.now();
+    return diff > 0 ? diff : 0;
+  }
+  return null;
+}
+
 async function netsuiteQuery(
   q: string,
   headers: Record<string, string>,
@@ -198,6 +212,8 @@ async function netsuiteQuery(
 ) {
   let attempt = 0;
   const delays = [500, 1000, 2000, 4000, 8000];
+  const MAX_WAIT_MS = 120_000;
+
   for (;;) {
     try {
       return await axios.post(
@@ -209,15 +225,50 @@ async function netsuiteQuery(
       const status = err?.response?.status;
       const code =
         err?.response?.data?.["o:errorDetails"]?.[0]?.["o:errorCode"];
-      if (status === 429 || code === "CONCURRENCY_LIMIT_EXCEEDED") {
-        const d = delays[Math.min(attempt, delays.length - 1)];
-        await sleep(d);
+      const headersMap = err?.response?.headers || {};
+      const retryAfterRaw =
+        headersMap["retry-after"] ??
+        headersMap["Retry-After"] ??
+        headersMap["Retry-after"];
+
+      const isConcurrency =
+        status === 429 ||
+        status === 503 ||
+        code === "CONCURRENCY_LIMIT_EXCEEDED";
+
+      if (isConcurrency) {
+        const headerMs = parseRetryAfterMs(retryAfterRaw);
+        const fallbackMs = delays[Math.min(attempt, delays.length - 1)];
+        const waitMs = Math.min(
+          Math.max(headerMs ?? fallbackMs, 250) +
+            Math.floor(Math.random() * 250),
+          MAX_WAIT_MS
+        );
+
+        if (retryAfterRaw != null) {
+          console.warn(
+            `[netsuiteQuery] ${tag || ""} retrying after Retry-After=${String(
+              retryAfterRaw
+            )} (~${waitMs}ms), attempt=${attempt + 1}`
+          );
+        } else {
+          console.warn(
+            `[netsuiteQuery] ${
+              tag || ""
+            } retrying with fallback backoff=${waitMs}ms, attempt=${
+              attempt + 1
+            }`
+          );
+        }
+
+        await sleep(waitMs);
         attempt++;
         continue;
       }
+
       const info = {
         tag,
-        status: err?.response?.status,
+        status,
         body:
           typeof err?.response?.data === "string"
             ? String(err.response.data).slice(0, 600)
