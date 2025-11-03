@@ -1,7 +1,8 @@
-import { NextRequest } from "next/server";
-import axios from "axios";
+import { sendUnpaidInvoiceNotification } from "@/lib/email/templates/unpaid-invoice";
 import { getValidToken } from "@/lib/netsuite/token";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import axios from "axios";
+import { NextRequest } from "next/server";
 
 type Database = {
   public: {
@@ -161,6 +162,33 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return out;
 }
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function getCustomerInfo(
+  customerId: number,
+  headers: Record<string, string>
+): Promise<{ firstName: string; email: string } | null> {
+  try {
+    const q = `
+      SELECT
+        C.firstname AS firstName,
+        C.email AS email
+      FROM customer C
+      WHERE C.id = ${customerId}
+    `;
+    const r = await netsuiteQuery(q, headers, "getCustomerInfo");
+    const row = r?.data?.items?.[0];
+    if (row && row.firstname && row.email) {
+      return {
+        firstName: row.firstname.trim(),
+        email: row.email.trim().toLowerCase(),
+      };
+    }
+    return null;
+  } catch (error) {
+    console.error(`Failed to get customer info for ID ${customerId}:`, error);
+    return null;
+  }
+}
 
 async function netsuiteQuery(
   q: string,
@@ -767,17 +795,20 @@ export async function POST(req: NextRequest) {
         so_reference: string | null;
       }
     >();
-    (existingRows || []).forEach((r) =>
+    const existingInvoiceIds = new Set<number>();
+    (existingRows || []).forEach((r) => {
+      existingInvoiceIds.add(r.invoice_id);
       existingMap.set(r.invoice_id, {
         sales_rep: r.sales_rep,
         ship_address: r.ship_address,
         so_reference: r.so_reference,
-      })
-    );
+      });
+    });
 
     const invoicesRows: HeaderRow[] = [];
     const linesRows: LineRow[] = [];
     const paymentsRows: PaymentRow[] = [];
+    const newUnpaidInvoices: Array<{ invoice_id: number; customer_id: number | null; total: number; amount_remaining: number; tran_id: string | null }> = [];
 
     for (const id of ids) {
       const head = headerMap.get(id);
@@ -791,7 +822,7 @@ export async function POST(req: NextRequest) {
       const ship = head.ship_address ?? prev?.ship_address ?? null;
       const ref = head.so_reference ?? prev?.so_reference ?? null;
 
-      invoicesRows.push({
+      const invoiceRow = {
         invoice_id: id,
         tran_id: head.tran_id,
         trandate: head.trandate,
@@ -807,7 +838,20 @@ export async function POST(req: NextRequest) {
         sales_rep: rep,
         ship_address: ship,
         so_reference: ref,
-      });
+      };
+
+      invoicesRows.push(invoiceRow);
+
+      // Track new unpaid invoices for email notifications
+      if (!existingInvoiceIds.has(id) && invoiceRow.amount_remaining > 0 && invoiceRow.customer_id) {
+        newUnpaidInvoices.push({
+          invoice_id: id,
+          customer_id: invoiceRow.customer_id,
+          total: invoiceRow.total,
+          amount_remaining: invoiceRow.amount_remaining,
+          tran_id: invoiceRow.tran_id,
+        });
+      }
 
       for (const ln of linesByInv.get(id) ?? []) linesRows.push(ln);
       for (const pr of pmts) paymentsRows.push(pr);
@@ -851,6 +895,73 @@ export async function POST(req: NextRequest) {
     }
 
     upsertedCount += invoicesRows.length;
+
+    // Send email notifications for new unpaid invoices
+    if (!dry && newUnpaidInvoices.length > 0) {
+      console.log(`Sending email notifications for ${newUnpaidInvoices.length} new unpaid invoices`);
+
+      // Get unique customer IDs
+      const customerIds = Array.from(new Set(newUnpaidInvoices.map(inv => inv.customer_id).filter(Boolean))) as number[];
+
+      // Get customer info in batches
+      const customerInfoMap = new Map<number, { firstName: string; email: string }>();
+      for (const batch of chunk<number>(customerIds, 50)) {
+        const promises = batch.map(customerId => getCustomerInfo(customerId, headers));
+        const results = await Promise.all(promises);
+
+        batch.forEach((customerId, index) => {
+          const info = results[index];
+          if (info) {
+            customerInfoMap.set(customerId, info);
+          }
+        });
+
+        await sleep(120);
+      }
+
+      // Send emails
+      let emailSentCount = 0;
+      for (const invoice of newUnpaidInvoices) {
+        const customerInfo = invoice.customer_id ? customerInfoMap.get(invoice.customer_id) : null;
+        if (!customerInfo) {
+          console.warn(`No customer info found for invoice ${invoice.invoice_id}, customer ${invoice.customer_id}`);
+          continue;
+        }
+
+        // Test emails for development - only send to these addresses
+        const testEmails = [
+          'sherman@hplapidary.com',
+          'raktim.verma@gmail.com',
+          'vinh_nguyen1211@yahoo.com.vn'
+        ];
+
+        // Only send email if customer's email is in the test email list
+        if (testEmails.includes(customerInfo.email)) {
+          try {
+            await sendUnpaidInvoiceNotification(
+              {
+                firstName: customerInfo.firstName,
+                email: customerInfo.email,
+              },
+              {
+                invoiceId: invoice.tran_id || `INV-${invoice.invoice_id}`,
+                total: invoice.total,
+                amountRemaining: invoice.amount_remaining,
+              }
+            );
+            emailSentCount++;
+            console.log(`Email sent for invoice ${invoice.invoice_id} to ${customerInfo.email}`);
+          } catch (error) {
+            console.error(`Failed to send email for invoice ${invoice.invoice_id}:`, error);
+          }
+        } else {
+          console.log(`Skipping email for invoice ${invoice.invoice_id} - customer email ${customerInfo.email} not in test list`);
+        }
+      }
+
+      console.log(`Email notifications sent: ${emailSentCount}/${newUnpaidInvoices.length}`);
+    }
+
     await sleep(300);
   }
 
