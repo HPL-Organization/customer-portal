@@ -18,6 +18,7 @@
     "@supabase/supabase-js": "^2.75.0",
     "await-to-js": "^3.0.0",
     "axios": "^1.12.0",
+    "braintree": "^3.34.0",
     "clsx": "^2.1.1",
     "framer-motion": "^12.23.22",
     "got": "^14.6.1",
@@ -36,6 +37,7 @@
   "devDependencies": {
     "@eslint/eslintrc": "^3",
     "@tailwindcss/postcss": "^4",
+    "@types/braintree": "^3.4.1",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
