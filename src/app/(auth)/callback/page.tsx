@@ -58,7 +58,29 @@ function Inner() {
   useEffect(() => {
     (async () => {
       try {
-        await supabase.auth.getSession();
+        try {
+          await supabase.auth.exchangeCodeForSession(window.location.href);
+        } catch {}
+
+        {
+          const deadline = Date.now() + 5000;
+          let ok = false;
+          while (Date.now() < deadline) {
+            const { data } = await supabase.auth.getSession();
+            if (data.session) {
+              ok = true;
+              break;
+            }
+            await new Promise((r) => setTimeout(r, 120));
+          }
+          if (!ok) {
+            setPhase("error");
+            setDetail(
+              "Could not establish session. Please click the email link again."
+            );
+            return;
+          }
+        }
 
         let names = { firstName: "", middleName: "", lastName: "" };
         const raw =
@@ -84,6 +106,7 @@ function Inner() {
         const r = await fetch("/api/auth/provision", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
           body: JSON.stringify(names),
         });
         const j: any = await r.json().catch(() => ({}));

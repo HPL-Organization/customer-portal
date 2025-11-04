@@ -549,12 +549,6 @@ function LoginInner() {
                       >
                         {resending ? "Resending…" : "Resend email"}
                       </button>
-                      <button
-                        onClick={copyEmail}
-                        className="rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-medium text-amber-900 hover:bg-amber-50"
-                      >
-                        Copy email
-                      </button>
                     </div>
                     {resendMsg && (
                       <div className="mt-3 rounded-md border border-amber-200 bg-amber-100 px-2 py-1 text-[11px] text-amber-900">
