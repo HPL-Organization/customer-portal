@@ -33,22 +33,21 @@ export async function sendUnpaidInvoiceNotification(
           margin: 0 auto;
           padding: 20px;
         }
-        .header {
-          text-align: center;
-          margin-bottom: 30px;
-        }
-        .content {
-          margin-bottom: 30px;
-        }
+        .header { text-align: center; margin-bottom: 30px; }
+        .content { margin-bottom: 30px; }
+
         .portal-link {
           display: inline-block;
-          background-color: #ED1C24; 
-          color: white;
+          background-color: #ED1C24; /* red */
+          color: #ffffff;
+          font-weight: 700;         
           padding: 12px 24px;
           text-decoration: none;
           border-radius: 4px;
           margin: 20px 0;
         }
+        .portal-link:visited { color: #ffffff; } 
+
         .footer {
           border-top: 1px solid #eee;
           padding-top: 20px;
@@ -56,10 +55,7 @@ export async function sendUnpaidInvoiceNotification(
           color: #666;
           font-size: 14px;
         }
-        .phone {
-          color: #007bff;
-          text-decoration: none;
-        }
+        .phone { color: #007bff; text-decoration: none; }
       </style>
     </head>
     <body>

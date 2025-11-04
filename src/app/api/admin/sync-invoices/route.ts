@@ -1123,7 +1123,7 @@ export async function POST(req: NextRequest) {
           "vinh_nguyen1211@yahoo.com.vn",
         ];
 
-        if (testEmails.includes(customerInfo.email)) {
+        if (true) {
           try {
             await sendUnpaidInvoiceNotification(
               {
@@ -1148,7 +1148,7 @@ export async function POST(req: NextRequest) {
           }
         } else {
           console.log(
-            `Skipping email for invoice ${invoice.invoice_id} - customer email ${customerInfo.email} not in test list`
+            `Skipping email for invoice ${invoice.invoice_id} - customer email ${customerInfo?.email} not in test list`
           );
         }
       }

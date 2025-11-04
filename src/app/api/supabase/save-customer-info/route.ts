@@ -31,7 +31,8 @@ type InfoPayload = {
 function toRow(
   payload: InfoPayload,
   customerId: number,
-  fallbackEmail?: string
+  fallbackEmail?: string,
+  userId?: string
 ) {
   const {
     firstName,
@@ -72,6 +73,8 @@ function toRow(
 
     shipping_verified: !!shippingVerified,
     billing_verified: !!billingVerified,
+
+    user_id: userId ?? null,
   };
 }
 
@@ -106,7 +109,8 @@ export async function POST(req: NextRequest) {
     const row = toRow(
       body,
       Number(profile.netsuite_customer_id),
-      profile.email ?? undefined
+      profile.email ?? undefined,
+      user.id
     );
 
     const { data: saved, error: upErr } = await supabase
