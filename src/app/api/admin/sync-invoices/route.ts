@@ -553,10 +553,8 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // --- NEW: allow scope=all for incremental path too ---
   const scope = req.nextUrl.searchParams.get("scope");
   const allScope = scope === "all";
-  // -----------------------------------------------------
 
   if (idsParam) {
     idsParam

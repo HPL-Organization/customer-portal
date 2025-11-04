@@ -1,4 +1,4 @@
-import { sendEmail } from '../postmark';
+import { sendEmail } from "../postmark";
 
 export interface CustomerInfo {
   firstName: string;
@@ -15,7 +15,7 @@ export async function sendUnpaidInvoiceNotification(
   customer: CustomerInfo,
   invoice: InvoiceInfo
 ) {
-  const subject = 'Your Invoice from Highland Park Lapidary';
+  const subject = "Your Invoice from Highland Park Lapidary";
 
   const htmlBody = `
     <!DOCTYPE html>
@@ -42,7 +42,7 @@ export async function sendUnpaidInvoiceNotification(
         }
         .portal-link {
           display: inline-block;
-          background-color: #007bff;
+          background-color: #ED1C24; 
           color: white;
           padding: 12px 24px;
           text-decoration: none;
@@ -76,7 +76,7 @@ export async function sendUnpaidInvoiceNotification(
 
         <p style="text-align: center;">
           <a href="https://portal.hplapidary.com/" class="portal-link">
-            Access Your Invoice Portal
+            Access Portal
           </a>
         </p>
 

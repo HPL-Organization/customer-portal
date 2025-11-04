@@ -865,6 +865,7 @@ function AuthForm(props: {
                   </svg>
                 </span>
                 <input
+                  required
                   value={middleName}
                   onChange={(e) => setMiddleName(e.target.value)}
                   className="w-full rounded-xl border border-slate-300 bg-white px-9 py-2 text-sm text-slate-900 placeholder-slate-400 outline-none ring-0 transition focus:border-slate-400"

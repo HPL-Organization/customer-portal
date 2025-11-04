@@ -410,6 +410,31 @@ const InfoTab = () => {
     }
   };
 
+  const saveSupabase = async () => {
+    try {
+      const res = await fetch("/api/supabase/save-customer-info", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...formData,
+          shippingVerified,
+          billingVerified,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.error || "Failed to save to portal.");
+        return { ok: false };
+      }
+      toast.success("Saved to portal!");
+      return { ok: true };
+    } catch (e) {
+      console.error("Supabase Save Error:", e);
+      toast.error("Something went wrong while saving to the portal.");
+      return { ok: false };
+    }
+  };
+
   const handleSaveAll = async () => {
     setLoaderMsgs(["Saving your information…", "Finishing up…"]);
     setSaving(true);
@@ -419,7 +444,7 @@ const InfoTab = () => {
       setSaving(false);
       return;
     }
-
+    await saveSupabase();
     setLoaderMsgs(["Saving your information…", "Finishing up…"]);
     setLoaderIdx(0);
 
