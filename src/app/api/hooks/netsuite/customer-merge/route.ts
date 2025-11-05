@@ -16,28 +16,61 @@ function getSupabaseSR() {
   return createClient(url, key);
 }
 
+function getEnvSecret(): string {
+  const s1 = process.env.NETSUITE_MERGE_WEBHOOK_SECRET?.trim();
+  const s2 = process.env.MERGE_WEBHOOK_SECRET?.trim();
+  return (s1 || s2 || "").trim();
+}
+
+function mask(s: string | null | undefined) {
+  const v = (s || "").toString();
+  if (!v) return { len: 0, head: "", tail: "" };
+  return { len: v.length, head: v.slice(0, 6), tail: v.slice(-6) };
+}
+
 export async function POST(req: NextRequest) {
-  const secret = req.headers.get("x-netsuite-webhook-secret");
-  if (!secret || secret !== process.env.NETSUITE_MERGE_WEBHOOK_SECRET) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const headerSecretRaw = req.headers.get("x-netsuite-webhook-secret");
+  const headerSecret = headerSecretRaw?.trim() || "";
+  const envSecret = getEnvSecret();
+  const now = new Date().toISOString();
+
+  const debugBase = {
+    now,
+    headerMeta: mask(headerSecret),
+    envMeta: mask(envSecret),
+    hasHeader: !!headerSecret,
+    hasEnv: !!envSecret,
+  };
+
+  if (!headerSecret || !envSecret || headerSecret !== envSecret) {
+    return NextResponse.json(
+      { error: "unauthorized", debug: debugBase },
+      { status: 401 }
+    );
   }
 
   let payload: MergePayload;
   try {
     payload = await req.json();
   } catch {
-    return NextResponse.json({ error: "invalid json" }, { status: 400 });
+    return NextResponse.json(
+      { error: "invalid json", debug: debugBase },
+      { status: 400 }
+    );
   }
 
   if (payload.event !== "netsuite.entity.merge") {
-    return NextResponse.json({ ok: true, ignored: true });
+    return NextResponse.json({ ok: true, ignored: true, debug: debugBase });
   }
 
   const masterId = Number(payload.masterId);
   const email = payload.masterEmail?.trim();
   if (!Number.isFinite(masterId) || !email) {
     return NextResponse.json(
-      { error: "missing masterId or masterEmail" },
+      {
+        error: "missing masterId or masterEmail",
+        debug: { ...debugBase, masterId, email },
+      },
       { status: 400 }
     );
   }
@@ -52,7 +85,11 @@ export async function POST(req: NextRequest) {
 
   if (error) {
     return NextResponse.json(
-      { error: "update failed", details: error.message },
+      {
+        error: "update failed",
+        details: error.message,
+        debug: { ...debugBase, masterId, email },
+      },
       { status: 500 }
     );
   }
@@ -62,5 +99,6 @@ export async function POST(req: NextRequest) {
     updated: data?.length ?? 0,
     masterId,
     email,
+    debug: debugBase,
   });
 }
