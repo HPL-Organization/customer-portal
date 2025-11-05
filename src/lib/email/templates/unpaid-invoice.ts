@@ -39,14 +39,24 @@ export async function sendUnpaidInvoiceNotification(
         .portal-link {
           display: inline-block;
           background-color: #ED1C24; /* red */
-          color: #ffffff;
-          font-weight: 700;         
+          color: #ffffff !important;
+          font-weight: 700;
           padding: 12px 24px;
-          text-decoration: none;
+          text-decoration: none !important;
           border-radius: 4px;
           margin: 20px 0;
         }
-        .portal-link:visited { color: #ffffff; } 
+        .portal-link:visited { color: #ffffff !important; }
+
+        /* Stop iOS from auto-styling links */
+        a[x-apple-data-detectors] {
+          color: inherit !important;
+          text-decoration: none !important;
+          font-size: inherit !important;
+          font-family: inherit !important;
+          font-weight: inherit !important;
+          line-height: inherit !important;
+        }
 
         .footer {
           border-top: 1px solid #eee;
@@ -71,8 +81,12 @@ export async function sendUnpaidInvoiceNotification(
         <p>You can view and pay your invoice securely through our customer portal:</p>
 
         <p style="text-align: center;">
-          <a href="https://portal.hplapidary.com/" class="portal-link">
-            Access Portal
+          <a
+            href="https://portal.hplapidary.com/"
+            class="portal-link"
+            style="background-color:#ED1C24; color:#ffffff !important; font-weight:700; text-decoration:none !important; display:inline-block; padding:12px 24px; border-radius:4px;"
+          >
+            <span style="color:#ffffff !important; font-weight:700; text-decoration:none !important;">Access Portal</span>
           </a>
         </p>
 
