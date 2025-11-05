@@ -29,47 +29,98 @@ function mask(s: string | null | undefined) {
 }
 
 export async function POST(req: NextRequest) {
-  const headerSecretRaw = req.headers.get("x-netsuite-webhook-secret");
-  const headerSecret = headerSecretRaw?.trim() || "";
   const envSecret = getEnvSecret();
-  const now = new Date().toISOString();
 
-  const debugBase = {
-    now,
-    headerMeta: mask(headerSecret),
-    envMeta: mask(envSecret),
-    hasHeader: !!headerSecret,
-    hasEnv: !!envSecret,
-  };
+  const headerSecretRaw = req.headers.get("x-netsuite-webhook-secret") || "";
+  const headerSecret = headerSecretRaw.trim();
 
-  if (!headerSecret || !envSecret || headerSecret !== envSecret) {
-    return NextResponse.json(
-      { error: "unauthorized", debug: debugBase },
-      { status: 401 }
-    );
-  }
+  const auth =
+    req.headers.get("authorization") || req.headers.get("Authorization") || "";
+  const bearerSecret = auth.toLowerCase().startsWith("bearer ")
+    ? auth.slice(7).trim()
+    : "";
 
-  let payload: MergePayload;
+  let payload: MergePayload & { secret?: string };
   try {
     payload = await req.json();
   } catch {
     return NextResponse.json(
-      { error: "invalid json", debug: debugBase },
+      {
+        error: "invalid json",
+        debug: {
+          now: new Date().toISOString(),
+          headerMeta: mask(headerSecret),
+          bearerMeta: mask(bearerSecret),
+          bodyMeta: { len: 0, head: "", tail: "" },
+          envMeta: mask(envSecret),
+          hasHeader: !!headerSecret,
+          hasBearer: !!bearerSecret,
+          hasBody: false,
+          hasEnv: !!envSecret,
+        },
+      },
       { status: 400 }
     );
   }
 
+  const bodySecret = (payload.secret || "").trim();
+
+  const authorized =
+    !!envSecret &&
+    (headerSecret === envSecret ||
+      bearerSecret === envSecret ||
+      bodySecret === envSecret);
+
+  if (!authorized) {
+    return NextResponse.json(
+      {
+        error: "unauthorized",
+        debug: {
+          now: new Date().toISOString(),
+          headerMeta: mask(headerSecret),
+          bearerMeta: mask(bearerSecret),
+          bodyMeta: mask(bodySecret),
+          envMeta: mask(envSecret),
+          hasHeader: !!headerSecret,
+          hasBearer: !!bearerSecret,
+          hasBody: !!bodySecret,
+          hasEnv: !!envSecret,
+        },
+      },
+      { status: 401 }
+    );
+  }
+
   if (payload.event !== "netsuite.entity.merge") {
-    return NextResponse.json({ ok: true, ignored: true, debug: debugBase });
+    return NextResponse.json({
+      ok: true,
+      ignored: true,
+      debug: {
+        now: new Date().toISOString(),
+        headerMeta: mask(headerSecret),
+        bearerMeta: mask(bearerSecret),
+        bodyMeta: mask(bodySecret),
+        envMeta: mask(envSecret),
+        hasHeader: !!headerSecret,
+        hasBearer: !!bearerSecret,
+        hasBody: !!bodySecret,
+        hasEnv: !!envSecret,
+      },
+    });
   }
 
   const masterId = Number(payload.masterId);
   const email = payload.masterEmail?.trim();
+
   if (!Number.isFinite(masterId) || !email) {
     return NextResponse.json(
       {
         error: "missing masterId or masterEmail",
-        debug: { ...debugBase, masterId, email },
+        debug: {
+          now: new Date().toISOString(),
+          masterId,
+          email,
+        },
       },
       { status: 400 }
     );
@@ -88,7 +139,11 @@ export async function POST(req: NextRequest) {
       {
         error: "update failed",
         details: error.message,
-        debug: { ...debugBase, masterId, email },
+        debug: {
+          now: new Date().toISOString(),
+          masterId,
+          email,
+        },
       },
       { status: 500 }
     );
@@ -99,6 +154,16 @@ export async function POST(req: NextRequest) {
     updated: data?.length ?? 0,
     masterId,
     email,
-    debug: debugBase,
+    debug: {
+      now: new Date().toISOString(),
+      headerMeta: mask(headerSecret),
+      bearerMeta: mask(bearerSecret),
+      bodyMeta: mask(bodySecret),
+      envMeta: mask(envSecret),
+      hasHeader: !!headerSecret,
+      hasBearer: !!bearerSecret,
+      hasBody: !!bodySecret,
+      hasEnv: !!envSecret,
+    },
   });
 }
