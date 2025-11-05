@@ -520,6 +520,7 @@ const InfoTab = () => {
                 name="email"
                 value={formData.email}
                 onChange={handleChange}
+                disabled
               />
               <InputField
                 label="Phone"
