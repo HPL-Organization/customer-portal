@@ -17,6 +17,7 @@ import { Sparkles } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "react-toastify";
+import TermsModal from "@/components/TermsModal";
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -56,6 +57,10 @@ export default function Dashboard() {
   const [pageLoading, setPageLoading] = useState<boolean>(true);
   const [loaderLabel, setLoaderLabel] = useState<string>("Cutting your rock…");
   const [loaderProgress, setLoaderProgress] = useState<number | null>(null);
+
+  const [showTerms, setShowTerms] = useState(false);
+  const [agreeSaving, setAgreeSaving] = useState(false);
+  const [pendingEventId, setPendingEventId] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -158,13 +163,23 @@ export default function Dashboard() {
       }
       setLoadingEventId(eventId);
       setLoaderLabel("Joining live session…");
+
       const names = await ensureNames();
       if (!names) return;
+
       const latestEvent = liveEvents.find((le) => le.type === eventId);
       if (!latestEvent) {
         toast.error("No live events found for this event type");
         return;
       }
+
+      const ok = await ensureTermsAccepted();
+      if (!ok) {
+        setPendingEventId(latestEvent.id);
+        setLoadingEventId(null);
+        return;
+      }
+
       const isJoinable = await isEventCurrentlyLive(latestEvent);
       if (!isJoinable) {
         toast.error(
@@ -172,6 +187,7 @@ export default function Dashboard() {
         );
         return;
       }
+
       const result = await joinLiveSession(latestEvent.id, {
         email: authEmail,
         firstName: names.firstName,
@@ -278,6 +294,93 @@ export default function Dashboard() {
     }
   }
 
+  async function getTermsStatus() {
+    const res = await fetch("/api/supabase/customer-terms", {
+      cache: "no-store",
+    });
+    if (!res.ok) throw new Error("Failed to check terms");
+    return (await res.json()) as {
+      ok: boolean;
+      exists?: boolean;
+      terms_compliance?: boolean;
+      terms_agreed_at?: string | null;
+    };
+  }
+
+  async function postAgreeTerms() {
+    const res = await fetch("/api/supabase/customer-terms", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agree: true }),
+    });
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      throw new Error(j?.error || "Failed to save terms");
+    }
+    return res.json();
+  }
+
+  async function ensureTermsAccepted(): Promise<boolean> {
+    try {
+      const st = await getTermsStatus();
+      if (st?.terms_compliance) return true;
+      setShowTerms(true);
+      return false;
+    } catch {
+      setShowTerms(true);
+      return false;
+    }
+  }
+
+  async function handleAgreeAndContinue() {
+    try {
+      setAgreeSaving(true);
+      await postAgreeTerms();
+      setShowTerms(false);
+
+      if (!pendingEventId) return;
+
+      const latestEvent = liveEvents.find(
+        (le) => le.id === pendingEventId || le.type === pendingEventId
+      );
+      if (!latestEvent) return;
+
+      const isJoinable = await isEventCurrentlyLive(latestEvent);
+      if (!isJoinable) {
+        toast.error(
+          "This event is not currently available to join. Please check back within 30 minutes of the event time."
+        );
+        return;
+      }
+
+      setLoadingEventId(latestEvent.type ?? latestEvent.id);
+      setLoaderLabel("Joining live session…");
+
+      const result = await joinLiveSession(latestEvent.id, {
+        email: authEmail,
+        firstName: authFirstName || "Guest",
+        lastName: authLastName || "",
+      });
+
+      if (result.success && result.joinUrl) {
+        window.open(result.joinUrl, "_blank");
+      } else {
+        toast.error(result.message || "Failed to get join URL");
+      }
+    } catch (e) {
+      toast.error(
+        `Could not save your acceptance: ${
+          e instanceof Error ? e.message : "Unknown error"
+        }`
+      );
+    } finally {
+      setAgreeSaving(false);
+      setPendingEventId(null);
+      setLoadingEventId(null);
+      setLoaderLabel("Cutting your rock…");
+    }
+  }
+
   return (
     <div className="relative space-y-7">
       <div className="pointer-events-none absolute inset-0 -z-10 rounded-xl">
@@ -348,6 +451,16 @@ export default function Dashboard() {
         onLastNameChange={setFormLastName}
         onSave={() => saveNamesAndProceed(loadingEventId || "")}
         saving={savingProfile}
+      />
+      <TermsModal
+        open={showTerms}
+        loading={agreeSaving}
+        text="I agree to the event Terms & Conditions and understand that all winning bids are binding."
+        onCancel={() => {
+          setShowTerms(false);
+          setPendingEventId(null);
+        }}
+        onConfirm={handleAgreeAndContinue}
       />
     </div>
   );

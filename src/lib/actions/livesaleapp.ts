@@ -1,8 +1,8 @@
 "use server";
 
-import logger from '@/lib/logger';
-import to from 'await-to-js';
-import got, { HTTPError } from 'got';
+import logger from "@/lib/logger";
+import to from "await-to-js";
+import got, { HTTPError } from "got";
 
 const LIVESALEAPP_BASE_URL = "https://bademail.onrender.com/v1";
 
@@ -10,12 +10,12 @@ const LIVESALEAPP_BASE_URL = "https://bademail.onrender.com/v1";
 const livesaleappGot = got.extend({
   prefixUrl: LIVESALEAPP_BASE_URL,
   headers: {
-    'Content-Type': 'application/json',
+    "Content-Type": "application/json",
     ...(process.env.LIVESALEAPP_TOKEN && {
       Authorization: `Bearer ${process.env.LIVESALEAPP_TOKEN}`,
     }),
   },
-  responseType: 'json',
+  responseType: "json",
 });
 
 export interface LiveEventType {
@@ -119,8 +119,8 @@ const liveEventTypes: LiveEventType[] = [
   },
   {
     internalName: "wednesday_rough_rock_event",
-    label: "Wednesday Rough Rock Event",
-    description: "This is a rough rock event that occurs on Wednesday",
+    label: "Machine Night", //Wednesday Rough Rock Event
+    description: "This is a special event!", //This is a rough rock event that occurs on Wednesday
     category: "EVENT_TYPE",
     createdAt: "2024-09-06T08:17:40.141Z",
     updatedAt: "2024-09-06T08:17:40.141Z",
@@ -129,13 +129,15 @@ const liveEventTypes: LiveEventType[] = [
 
 export async function fetchLiveEvents(page: number = 1) {
   const [error, resp] = await to(
-    livesaleappGot.get('live-event', {
-      searchParams: {
-        page: page.toString(),
-        distinctType: 'true',
-        take: '20'
-      },
-    }).json<LiveEventsResponse>()
+    livesaleappGot
+      .get("live-event", {
+        searchParams: {
+          page: page.toString(),
+          distinctType: "true",
+          take: "20",
+        },
+      })
+      .json<LiveEventsResponse>()
   );
 
   if (error) {
@@ -229,7 +231,9 @@ export async function joinLiveSession(
     if (getUrlError instanceof HTTPError && getUrlError.response) {
       joinUrlData = getUrlError.response.body as ZoomJoinUrlResponse;
     } else {
-      logger.error("Unexpected error getting zoom join URL", { error: getUrlError });
+      logger.error("Unexpected error getting zoom join URL", {
+        error: getUrlError,
+      });
       return {
         success: false,
         message: "An unexpected error occurred. Please try again later.",
@@ -250,7 +254,12 @@ export async function joinLiveSession(
 
   // Check if the response indicates no join URL found
   if ((joinUrlData as ZoomJoinUrlResponse).code === "ZOOM_JOIN_URL_NOT_FOUND") {
-    logger.info("No existing join URL found, creating new one", { eventId, email, firstName, lastName });
+    logger.info("No existing join URL found, creating new one", {
+      eventId,
+      email,
+      firstName,
+      lastName,
+    });
 
     // Call the zoom-join-by-email API to create a new join URL
     const [createError, createJoinData] = await to(
@@ -266,10 +275,15 @@ export async function joinLiveSession(
     );
 
     if (createError) {
-      logger.error("Failed to create zoom join URL", { error: createError, eventId, email });
+      logger.error("Failed to create zoom join URL", {
+        error: createError,
+        eventId,
+        email,
+      });
       return {
         success: false,
-        message: "Unable to join the live event at this time. Please try again later.",
+        message:
+          "Unable to join the live event at this time. Please try again later.",
       };
     }
 
@@ -284,7 +298,10 @@ export async function joinLiveSession(
     }
   }
 
-  logger.error("Failed to get or create zoom join URL - no valid response received", { eventId, email });
+  logger.error(
+    "Failed to get or create zoom join URL - no valid response received",
+    { eventId, email }
+  );
   return {
     success: false,
     message: "Unable to join the live event. Please try again later.",

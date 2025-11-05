@@ -788,7 +788,6 @@ function AuthForm(props: {
   continueWithGoogle: () => void;
   sendMagicLink: () => void;
   resetPassword: () => void;
-  // Added:
   onFirstLastBlur?: () => void;
   nameLookupInFlight?: boolean;
 }) {
@@ -819,6 +818,56 @@ function AuthForm(props: {
     onFirstLastBlur,
     nameLookupInFlight,
   } = props;
+
+  const [forgotOpen, setForgotOpen] = useState(false);
+  const [feFirst, setFeFirst] = useState("");
+  const [feMiddle, setFeMiddle] = useState("");
+  const [feLast, setFeLast] = useState("");
+  const [feLoading, setFeLoading] = useState(false);
+  const [feError, setFeError] = useState<string | null>(null);
+  const [feMasked, setFeMasked] = useState<string | null>(null);
+  const [feRaw, setFeRaw] = useState<string | null>(null);
+
+  async function lookupEmailByName() {
+    setFeError(null);
+    setFeMasked(null);
+    setFeRaw(null);
+    const fn = feFirst.trim();
+    const ln = feLast.trim();
+    if (!fn || !ln) {
+      setFeError("First and last name are required.");
+      return;
+    }
+    setFeLoading(true);
+    try {
+      const r = await fetch("/api/auth/lookup-by-name", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          firstName: fn,
+          middleName: feMiddle.trim() || undefined,
+          lastName: ln,
+        }),
+      });
+      const j = await r.json().catch(() => null);
+      if (j?.ok && j.exists) {
+        setFeMasked(j.masked || null);
+        setFeRaw(j.email || null);
+      } else {
+        setFeError("We couldn't find an account with that name.");
+      }
+    } catch (e: any) {
+      setFeError("Lookup failed. Please try again.");
+    } finally {
+      setFeLoading(false);
+    }
+  }
+
+  function useFoundEmail() {
+    const chosen = feRaw || "";
+    if (chosen) setEmail(chosen);
+    setForgotOpen(false);
+  }
 
   return (
     <>
@@ -1025,23 +1074,6 @@ function AuthForm(props: {
 
       {mode === "signin" && (
         <div className="mt-6 space-y-3 text-sm">
-          {/* <button
-            onClick={continueWithGoogle}
-            disabled={googleDisabled}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-medium text-slate-900 ring-1 ring-slate-200 transition hover:bg-slate-50 disabled:opacity-60"
-          >
-            {googleLoading ? (
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-slate-900" />
-            ) : (
-              <svg viewBox="0 0 24 24" className="h-4 w-4">
-                <path
-                  fill="#EA4335"
-                  d="M12 11.8v3.9h6.5c-.3 1.9-2.1 5.5-6.5 5.5-3.9 0-7.1-3.2-7.1-7.1S8.1 7 12 7c2.2 0 3.7.9 4.6 1.8l3.1-3.1C18.2 3.8 15.4 2.5 12 2.5 6.8 2.5 2.5 6.8 2.5 12S6.8 21.5 12 21.5c6.9 0 9.5-4.8 9.5-7.3 0-.5 0-.9-.1-1.3H12z"
-                />
-              </svg>
-            )}
-            <span>{mode === "signup" ? "Continue with Google" : "Sign in with Google"}</span>
-          </button> */}
           <div className="text-center text-slate-700">
             Forgot your password?{" "}
             <button
@@ -1051,6 +1083,97 @@ function AuthForm(props: {
             >
               Send reset email
             </button>
+          </div>
+          <div className="text-center text-slate-700">
+            Forgot your email?{" "}
+            <button
+              onClick={() => {
+                setFeFirst("");
+                setFeMiddle("");
+                setFeLast("");
+                setFeMasked(null);
+                setFeRaw(null);
+                setFeError(null);
+                setForgotOpen(true);
+              }}
+              className="underline underline-offset-4 hover:text-slate-900"
+            >
+              Find my account
+            </button>
+          </div>
+        </div>
+      )}
+
+      {forgotOpen && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl ring-1 ring-slate-200">
+            <div className="mb-4 text-base font-semibold text-slate-900">
+              Find your account
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-700">
+                  First name
+                </label>
+                <input
+                  value={feFirst}
+                  onChange={(e) => setFeFirst(e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400"
+                  placeholder="Jane"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-700">
+                  Middle name
+                </label>
+                <input
+                  value={feMiddle}
+                  onChange={(e) => setFeMiddle(e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400"
+                  placeholder="A."
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-700">
+                  Last name
+                </label>
+                <input
+                  value={feLast}
+                  onChange={(e) => setFeLast(e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400"
+                  placeholder="Doe"
+                />
+              </div>
+
+              {feError && (
+                <div className="rounded-lg border border-red-500/30 bg-red-50 px-3 py-2 text-xs text-red-700">
+                  {feError}
+                </div>
+              )}
+
+              {feMasked && (
+                <div className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+                  You might already have an account. You can log in using{" "}
+                  {feMasked}.
+                </div>
+              )}
+
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <button
+                  onClick={lookupEmailByName}
+                  disabled={feLoading}
+                  className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-black disabled:opacity-60"
+                >
+                  {feLoading ? "Searching…" : "Search"}
+                </button>
+                <button
+                  onClick={() => setForgotOpen(false)}
+                  className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-medium text-slate-900 ring-1 ring-slate-200 hover:bg-slate-200"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
