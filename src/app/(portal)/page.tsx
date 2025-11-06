@@ -18,6 +18,7 @@ import { Sparkles } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "react-toastify";
+import { openPlaceholderPopup } from "@/components/UI/popup";
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -156,6 +157,9 @@ export default function Dashboard() {
   }
 
   async function handleJoinEvent(eventId: string) {
+    let popup: Window | null = null;
+    let navigated = false;
+
     try {
       if (!authEmail) {
         toast.error("User email not found.");
@@ -167,7 +171,9 @@ export default function Dashboard() {
       const names = await ensureNames();
       if (!names) return;
 
-      const latestEvent = liveEvents.find((le) => le.type === eventId);
+      const latestEvent =
+        liveEvents.find((le) => le.type === eventId) ||
+        liveEvents.find((le) => le.id === eventId);
       if (!latestEvent) {
         toast.error("No live events found for this event type");
         return;
@@ -188,26 +194,38 @@ export default function Dashboard() {
         return;
       }
 
+      popup = openPlaceholderPopup();
+
       const result = await joinLiveSession(latestEvent.id, {
         email: authEmail,
         firstName: names.firstName,
         lastName: names.lastName,
       });
+
       if (result.success && result.joinUrl) {
-        window.open(result.joinUrl, "_blank");
+        if (popup) {
+          popup.location.href = result.joinUrl;
+          popup.focus?.();
+          navigated = true;
+        } else {
+          window.location.assign(result.joinUrl);
+        }
       } else {
+        if (popup) popup.close();
         toast.error(
           result.message ||
             "Unable to join the live event right now. Please try again later."
         );
       }
     } catch (error) {
+      if (popup) popup.close();
       toast.error(
         `Failed to join session: ${
           error instanceof Error ? error.message : "Unknown error"
         }`
       );
     } finally {
+      if (popup && !navigated) popup.close();
       setLoadingEventId(null);
       setLoaderLabel("Cutting your rock…");
     }
@@ -341,23 +359,33 @@ export default function Dashboard() {
   }
 
   async function handleAgreeAndContinue() {
+    const popup = openPlaceholderPopup();
+    let navigated = false;
+
     try {
       setAgreeSaving(true);
       await postAgreeTerms();
       setShowTerms(false);
 
-      if (!pendingEventId) return;
+      if (!pendingEventId) {
+        if (popup) popup.close();
+        return;
+      }
 
-      const latestEvent = liveEvents.find(
-        (le) => le.id === pendingEventId || le.type === pendingEventId
-      );
-      if (!latestEvent) return;
+      const latestEvent =
+        liveEvents.find((le) => le.id === pendingEventId) ||
+        liveEvents.find((le) => le.type === pendingEventId);
+      if (!latestEvent) {
+        if (popup) popup.close();
+        return;
+      }
 
       const isJoinable = await isEventCurrentlyLive(latestEvent);
       if (!isJoinable) {
         toast.error(
           "This event is not currently available to join. Please check back within 30 minutes of the event time."
         );
+        if (popup) popup.close();
         return;
       }
 
@@ -371,17 +399,26 @@ export default function Dashboard() {
       });
 
       if (result.success && result.joinUrl) {
-        window.open(result.joinUrl, "_blank");
+        if (popup) {
+          popup.location.href = result.joinUrl;
+          popup.focus?.();
+          navigated = true;
+        } else {
+          window.location.assign(result.joinUrl);
+        }
       } else {
+        if (popup) popup.close();
         toast.error(result.message || "Failed to get join URL");
       }
     } catch (e) {
+      if (popup) popup.close();
       toast.error(
         `Could not save your acceptance: ${
           e instanceof Error ? e.message : "Unknown error"
         }`
       );
     } finally {
+      if (popup && !navigated) popup.close();
       setAgreeSaving(false);
       setPendingEventId(null);
       setLoadingEventId(null);
