@@ -842,36 +842,95 @@ export default function InvoicesPage() {
         </div>
       </div>
 
-      <div className="mb-5 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-        <Tabs
-          value={tab}
-          onChange={(_, v) => setTab(v)}
-          aria-label="billing tabs"
-          sx={{
-            minHeight: 0,
-            "& .MuiTab-root": {
-              minHeight: 0,
-              textTransform: "none",
-              fontWeight: 600,
-              color: "#17152A",
-              opacity: 0.7,
-            },
-            "& .Mui-selected": { color: "#17152A", opacity: 1 },
-            "& .MuiTabs-indicator": {
-              height: 3,
-              borderRadius: 2,
-              background: "linear-gradient(90deg,#8C0F0F,#E01C24)",
-            },
-          }}
-        >
-          <Tab label="Unpaid Invoices" value={TAB.UNPAID} />
-          <Tab label="Payment Processing" value={TAB.PROCESSING} />
-          <Tab label="Paid Invoices" value={TAB.PAID} />
-          {/*<Tab label="Deposits" value={TAB.DEPOSITS} />*/}
-        </Tabs>
+      <div className="mb-5 flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
+        <div className="xl:hidden w-full">
+          <div className="grid grid-cols-1 gap-2">
+            <button
+              onClick={() => setTab(TAB.UNPAID)}
+              aria-current={tab === TAB.UNPAID}
+              className={`h-11 w-full rounded-xl border shadow-sm text-sm font-semibold
+        ${
+          tab === TAB.UNPAID
+            ? "border-[#8C0F0F] bg-[#FFFFEC] text-[#17152A]"
+            : "border-[#BFBFBF] bg-white text-[#17152A] hover:bg-[#F8F8F3]"
+        }`}
+            >
+              Unpaid Invoices ({openInvoices.length})
+            </button>
 
+            <button
+              onClick={() => setTab(TAB.PROCESSING)}
+              aria-current={tab === TAB.PROCESSING}
+              className={`h-11 w-full rounded-xl border shadow-sm text-sm font-semibold
+        ${
+          tab === TAB.PROCESSING
+            ? "border-[#8C0F0F] bg-[#FFFFEC] text-[#17152A]"
+            : "border-[#BFBFBF] bg-white text-[#17152A] hover:bg-[#F8F8F3]"
+        }`}
+            >
+              Payment Processing ({processingInvoices.length})
+            </button>
+
+            <button
+              onClick={() => setTab(TAB.PAID)}
+              aria-current={tab === TAB.PAID}
+              className={`h-11 w-full rounded-xl border shadow-sm text-sm font-semibold
+        ${
+          tab === TAB.PAID
+            ? "border-[#8C0F0F] bg-[#FFFFEC] text-[#17152A]"
+            : "border-[#BFBFBF] bg-white text-[#17152A] hover:bg-[#F8F8F3]"
+        }`}
+            >
+              Paid Invoices ({closedInvoices.length})
+            </button>
+            {/* re-enable deposits:
+            <button
+              onClick={() => setTab(TAB.DEPOSITS)}
+              aria-current={tab === TAB.DEPOSITS}
+              className={`h-11 w-full rounded-xl border shadow-sm text-sm font-semibold
+                ${tab === TAB.DEPOSITS
+                  ? "border-[#8C0F0F] bg-[#FFFFEC] text-[#17152A]"
+                  : "border-[#BFBFBF] bg-white text-[#17152A] hover:bg-[#F8F8F3]"}`}
+            >
+              Deposits ({data.deposits.length})
+            </button>
+            */}
+          </div>
+        </div>
+
+        {/* Desktop / Tablet: original Tabs */}
+        <div className="hidden w-full xl:block">
+          <Tabs
+            value={tab}
+            onChange={(_, v) => setTab(v)}
+            aria-label="billing tabs"
+            sx={{
+              minHeight: 0,
+              "& .MuiTab-root": {
+                minHeight: 0,
+                textTransform: "none",
+                fontWeight: 600,
+                color: "#17152A",
+                opacity: 0.7,
+              },
+              "& .Mui-selected": { color: "#17152A", opacity: 1 },
+              "& .MuiTabs-indicator": {
+                height: 3,
+                borderRadius: 2,
+                background: "linear-gradient(90deg,#8C0F0F,#E01C24)",
+              },
+            }}
+          >
+            <Tab label="Unpaid Invoices" value={TAB.UNPAID} />
+            <Tab label="Payment Processing" value={TAB.PROCESSING} />
+            <Tab label="Paid Invoices" value={TAB.PAID} />
+            {/* <Tab label="Deposits" value={TAB.DEPOSITS} /> */}
+          </Tabs>
+        </div>
+
+        {/* Right-side controls*/}
         {tab !== TAB.DEPOSITS && (
-          <div className="flex flex-col gap-2 md:flex-row md:items-center">
+          <div className="flex flex-col gap-2 xl:flex-row xl:items-center">
             <div className="relative">
               <motion.button
                 type="button"
@@ -908,6 +967,7 @@ export default function InvoicesPage() {
                 className="h-9 w-full max-w-xs md:w-56 md:max-w-none shrink-0 rounded-xl border border-[#BFBFBF] bg-white pl-9 pr-3 text-sm text-[#17152A] shadow-sm outline-none placeholder:text-[#17152A]/45 focus:ring-2 focus:ring-[#8C0F0F]/30"
               />
             </div>
+
             <div className="flex items-center gap-2">
               <select
                 value={sortBy}
@@ -919,7 +979,6 @@ export default function InvoicesPage() {
                 <option value="amountRemaining">Amount Remaining</option>
                 <option value="total">Total</option>
               </select>
-
               {SortDirButton}
             </div>
 
@@ -947,8 +1006,6 @@ export default function InvoicesPage() {
         <InvoicesTable
           loading={billingLoading || !initialized}
           invoices={decoratedProcessing}
-          // You can keep variant="open" so Pay remains available,
-          // or change to a dedicated "processing" if your table supports it.
           variant="open"
           onDownload={downloadInvoicePdf}
         />

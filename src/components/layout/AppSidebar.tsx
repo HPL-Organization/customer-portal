@@ -162,7 +162,7 @@ export default function AppSidebar() {
         initial={{ opacity: 0, x: -12 }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ type: "spring", stiffness: 140, damping: 18, mass: 0.9 }}
-        className="sticky top-0 hidden h-screen w-72 flex-col border-r border-neutral-400 bg-[#BFBFBF] p-3 md:flex"
+        className="sticky top-0 hidden h-screen w-72 flex-col border-r border-neutral-400 bg-[#BFBFBF] p-3 xl:flex"
       >
         <div className="relative rounded-2xl p-3 shadow-inner ring-1 ring-white/10">
           <div className="flex items-center gap-3 rounded-xl bg-white/30 p-2 backdrop-blur-sm ring-1 ring-white/30">
@@ -240,7 +240,7 @@ export default function AppSidebar() {
         </div>
       </motion.aside>
 
-      <div className="md:hidden">
+      <div className="xl:hidden">
         <div className="sticky top-0 z-40 flex items-center gap-2 border-b border-neutral-400 bg-[#BFBFBF] p-3">
           <button
             aria-label="Open navigation"
