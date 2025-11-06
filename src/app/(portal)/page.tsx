@@ -196,7 +196,10 @@ export default function Dashboard() {
       if (result.success && result.joinUrl) {
         window.open(result.joinUrl, "_blank");
       } else {
-        toast.error(result.message || "Unable to join the live event right now. Please try again later.");
+        toast.error(
+          result.message ||
+            "Unable to join the live event right now. Please try again later."
+        );
       }
     } catch (error) {
       toast.error(
@@ -326,7 +329,12 @@ export default function Dashboard() {
       if (st?.terms_compliance) return true;
       setShowTerms(true);
       return false;
-    } catch {
+    } catch (err) {
+      toast.error(
+        `Couldn't verify your term compliance status. Please review and accept to continue${
+          err instanceof Error && err.message ? `: ${err.message}` : ""
+        }`
+      );
       setShowTerms(true);
       return false;
     }
