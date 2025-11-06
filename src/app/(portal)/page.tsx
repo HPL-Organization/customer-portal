@@ -3,6 +3,7 @@
 import { CardSkeleton, EventCard } from "@/components/EventCard";
 import { ProfileUpdateDialog } from "@/components/ProfileUpdateDialog";
 import { useCustomerBootstrap } from "@/components/providers/CustomerBootstrap";
+import TermsModal from "@/components/TermsModal";
 import {
   fetchLiveEvents,
   getEventTypes,
@@ -17,7 +18,6 @@ import { Sparkles } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "react-toastify";
-import TermsModal from "@/components/TermsModal";
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -196,7 +196,7 @@ export default function Dashboard() {
       if (result.success && result.joinUrl) {
         window.open(result.joinUrl, "_blank");
       } else {
-        toast.error(result.message || "Failed to get join URL");
+        toast.error(result.message || "Unable to join the live event right now. Please try again later.");
       }
     } catch (error) {
       toast.error(
