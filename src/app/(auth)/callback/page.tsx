@@ -151,6 +151,10 @@ function Inner() {
           if (typeof window !== "undefined") localStorage.setItem("nsId", nsId);
         }
 
+        try {
+          localStorage.setItem("hpl:lastActive", String(Date.now()));
+        } catch {}
+
         setPhase("redirecting");
         setDetail("Taking you to your portal…");
         await sleep(400);
