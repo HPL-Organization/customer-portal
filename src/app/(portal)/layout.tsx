@@ -5,6 +5,7 @@ import BillingProvider from "@/components/providers/BillingProvider";
 import PaymentMethodsProvider from "@/components/providers/PaymentMethodsProvider";
 import OrderTrackingProvider from "@/components/providers/OrderTrackingProvider";
 import PortalClientShell from "@/components/layout/PortalClientShell";
+import InactivityLogout from "@/components/providers/InactivityLogout";
 
 export default function PortalLayout({
   children,
@@ -18,6 +19,7 @@ export default function PortalLayout({
           <BillingProvider>
             <OrderTrackingProvider>
               <PortalClientShell>
+                <InactivityLogout />
                 <Suspense fallback={null}>
                   <AppShell>{children}</AppShell>
                 </Suspense>

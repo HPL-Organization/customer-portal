@@ -5,6 +5,9 @@ import { createBrowserClient } from "@supabase/ssr";
 import { useRouter, useSearchParams } from "next/navigation";
 import PrivacyTermsModal from "@/components/UI/PrivacyTermsModal";
 import Image from "next/image";
+import { ToastContainer, toast } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
+import { useEffect, useRef } from "react";
 
 export const dynamic = "force-dynamic";
 
@@ -88,6 +91,8 @@ function LoginInner() {
       url.searchParams.set("nsId", nsId);
       if (typeof window !== "undefined") localStorage.setItem("nsId", nsId);
     }
+    if (typeof window !== "undefined")
+      localStorage.setItem("hpl:lastActive", String(Date.now()));
     router.replace(url.pathname + url.search);
   }
 
@@ -380,6 +385,8 @@ function LoginInner() {
       url.searchParams.set("nsId", adminTargetNsId.trim());
       if (typeof window !== "undefined")
         localStorage.setItem("nsId", adminTargetNsId.trim());
+      if (typeof window !== "undefined")
+        localStorage.setItem("hpl:lastActive", String(Date.now()));
       window.location.replace(url.pathname + url.search);
     } catch (err: any) {
       setErrorMsg(err?.message || "Admin sign-in failed");
@@ -387,6 +394,24 @@ function LoginInner() {
       setLoading(false);
     }
   }
+  const timedToastShown = useRef(false);
+
+  useEffect(() => {
+    if (timedToastShown.current) return;
+    const qp = new URLSearchParams(window.location.search);
+    if (qp.get("timedout") !== "1") return;
+
+    timedToastShown.current = true;
+
+    setTimeout(() => {
+      toast.warn("Your session timed out. Please log in.");
+    }, 0);
+
+    qp.delete("timedout");
+    const nextUrl =
+      window.location.pathname + (qp.toString() ? `?${qp.toString()}` : "");
+    router.replace(nextUrl, { scroll: false });
+  }, [router]);
 
   const googleDisabled =
     googleLoading ||
@@ -750,6 +775,7 @@ function LoginInner() {
           </div>
         </section>
       </div>
+      <ToastContainer position="top-center" pauseOnFocusLoss={false} />
     </main>
   );
 }
