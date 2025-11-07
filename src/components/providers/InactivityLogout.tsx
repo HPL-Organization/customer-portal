@@ -9,7 +9,7 @@ const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-const INACTIVITY_MS = 60 * 60 * 1000;
+const INACTIVITY_MS = 15 * 60 * 1000; // 15 minutes
 
 const INTERVAL_MS = Math.max(
   1000,
