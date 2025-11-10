@@ -4,7 +4,7 @@ import logger from "@/lib/logger";
 import to from "await-to-js";
 import got, { HTTPError } from "got";
 
-const LIVESALEAPP_BASE_URL = "https://bademail.onrender.com/v1";
+const LIVESALEAPP_BASE_URL = process.env.LIVESALEAPP_BASE_URL || "https://bademail.onrender.com/v1";
 
 // Create a got instance with default authorization header
 const livesaleappGot = got.extend({
@@ -16,6 +16,83 @@ const livesaleappGot = got.extend({
     }),
   },
   responseType: "json",
+  hooks: {
+    beforeRequest: [
+      (options) => {
+        const data = {
+          url: options.url?.toString(),
+          method: options.method,
+          headers: options.headers,
+          searchParams: options.searchParams,
+          json: options.json,
+        };
+        logger.info('Got request send', data);
+      },
+    ],
+    afterResponse: [
+      (response) => {
+        // Check body size to determine if we should log it
+        const bodyInfo = (() => {
+          if (!response.body) {
+            return { hasBody: false };
+          }
+
+          const bodySize = typeof response.body === 'string'
+            ? response.body.length
+            : (() => {
+                try {
+                  return JSON.stringify(response.body).length;
+                } catch (error) {
+                  // Handle circular references or other stringify errors
+                  logger.warn('Failed to stringify response body for size calculation', { error: error instanceof Error ? error.message : String(error) });
+                  return Number.MAX_SAFE_INTEGER; // Treat as very large to skip logging
+                }
+              })();
+
+          // Log body if under 10KB threshold
+          const MAX_BODY_LOG_SIZE = 10 * 1024; // 10KB
+          if (bodySize <= MAX_BODY_LOG_SIZE) {
+            return { hasBody: true, body: response.body };
+          } else {
+            return {
+              hasBody: true,
+              bodySize: `${Math.round(bodySize / 1024)}KB`,
+              bodyTruncated: true
+            };
+          }
+        })();
+
+        const data = {
+          url: response.request.options.url?.toString(),
+          method: response.request.options.method,
+          statusCode: response.statusCode,
+          headers: response.headers,
+          ...bodyInfo,
+        };
+        logger.info('Got response receive', data);
+        return response;
+      },
+    ],
+    beforeError: [
+      (error) => {
+        const data = {
+          url: error.request?.options.url?.toString(),
+          method: error.request?.options.method,
+          code: error.code,
+          message: error.message,
+          statusCode: error.response?.statusCode,
+          headers: error.response?.headers,
+          responseBody: error.response?.body,
+        };
+        logger.error({
+          message: 'Got request error',
+          error: error.message,
+          data,
+        });
+        return error;
+      },
+    ],
+  },
 });
 
 export interface LiveEventType {

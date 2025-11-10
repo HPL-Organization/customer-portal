@@ -4,6 +4,7 @@ import { CardSkeleton, EventCard } from "@/components/EventCard";
 import { ProfileUpdateDialog } from "@/components/ProfileUpdateDialog";
 import { useCustomerBootstrap } from "@/components/providers/CustomerBootstrap";
 import TermsModal from "@/components/TermsModal";
+import { openPlaceholderPopup } from "@/components/UI/popup";
 import {
   fetchLiveEvents,
   getEventTypes,
@@ -18,7 +19,6 @@ import { Sparkles } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "react-toastify";
-import { openPlaceholderPopup } from "@/components/UI/popup";
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -210,6 +210,10 @@ export default function Dashboard() {
         } else {
           window.location.assign(result.joinUrl);
         }
+      } else if (!result.success) {
+        if (popup) popup.close();
+        toast.error(result.message || "Unable to join the live event right now. Please try again later.");
+        return;
       } else {
         if (popup) popup.close();
         toast.error(
