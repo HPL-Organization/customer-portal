@@ -470,7 +470,7 @@ export async function POST(req: NextRequest) {
       for (const batch of chunk(upserts, 1000)) {
         const { error } = await supabase
           .from("customer_information")
-          .upsert(batch, { onConflict: "customer_id" });
+          .upsert(batch as any, { onConflict: "customer_id" });
         if (error) throw error;
 
         const existed = batch.filter((b) =>
