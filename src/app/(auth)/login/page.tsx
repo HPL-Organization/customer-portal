@@ -736,16 +736,27 @@ function LoginInner() {
             ) : null}
 
             <div className="mt-8 text-center text-[11px] leading-relaxed text-slate-600">
-              By continuing you agree to our Terms and Conditions . Read the{" "}
+              By continuing you agree to our{" "}
               <button
                 type="button"
                 onClick={() => {
-                  setPoliciesTab("summary");
+                  setPoliciesTab("terms");
                   setShowPolicies(true);
                 }}
                 className="font-medium text-slate-900 underline underline-offset-4 hover:opacity-80"
               >
-                Privacy Summary
+                Terms &amp; Conditions
+              </button>
+              . Read the{" "}
+              <button
+                type="button"
+                onClick={() => {
+                  setPoliciesTab("privacy");
+                  setShowPolicies(true);
+                }}
+                className="font-medium text-slate-900 underline underline-offset-4 hover:opacity-80"
+              >
+                Privacy Policy
               </button>{" "}
               and{" "}
               <button

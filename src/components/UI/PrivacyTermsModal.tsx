@@ -16,7 +16,7 @@ type Sources = {
 export default function PrivacyTermsModal({
   open,
   onClose,
-  initialTab = "summary",
+  initialTab = "terms",
   sources,
 }: {
   open: boolean;
@@ -47,9 +47,8 @@ export default function PrivacyTermsModal({
   }, [open, onClose]);
 
   const tabList = [
-    { key: "summary" as const, label: "Summary", present: true },
-    { key: "privacy" as const, label: "Privacy Policy", present: true },
     { key: "terms" as const, label: "Terms & Conditions", present: true },
+    { key: "privacy" as const, label: "Privacy Policy", present: true },
     ...(sources.accessibility
       ? [
           {
@@ -62,9 +61,7 @@ export default function PrivacyTermsModal({
   ] satisfies { key: TabKey; label: string; present: boolean }[];
 
   const urlFor = (k: TabKey) =>
-    k === "summary"
-      ? sources.summary
-      : k === "privacy"
+    k === "privacy"
       ? sources.privacy
       : k === "terms"
       ? sources.terms
@@ -131,10 +128,10 @@ export default function PrivacyTermsModal({
         setTab("accessibility");
         return true;
       }
-      if (p.includes("/policies/summary")) {
-        setTab("summary");
-        return true;
-      }
+      // if (p.includes("/policies/summary")) {
+      //   setTab("summary");
+      //   return true;
+      // }
       return false;
     } catch {
       return false;
@@ -185,7 +182,7 @@ export default function PrivacyTermsModal({
 
             {/* Tabs */}
             <div className="px-5 pt-4">
-              <div className="grid grid-cols-4 gap-1 rounded-xl bg-slate-100 p-1 ring-1 ring-slate-200">
+              <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1 ring-1 ring-slate-200">
                 {tabList.map((t) => (
                   <button
                     key={t.key}
