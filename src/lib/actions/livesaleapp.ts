@@ -212,6 +212,14 @@ const liveEventTypes: LiveEventType[] = [
     createdAt: "2024-09-06T08:17:40.141Z",
     updatedAt: "2024-09-06T08:17:40.141Z",
   },
+  {
+    internalName: "machine_event",
+    label: "Machine Event",
+    description: "Machine Event for Day and Night use",
+    category: "EVENT_TYPE",
+    createdAt: "2025-11-11T14:29:04.569Z",
+    updatedAt: "2025-11-11T14:29:04.569Z",
+  }
 ];
 
 export async function fetchLiveEvents(page: number = 1) {
