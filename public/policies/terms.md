@@ -1,80 +1,145 @@
-# Highland Park Lapidary Customer Portal – Terms and Conditions
+# Highland Park Lapidary Live Event Participation & Portal Terms and Conditions
 
-**Effective Date:** 10/22/25
+**Effective Date:** October 22, 2025
+
+---
 
 ## 1. Introduction
 
-Welcome to the Highland Park Lapidary (“**HPL**”) Customer Portal (the “**Portal**”). By accessing or using this Portal, you agree to these Terms and Conditions (“**Terms**”). If you do not agree, you may not access or use the Portal.
+Welcome to Highland Park Lapidary Co. (“HPL”). These Terms and Conditions (“Agreement”) govern your participation in HPL live auction events (“Event”) and your use of the Highland Park Lapidary Customer Portal (“Portal”).
 
-This Portal is provided for the convenience of HPL customers to view invoices, make payments, manage communication preferences, and access certain events and information related to HPL.
+By registering for or participating in any Event, or by accessing the Portal, you (“Buyer”) acknowledge that you have read, understand, and agree to be bound by this Agreement.
 
-## 2. Eligibility and Account Access
+If you do not agree to these Terms, you may not participate in Events or access the Portal.
 
-To use this Portal, you must be an authorized customer of HPL and have been granted login credentials. You agree to:
+---
 
-- Keep your account credentials secure and confidential.
-- Notify HPL immediately if you suspect unauthorized access or account misuse.
-- Ensure that all information you provide is accurate and up to date.
+## 2. Registration and Eligibility
 
-HPL reserves the right to suspend or terminate access to the Portal at any time for security, maintenance, or violation of these Terms.
+To participate in HPL live events or access the Portal, you must:
 
-## 3. Payment Processing and Stored Payment Information
+- Be an authorized customer of HPL;
+- Provide accurate and complete registration information;
+- Maintain the confidentiality of your account credentials; and
+- Notify HPL immediately of any unauthorized account use.
 
-Payments made through the Portal are processed via a third-party **PCI-compliant** payment processor. HPL does **not** store your full credit card details. Instead, your payment information is **tokenized**—a secure reference token is stored to facilitate future authorized transactions.
+HPL reserves the right to suspend, deny, or revoke access or bidding privileges at any time for security, maintenance, or any conduct deemed improper.
 
-By submitting payment information, you authorize HPL and its payment processor to process transactions using your tokenized payment method. You are responsible for ensuring that your payment details remain valid and that sufficient funds are available.
+---
 
-HPL is not liable for any loss or unauthorized use of payment information resulting from actions beyond its control, including but not limited to user error, third-party breaches, or payment processor incidents.
+## 3. Binding Nature of Bids
 
-## 4. Data Collection and Use
+All bids submitted during an Event are binding offers to purchase the listed item(s) at the bid amount, plus any applicable taxes and shipping fees.
 
-By using the Portal, you agree that HPL may collect, store, and process personal and transactional information you provide, including:
+- Orders **over $50** shipping within the U.S. (including Hawaii and Alaska **if shipped via USPS flat‑rate box**) **qualify for free shipping**.
+- Orders **under $50** or shipping outside the contiguous U.S. may incur additional shipping charges.
 
-- Account details and contact information.
-- Payment activity and invoice records.
-- Communication and event participation preferences.
+Once an item is declared **“SOLD”**, the highest bid becomes a legally binding contract between the Buyer and HPL. **No bid may be withdrawn or canceled after the sale.**
 
-HPL uses this information solely for legitimate business purposes, including account servicing, payment processing, and communication preferences. HPL does **not** sell your personal information.
+---
 
-All data handling is conducted in accordance with applicable privacy and data protection laws. You can review HPL’s **[Privacy Policy](/policies/privacy.md)** (and the **[Privacy Summary](/policies/summary.md)**).
+## 4. Payment Terms
 
-## 5. Communication Preferences
+Buyer agrees to remit full payment according to the payment terms announced by HPL, including any deposit requirements or deadlines.
 
-You may manage your communication preferences through the Portal. Certain **transactional communications** (e.g., invoices, payment confirmations, system notifications) are mandatory and cannot be opted out of.
+- Payments are processed through a **PCI‑compliant third‑party processor**.
+- HPL does not store full credit card details; payment data is securely tokenized.
+- By providing payment information, Buyer authorizes HPL and its payment processor to process authorized transactions using stored tokens.
 
-## 6. Portal Content and External Links
+Failure to make timely payment may result in forfeiture of deposits, cancellation of the sale, and/or legal action.
 
-The Portal may contain links or buttons to external content, including live event platforms or other HPL services. HPL does not control third-party systems and is not responsible for their content, security, or availability.
+---
 
-## 7. Security
+## 5. Taxes and Invoices
 
-HPL uses commercially reasonable security measures to protect user information. However, no system is completely secure. By using the Portal, you acknowledge and accept the inherent risks of online data transmission and agree that HPL is not liable for unauthorized access, disclosure, or data loss arising from such risks.
+Applicable sales taxes will be added to the Buyer’s final invoice in accordance with state and federal laws.  
+Invoices and payment records are viewable through the Customer Portal.
 
-## 8. Disclaimer of Warranties
+---
 
-The Portal and its contents are provided **“as is”** and **“as available,”** without any warranties of any kind, express or implied. HPL disclaims all warranties including, but not limited to, implied warranties of merchantability, fitness for a particular purpose, and non-infringement.
+## 6. Shipping and Risk of Loss
 
-## 9. Limitation of Liability
+All shipments will be handled according to HPL’s standard shipping policy. Title and risk of loss pass to **Buyer** upon shipment. HPL is not responsible for delays or damages once the carrier has taken possession of the goods.
 
-To the maximum extent permitted by law, HPL, its affiliates, and service providers shall not be liable for any indirect, incidental, consequential, or punitive damages arising from or related to your use of the Portal, including but not limited to data loss, payment errors, or unauthorized access.
+---
 
-## 10. Indemnification
+## 7. Defaults and Remedies
 
-You agree to indemnify and hold harmless HPL, its affiliates, employees, and agents from any claims, damages, or losses resulting from your use of the Portal or violation of these Terms.
+If Buyer fails to comply with payment or other terms, HPL may, at its sole discretion:
 
-## 11. Modifications
+- Cancel the sale;
+- Resell the item(s) without notice; or
+- Pursue legal or equitable remedies for recovery of loss or damages.
 
-HPL may update these Terms at any time. The most current version will always be posted within the Portal. Continued use of the Portal after updates constitutes acceptance of the new Terms.
+---
 
-## 12. Governing Law
+## 8. Data Collection and Privacy
 
-These Terms shall be governed by and construed in accordance with the laws of the **Commonwealth of Massachusetts**, without regard to its conflict of law principles.
+By using the Portal or participating in Events, Buyer consents to HPL collecting and processing personal and transactional information, including:
 
-## 13. Contact Information
+- Account details and contact information;
+- Payment and invoice records; and
+- Event participation and communication preferences.
 
-For any questions regarding these Terms or your account, please contact:
+HPL uses this information solely for legitimate business purposes, including account servicing and event management. HPL does **not** sell personal data.  
+All data handling is conducted per applicable privacy and data protection laws. See HPL’s Privacy Policy for details.
 
-**Highland Park Lapidary**  
+---
+
+## 9. Communication Preferences
+
+Buyers may manage marketing and communication preferences within the Portal. However, certain system notifications (such as invoices or payment confirmations) are mandatory and cannot be opted out of.
+
+---
+
+## 10. Security and System Integrity
+
+HPL employs commercially reasonable security measures to protect user data, but no system is entirely secure.  
+By using the Portal, Buyer acknowledges and accepts the inherent risks of online transactions and agrees that HPL is not liable for unauthorized access, data loss, or disclosure resulting from events beyond its control.
+
+---
+
+## 11. Disclaimer of Warranties
+
+The Portal, Events, and all associated content are provided **“as is”** and **“as available,”** without any warranties of any kind, express or implied.  
+HPL disclaims all implied warranties, including merchantability, fitness for a particular purpose, and non‑infringement.
+
+---
+
+## 12. Limitation of Liability
+
+To the fullest extent permitted by law, HPL, its affiliates, and service providers are not liable for any indirect, incidental, or consequential damages arising from or related to participation in Events or use of the Portal, including but not limited to data loss, payment errors, or system outages.
+
+---
+
+## 13. Indemnification
+
+Buyer agrees to indemnify and hold harmless HPL, its officers, employees, and agents from any claims, losses, or damages arising from Buyer’s use of the Portal, Event participation, or violation of this Agreement.
+
+---
+
+## 14. Dispute Resolution and Governing Law
+
+All disputes arising from or related to this Agreement, the Portal, or any Event shall be governed by the laws of the **Commonwealth of Massachusetts**, without regard to conflict of law principles.  
+The **exclusive venue** for any legal action shall be the courts located within Massachusetts.
+
+---
+
+## 15. Modifications
+
+HPL may update these Terms at any time. The latest version will always be available within the Portal. Continued participation in Events or use of the Portal constitutes acceptance of any revisions.
+
+---
+
+## 16. Entire Agreement
+
+This Agreement represents the entire understanding between the Buyer and HPL and supersedes all prior agreements, written or oral, related to Event participation and Portal use.
+
+---
+
+### Contact Information
+
+**Highland Park Lapidary Co.**  
 PO Box 45, Whitinsville, MA 01588 USA  
-**Email:** [info@hplapidary.com](mailto:info@hplapidary.com)  
-**Phone:** 512-348-8528
+**Email:** info@hplapidary.com  
+**Phone:** 512‑348‑8528
