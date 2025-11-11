@@ -4,7 +4,8 @@ import logger from "@/lib/logger";
 import to from "await-to-js";
 import got, { HTTPError } from "got";
 
-const LIVESALEAPP_BASE_URL = process.env.LIVESALEAPP_BASE_URL || "https://bademail.onrender.com/v1";
+const LIVESALEAPP_BASE_URL =
+  process.env.LIVESALEAPP_BASE_URL || "https://bademail.onrender.com/v1";
 
 // Create a got instance with default authorization header
 const livesaleappGot = got.extend({
@@ -26,7 +27,7 @@ const livesaleappGot = got.extend({
           searchParams: options.searchParams,
           json: options.json,
         };
-        logger.info('Got request send', data);
+        logger.info("Got request send", data);
       },
     ],
     afterResponse: [
@@ -37,17 +38,26 @@ const livesaleappGot = got.extend({
             return { hasBody: false };
           }
 
-          const bodySize = typeof response.body === 'string'
-            ? response.body.length
-            : (() => {
-                try {
-                  return JSON.stringify(response.body).length;
-                } catch (error) {
-                  // Handle circular references or other stringify errors
-                  logger.warn('Failed to stringify response body for size calculation', { error: error instanceof Error ? error.message : String(error) });
-                  return Number.MAX_SAFE_INTEGER; // Treat as very large to skip logging
-                }
-              })();
+          const bodySize =
+            typeof response.body === "string"
+              ? response.body.length
+              : (() => {
+                  try {
+                    return JSON.stringify(response.body).length;
+                  } catch (error) {
+                    // Handle circular references or other stringify errors
+                    logger.warn(
+                      "Failed to stringify response body for size calculation",
+                      {
+                        error:
+                          error instanceof Error
+                            ? error.message
+                            : String(error),
+                      }
+                    );
+                    return Number.MAX_SAFE_INTEGER; // Treat as very large to skip logging
+                  }
+                })();
 
           // Log body if under 10KB threshold
           const MAX_BODY_LOG_SIZE = 10 * 1024; // 10KB
@@ -57,7 +67,7 @@ const livesaleappGot = got.extend({
             return {
               hasBody: true,
               bodySize: `${Math.round(bodySize / 1024)}KB`,
-              bodyTruncated: true
+              bodyTruncated: true,
             };
           }
         })();
@@ -69,7 +79,7 @@ const livesaleappGot = got.extend({
           headers: response.headers,
           ...bodyInfo,
         };
-        logger.info('Got response receive', data);
+        logger.info("Got response receive", data);
         return response;
       },
     ],
@@ -85,7 +95,7 @@ const livesaleappGot = got.extend({
           responseBody: error.response?.body,
         };
         logger.error({
-          message: 'Got request error',
+          message: "Got request error",
           error: error.message,
           data,
         });
@@ -196,8 +206,8 @@ const liveEventTypes: LiveEventType[] = [
   },
   {
     internalName: "wednesday_rough_rock_event",
-    label: "Machine Night", //Wednesday Rough Rock Event
-    description: "This is a special event!", //This is a rough rock event that occurs on Wednesday
+    label: "Wednesday Rough Rock Event",
+    description: "This is a rough rock event that occurs on Wednesday",
     category: "EVENT_TYPE",
     createdAt: "2024-09-06T08:17:40.141Z",
     updatedAt: "2024-09-06T08:17:40.141Z",
