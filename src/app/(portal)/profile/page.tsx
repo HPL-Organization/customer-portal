@@ -27,6 +27,7 @@ import ProfileSkeleton from "@/components/skeletons/ProfileSkeleton";
 
 const InfoTab = () => {
   const {
+    nsId,
     hsId: contactId,
     initialized,
     loading,
@@ -38,6 +39,8 @@ const InfoTab = () => {
 
   const [shippingVerified, setShippingVerified] = useState(false);
   const [billingVerified, setBillingVerified] = useState(false);
+
+  const [hasPortalInfo, setHasPortalInfo] = useState<boolean | null>(null);
 
   const HUBSPOT_FLAG_PROPS = {
     shipping: "hpl_shipping_check",
@@ -112,11 +115,83 @@ const InfoTab = () => {
     };
   }, [saving, loaderMsgs]);
 
+  // useEffect(() => {
+  //   if (!initialized || loading) return;
+
+  //   if (!contactId) {
+  //     setHasHubSpot(false);
+  //     setContactLoading(false);
+  //     return;
+  //   }
+
+  //   (async () => {
+  //     setContactLoading(true);
+  //     try {
+  //       const res = await fetch(`/api/hubspot/contact?contactId=${contactId}`, {
+  //         cache: "no-store",
+  //       });
+
+  //       if (res.status === 404) {
+  //         setHasHubSpot(false);
+  //         return;
+  //       }
+
+  //       const data = await res.json();
+  //       if (!data?.properties) {
+  //         setHasHubSpot(false);
+  //         return;
+  //       }
+
+  //       setHasHubSpot(true);
+
+  //       setFormData((prev) => ({
+  //         ...prev,
+  //         firstName: data.properties.firstname || "",
+  //         middleName: data.properties.middle_name || "",
+  //         lastName: data.properties.lastname || "",
+  //         email: data.properties.email || "",
+  //         phone: data.properties.phone || "",
+  //         mobile: data.properties.mobilephone || "",
+  //         shipping: {
+  //           ...prev.shipping,
+  //           address1: data.properties.shipping_address || "",
+  //           address2: data.properties.shipping_address_line_2 || "",
+  //           city: data.properties.shipping_city || "",
+  //           state: data.properties.shipping_state_region || "",
+  //           zip: data.properties.shipping_postalcode || "",
+  //           country: data.properties.shipping_country_region || "",
+  //         },
+  //         billing: {
+  //           ...prev.billing,
+  //           address1: data.properties.address || "",
+  //           address2: data.properties.address_line_2 || "",
+  //           city: data.properties.city || "",
+  //           state: data.properties.state || "",
+  //           zip: data.properties.zip || "",
+  //           country: data.properties.country || "",
+  //         },
+  //       }));
+
+  //       setShippingVerified(
+  //         fromHSText(data.properties?.[HUBSPOT_FLAG_PROPS.shipping])
+  //       );
+  //       setBillingVerified(
+  //         fromHSText(data.properties?.[HUBSPOT_FLAG_PROPS.billing])
+  //       );
+  //     } catch (err) {
+  //       toast.error("Failed to fetch contact.");
+  //       console.error("Failed to fetch contact", err);
+  //       setHasHubSpot(false);
+  //     } finally {
+  //       setContactLoading(false);
+  //     }
+  //   })();
+  // }, [initialized, loading, contactId]);
   useEffect(() => {
     if (!initialized || loading) return;
 
-    if (!contactId) {
-      setHasHubSpot(false);
+    if (!nsId) {
+      setHasPortalInfo(false);
       setContactLoading(false);
       return;
     }
@@ -124,66 +199,63 @@ const InfoTab = () => {
     (async () => {
       setContactLoading(true);
       try {
-        const res = await fetch(`/api/hubspot/contact?contactId=${contactId}`, {
-          cache: "no-store",
-        });
+        const res = await fetch(
+          `/api/supabase/get-customer-info?nsId=${encodeURIComponent(nsId)}`,
+          { cache: "no-store" }
+        );
 
-        if (res.status === 404) {
-          setHasHubSpot(false);
+        if (!res.ok) {
+          setHasPortalInfo(false);
           return;
         }
 
-        const data = await res.json();
-        if (!data?.properties) {
-          setHasHubSpot(false);
+        const { data } = await res.json();
+        if (!data) {
+          setHasPortalInfo(false);
           return;
         }
 
-        setHasHubSpot(true);
+        setHasPortalInfo(true);
 
         setFormData((prev) => ({
           ...prev,
-          firstName: data.properties.firstname || "",
-          middleName: data.properties.middle_name || "",
-          lastName: data.properties.lastname || "",
-          email: data.properties.email || "",
-          phone: data.properties.phone || "",
-          mobile: data.properties.mobilephone || "",
+          firstName: data.first_name || "",
+          middleName: data.middle_name || "",
+          lastName: data.last_name || "",
+          email: data.email || "",
+          phone: data.phone || "",
+          mobile: data.mobile || "",
           shipping: {
             ...prev.shipping,
-            address1: data.properties.shipping_address || "",
-            address2: data.properties.shipping_address_line_2 || "",
-            city: data.properties.shipping_city || "",
-            state: data.properties.shipping_state_region || "",
-            zip: data.properties.shipping_postalcode || "",
-            country: data.properties.shipping_country_region || "",
+            address1: data.shipping_address1 || "",
+            address2: data.shipping_address2 || "",
+            city: data.shipping_city || "",
+            state: data.shipping_state || "",
+            zip: data.shipping_zip || "",
+            country: data.shipping_country || "",
           },
           billing: {
             ...prev.billing,
-            address1: data.properties.address || "",
-            address2: data.properties.address_line_2 || "",
-            city: data.properties.city || "",
-            state: data.properties.state || "",
-            zip: data.properties.zip || "",
-            country: data.properties.country || "",
+            address1: data.billing_address1 || "",
+            address2: data.billing_address2 || "",
+            city: data.billing_city || "",
+            state: data.billing_state || "",
+            zip: data.billing_zip || "",
+            country: data.billing_country || "",
           },
         }));
 
-        setShippingVerified(
-          fromHSText(data.properties?.[HUBSPOT_FLAG_PROPS.shipping])
-        );
-        setBillingVerified(
-          fromHSText(data.properties?.[HUBSPOT_FLAG_PROPS.billing])
-        );
+        setShippingVerified(!!data.shipping_verified);
+        setBillingVerified(!!data.billing_verified);
       } catch (err) {
-        toast.error("Failed to fetch contact.");
-        console.error("Failed to fetch contact", err);
-        setHasHubSpot(false);
+        toast.error("Failed to fetch customer info.");
+        console.error("Failed to fetch customer info", err);
+        setHasPortalInfo(false);
       } finally {
         setContactLoading(false);
       }
     })();
-  }, [initialized, loading, contactId]);
+  }, [initialized, loading, nsId]);
 
   useEffect(() => {
     const isSameOrigin = (href: string) => {
