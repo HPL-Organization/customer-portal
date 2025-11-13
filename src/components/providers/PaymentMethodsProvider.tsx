@@ -20,6 +20,8 @@ export type PaymentMethod = {
   name?: string;
   isDefault?: boolean;
   tokenFamilyLabel?: string;
+  instrument_id?: string | null;
+  netsuite_writes_status?: string | null;
 };
 
 type CtxShape = {
@@ -66,7 +68,19 @@ function normalize(raw: any, idx: number): PaymentMethod {
   const isDefault = Boolean(
     raw.isDefault ?? raw.default ?? raw.primary ?? false
   );
-  return { id, type, brand, last4, exp, name, isDefault, tokenFamilyLabel };
+
+  return {
+    id,
+    type,
+    brand,
+    last4,
+    exp,
+    name,
+    isDefault,
+    tokenFamilyLabel,
+    instrument_id: raw.instrument_id ?? null,
+    netsuite_writes_status: raw.netsuite_writes_status ?? null,
+  };
 }
 
 async function fetchPaymentMethods(
