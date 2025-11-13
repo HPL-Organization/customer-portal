@@ -95,6 +95,16 @@ function mapShape(it: any, idx: number) {
   return { id, type, brand, last4, exp, name, isDefault, tokenFamilyLabel };
 }
 
+function isProcessing(pm: any) {
+  const a = String(pm?.instrument_id ?? "").toLowerCase();
+  const b = String(pm?.netsuite_writes_status ?? "").toLowerCase();
+  return a === "processing" || b === "processing";
+}
+function isFailed(pm: any) {
+  const b = String(pm?.netsuite_writes_status ?? "").toLowerCase();
+  return b === "failed";
+}
+
 /* ---------- API calls ---------- */
 async function createPaymentMethod(
   customerInternalId: number,
@@ -223,17 +233,36 @@ function PaymentMethodCard({
     <Card className="rounded-2xl border border-[#BFBFBF]/60 shadow-sm transition-shadow hover:shadow-md">
       <CardHeader
         title={
-          <div className="flex items-center gap-2 text-base font-medium text-[#17152A]">
+          <div className="flex flex-wrap items-center gap-2 text-base font-medium text-[#17152A] min-w-0">
             <span className="inline-flex items-center justify-center rounded-full bg-[#8C0F0F]/10 w-9 h-9 text-[#8C0F0F]">
               {typeIcon(pm, "w-5 h-5")}
             </span>
-            <span className="truncate">{pmLabel(pm)}</span>
+            <span className="truncate min-w-0">{pmLabel(pm)}</span>
             {pm.isDefault ? (
               <Chip
                 size="small"
                 color="success"
                 label="Default"
                 className="ml-1"
+              />
+            ) : null}
+
+            {isProcessing(pm) ? (
+              <Chip
+                size="small"
+                color="warning"
+                variant="outlined"
+                className="ml-1"
+                label="processing — will be usable shortly"
+                sx={{
+                  maxWidth: "100%",
+                  "& .MuiChip-label": {
+                    display: "block",
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                  },
+                }}
               />
             ) : null}
           </div>
@@ -244,6 +273,7 @@ function PaymentMethodCard({
           </span>
         }
       />
+
       <CardContent className="pt-0">
         <div className="flex flex-wrap items-center gap-2 text-sm text-[#17152A]/70">
           {pm.tokenFamilyLabel ? (
@@ -590,7 +620,7 @@ function AddMethodDialog({
         accountType: brandOrType || undefined,
       });
 
-      toast.success("Payment method saved");
+      toast.success("Payment method saved, will be ready to use shortly");
       onCreated({
         id: resp.paymentCardTokenId || tok,
         type: "card",
@@ -600,6 +630,7 @@ function AddMethodDialog({
         name: name || undefined,
         tokenFamilyLabel: "Versapay",
         isDefault: false,
+        netsuite_writes_status: "processing",
       });
       onClose();
     } catch (e: any) {
@@ -922,16 +953,18 @@ export default function PaymentMethodsPage() {
           <EmptyState onAdd={handleAddMethodClick} />
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {methods.map((pm) => (
-              <PaymentMethodCard
-                key={String(pm.id)}
-                pm={pm}
-                onDelete={handleDelete}
-                onMakeDefault={handleMakeDefault}
-                disableDelete={methods.length <= 1}
-                deleteTooltip={DELETE_DISABLED_MSG}
-              />
-            ))}
+            {methods
+              .filter((pm) => !isFailed(pm))
+              .map((pm) => (
+                <PaymentMethodCard
+                  key={String(pm.id)}
+                  pm={pm}
+                  onDelete={handleDelete}
+                  onMakeDefault={handleMakeDefault}
+                  disableDelete={methods.length <= 1 || isProcessing(pm)}
+                  deleteTooltip={DELETE_DISABLED_MSG}
+                />
+              ))}
           </div>
         )}
       </div>

@@ -31,6 +31,7 @@ type Instrument = {
   last4: string | null;
   expiry: string | null;
   tokenFamily: string | null;
+  netsuite_writes_status?: string | null;
 };
 
 export default function PayDrawer({
@@ -129,12 +130,14 @@ export default function PayDrawer({
       const list: Instrument[] = Array.isArray(json.instruments)
         ? json.instruments
         : [];
-      setInstruments(list);
+
+      const usable = list.filter((m) => !isProcessingInst(m));
+      setInstruments(usable);
 
       setMethod((prev) => {
-        if (prev && list.some((pm) => String(pm.id) === String(prev)))
+        if (prev && usable.some((pm) => String(pm.id) === String(prev)))
           return prev;
-        return list[0]?.id ? String(list[0].id) : "";
+        return usable[0]?.id ? String(usable[0].id) : "";
       });
     } catch (e: any) {
       if (e?.name === "AbortError") return;
@@ -178,6 +181,12 @@ export default function PayDrawer({
       setSubmitting(false);
     }
   };
+
+  function isProcessingInst(m: Instrument) {
+    const a = String(m.netsuite_writes_status ?? "").toLowerCase();
+    const b = String(m.id ?? "").toLowerCase();
+    return a === "processing" || b === "processing" || a === "failed";
+  }
 
   const methodLabel = (pm: Instrument) => {
     const bits = [
