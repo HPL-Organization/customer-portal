@@ -462,7 +462,9 @@ export default function InvoicesPage() {
       }
 
       toast.success(
-        `Payment recorded: ${fmt(Number(amount))} applied to ${invoice.tranId}`
+        `Payment Processing: ${fmt(Number(amount))} applied to ${
+          invoice.tranId
+        }`
       );
       setPayOpen(false);
       setPayInvoice(null);

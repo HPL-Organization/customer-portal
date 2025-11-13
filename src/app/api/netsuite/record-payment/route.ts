@@ -1,63 +1,87 @@
 // src/app/api/netsuite/record-payment/route.ts
-import { NextRequest } from "next/server";
-import { recordPaymentForInvoice } from "@/lib/netsuite/recordPayment";
+import { NextResponse } from "next/server";
+import crypto from "crypto";
 
-export async function POST(req: NextRequest) {
+const NS_WRITES_URL =
+  process.env.NS_WRITES_URL || "https://netsuite-writes.onrender.com";
+const NS_WRITES_CLIENT_BEARER = process.env.NS_WRITES_ADMIN_BEARER;
+
+export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const {
-      invoiceInternalId,
-      amount,
-      undepFunds = true,
-      accountId,
-      paymentMethodId,
-      paymentOptionId,
-      trandate,
-      memo,
-      externalId,
-      exchangeRate,
-      extraFields,
-    } = body || {};
+    const body = await req.json().catch(() => ({} as any));
 
-    if (!invoiceInternalId) {
-      return new Response(
-        JSON.stringify({ error: "Missing invoiceInternalId" }),
+    const invoiceInternalId = Number(
+      body?.invoiceInternalId ?? body?.invoiceId
+    );
+    const amount = Number(body?.amount);
+
+    if (!Number.isFinite(invoiceInternalId) || invoiceInternalId <= 0) {
+      return NextResponse.json(
+        { error: "Missing or invalid invoiceInternalId" },
         { status: 400 }
       );
     }
-    if (!(Number(amount) > 0)) {
-      return new Response(JSON.stringify({ error: "Amount must be > 0" }), {
-        status: 400,
-      });
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return NextResponse.json(
+        { error: "Amount must be > 0" },
+        { status: 400 }
+      );
     }
 
-    const result = await recordPaymentForInvoice(Number(invoiceInternalId), {
-      amount: Number(amount),
-      undepFunds: Boolean(undepFunds),
-      accountId: accountId != null ? Number(accountId) : undefined,
-      paymentMethodId:
-        paymentMethodId != null ? Number(paymentMethodId) : undefined,
-      paymentOptionId:
-        paymentOptionId != null ? Number(paymentOptionId) : undefined,
-      trandate,
-      memo,
-      externalId,
-      exchangeRate: typeof exchangeRate === "number" ? exchangeRate : undefined,
-      extraFields,
+    const payload = {
+      invoiceInternalId,
+      amount,
+      undepFunds: body?.undepFunds ?? true,
+      accountId: body?.accountId ?? undefined,
+      paymentMethodId: body?.paymentMethodId ?? undefined,
+      paymentOptionId: body?.paymentOptionId ?? undefined,
+      trandate: body?.trandate ?? undefined,
+      memo: body?.memo ?? undefined,
+      externalId: body?.externalId ?? undefined,
+      exchangeRate: body?.exchangeRate ?? undefined,
+      extraFields: body?.extraFields ?? undefined,
+    };
+
+    const incomingIdem =
+      req.headers.get("Idempotency-Key") || req.headers.get("idempotency-key");
+    const idempotencyKey =
+      incomingIdem ||
+      `rp:${invoiceInternalId}:${amount}:${new Date()
+        .toISOString()
+        .slice(0, 10)}:${crypto.randomUUID()}`;
+
+    const res = await fetch(`${NS_WRITES_URL}/api/netsuite/record-payment`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${NS_WRITES_CLIENT_BEARER}`,
+        "Idempotency-Key": idempotencyKey,
+      },
+      body: JSON.stringify(payload),
     });
 
-    return new Response(JSON.stringify({ success: true, ...result }), {
-      status: 200,
-    });
+    const text = await res.text();
+    let json: any;
+    try {
+      json = text ? JSON.parse(text) : {};
+    } catch {
+      json = { raw: text };
+    }
+
+    if (!res.ok || json?.error) {
+      const message =
+        json?.message || json?.error || `HTTP ${res.status}: ${text}`;
+      return NextResponse.json({ error: message }, { status: 502 });
+    }
+
+    return NextResponse.json(
+      { ok: true, queued: true, jobId: json.jobId ?? null },
+      { status: 202 }
+    );
   } catch (e: any) {
-    const status = e?.status || 500;
-    const message = e?.message || "Failed to record payment";
-    const details = e?.payload || undefined;
-    return new Response(
-      JSON.stringify({ success: false, error: message, details }),
-      {
-        status,
-      }
+    return NextResponse.json(
+      { error: e?.message || "enqueue failed" },
+      { status: 500 }
     );
   }
 }
