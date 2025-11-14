@@ -102,15 +102,31 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const updated = await supabase
+  const updatedByUser = await supabase
     .from("customer_information")
     .update({ terms_compliance: agree, terms_agreed_at: agreedAt })
     .eq("user_id", user.id)
     .select("terms_compliance, terms_agreed_at")
     .maybeSingle();
 
-  if (!updated.error && updated.data) {
-    return NextResponse.json({ ok: true, ...shape(updated.data) });
+  if (!updatedByUser.error && updatedByUser.data) {
+    return NextResponse.json({ ok: true, ...shape(updatedByUser.data) });
+  }
+
+  const updatedByCustomer = await supabase
+    .from("customer_information")
+    .update({
+      terms_compliance: agree,
+      terms_agreed_at: agreedAt,
+      user_id: user.id,
+    })
+    .eq("customer_id", Number(profile.data.netsuite_customer_id))
+    .is("user_id", null)
+    .select("terms_compliance, terms_agreed_at")
+    .maybeSingle();
+
+  if (!updatedByCustomer.error && updatedByCustomer.data) {
+    return NextResponse.json({ ok: true, ...shape(updatedByCustomer.data) });
   }
 
   const upsert = await supabase
@@ -123,7 +139,7 @@ export async function POST(req: NextRequest) {
         terms_compliance: agree,
         terms_agreed_at: agreedAt,
       },
-      { onConflict: "user_id" }
+      { onConflict: "customer_id" }
     )
     .select("terms_compliance, terms_agreed_at")
     .single();
