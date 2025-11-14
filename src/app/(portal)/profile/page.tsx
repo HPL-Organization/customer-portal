@@ -453,6 +453,7 @@ const InfoTab = () => {
       shippingState: formData.shipping.state,
       shippingZip: formData.shipping.zip,
       shippingCountry: formData.shipping.country,
+      //customerInternalId: nsId || null,
     };
 
     const hsToSend = hsIdOverride || contactId || null;
