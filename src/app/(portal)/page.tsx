@@ -19,6 +19,7 @@ import { Sparkles } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "react-toastify";
+import { useMemo } from "react";
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -62,6 +63,8 @@ export default function Dashboard() {
   const [showTerms, setShowTerms] = useState(false);
   const [agreeSaving, setAgreeSaving] = useState(false);
   const [pendingEventId, setPendingEventId] = useState<string | null>(null);
+
+  const SAFETY_MS = 6 * 60 * 60 * 1000;
 
   useEffect(() => {
     let alive = true;
@@ -135,6 +138,36 @@ export default function Dashboard() {
       } catch {}
     })();
   }, [hsId]);
+
+  const visibleEvents = useMemo(() => {
+    if (!events) return null;
+
+    const now = Date.now();
+
+    const liveByKey = new Map<string, LiveEvent>();
+    for (const le of liveEvents || []) {
+      if (le?.id) liveByKey.set(le.id, le);
+      if (le?.type) liveByKey.set(le.type, le);
+    }
+
+    function withinSafety(le?: LiveEvent) {
+      if (!le?.startTime) return false;
+      const start = new Date(le.startTime).getTime();
+      return start <= now && now - start < SAFETY_MS;
+    }
+
+    return events.filter((e) => {
+      const le = liveByKey.get((e as any).type ?? (e as any).id);
+
+      if (e._live?.isLive) return true;
+
+      if (le?.startTime && new Date(le.startTime).getTime() >= now) return true;
+
+      if (withinSafety(le)) return true;
+
+      return false;
+    });
+  }, [events, liveEvents]);
 
   async function ensureNames(): Promise<{
     firstName: string;
@@ -212,7 +245,10 @@ export default function Dashboard() {
         }
       } else if (!result.success) {
         if (popup) popup.close();
-        toast.error(result.message || "Unable to join the live event right now. Please try again later.");
+        toast.error(
+          result.message ||
+            "Unable to join the live event right now. Please try again later."
+        );
         return;
       } else {
         if (popup) popup.close();
@@ -447,12 +483,12 @@ export default function Dashboard() {
       <section>
         <div className="grid grid-cols-1 gap-3.5">
           <AnimatePresence initial={false}>
-            {!events &&
+            {!visibleEvents &&
               Array.from({ length: 3 }).map((_, i) => (
                 <CardSkeleton key={`sk-${i}`} />
               ))}
 
-            {events?.map((e) => (
+            {visibleEvents?.map((e) => (
               <EventCard
                 key={e.id}
                 event={e}
@@ -461,7 +497,7 @@ export default function Dashboard() {
               />
             ))}
 
-            {events && events.length === 0 && (
+            {visibleEvents && visibleEvents.length === 0 && (
               <motion.div
                 key="empty"
                 initial={{ opacity: 0, y: 8 }}
