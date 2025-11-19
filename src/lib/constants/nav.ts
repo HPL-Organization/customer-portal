@@ -1,11 +1,9 @@
 import {
-  Home,
-  UserCircle,
   CreditCard,
+  Home,
   ReceiptText,
-  CalendarDays,
-  Truck,
-  Mail,
+  UserCircle,
+  Users
 } from "lucide-react";
 
 export const NAV_ITEMS = [
@@ -15,4 +13,8 @@ export const NAV_ITEMS = [
   { href: "/invoices", label: "View & Pay Invoices", icon: ReceiptText },
   // { href: "/events", label: "Subscribed Events", icon: CalendarDays },
   // { href: "/communication", label: "Communication Preferences", icon: Mail },
+] as const;
+
+export const ADMIN_NAV_ITEMS = [
+  { href: "/admin/manage-users", label: "Manage Users", icon: Users },
 ] as const;

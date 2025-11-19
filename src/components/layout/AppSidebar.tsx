@@ -1,12 +1,12 @@
 "use client";
 
-import { Menu, X, LogOut } from "lucide-react";
-import { NAV_ITEMS } from "@/lib/constants/nav";
 import NavItem from "@/components/nav/NavItem";
-import { useEffect, useMemo, useState } from "react";
+import { ADMIN_NAV_ITEMS, NAV_ITEMS } from "@/lib/constants/nav";
 import { createBrowserClient } from "@supabase/ssr";
-import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
+import { LogOut, Menu, X } from "lucide-react";
+import { usePathname } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -61,15 +61,17 @@ function extractDisplayName(u: any | null) {
 export default function AppSidebar() {
   const [open, setOpen] = useState(false);
   const [portalLabel, setPortalLabel] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const pathname = usePathname();
   const activeHref = useMemo(() => {
     if (!pathname) return "";
-    const found = NAV_ITEMS.find(
+    const allNavItems = isAdmin ? [...NAV_ITEMS, ...ADMIN_NAV_ITEMS] : NAV_ITEMS;
+    const found = allNavItems.find(
       (n) => pathname === n.href || pathname.startsWith(`${n.href}/`)
     );
     return found?.href ?? "";
-  }, [pathname]);
+  }, [pathname, isAdmin]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -110,6 +112,26 @@ export default function AppSidebar() {
       cancelled = true;
       sub.subscription.unsubscribe();
     };
+  }, []);
+
+  useEffect(() => {
+    // Check if user is admin by calling the me endpoint
+    const checkAdminStatus = async () => {
+      try {
+        const response = await fetch('/api/auth/me', {
+          method: 'GET',
+          credentials: 'include',
+        });
+        const data = await response.json();
+        console.log('User/Admin status response:', data);
+        setIsAdmin(data.isAdmin || false);
+      } catch (error) {
+        console.error('Error checking user/admin status:', error);
+        setIsAdmin(false);
+      }
+    };
+
+    checkAdminStatus();
   }, []);
 
   async function handleLogout() {
@@ -222,6 +244,48 @@ export default function AppSidebar() {
                     </li>
                   );
                 })}
+                {isAdmin && (
+                  <>
+                    <li className="my-2">
+                      <div className="mx-2 h-px bg-gradient-to-r from-transparent via-neutral-500/40 to-transparent" />
+                    </li>
+                    {ADMIN_NAV_ITEMS.map((it) => {
+                      const isActive = it.href === activeHref;
+                      return (
+                        <li key={it.href} className="relative">
+                          {isActive && (
+                            <motion.div
+                              layoutId="active-pill"
+                              className="absolute inset-0 rounded-xl bg-white/8 ring-1 ring-black/10"
+                              transition={{
+                                type: "spring",
+                                stiffness: 400,
+                                damping: 36,
+                              }}
+                            />
+                          )}
+                          <motion.div
+                            whileHover={{ x: 4 }}
+                            transition={{
+                              type: "spring",
+                              stiffness: 340,
+                              damping: 26,
+                            }}
+                            className="relative group"
+                          >
+                            <div className="rounded-xl px-1 py-0.5">
+                              <NavItem
+                                href={it.href}
+                                label={it.label}
+                                icon={it.icon}
+                              />
+                            </div>
+                          </motion.div>
+                        </li>
+                      );
+                    })}
+                  </>
+                )}
               </AnimatePresence>
             </ul>
           </nav>
@@ -336,6 +400,47 @@ export default function AppSidebar() {
                           </li>
                         );
                       })}
+                      {isAdmin && (
+                        <>
+                          <li className="my-2">
+                            <div className="mx-2 h-px bg-gradient-to-r from-transparent via-neutral-500/40 to-transparent" />
+                          </li>
+                          {ADMIN_NAV_ITEMS.map((it) => {
+                            const isActive = it.href === activeHref;
+                            return (
+                              <li key={it.href} className="relative">
+                                {isActive && (
+                                  <motion.div
+                                    layoutId="active-pill-mobile"
+                                    className="absolute inset-0 rounded-xl bg-white/8 ring-1 ring-black/10"
+                                    transition={{
+                                      type: "spring",
+                                      stiffness: 400,
+                                      damping: 36,
+                                    }}
+                                  />
+                                )}
+                                <motion.div
+                                  whileHover={{ x: 4 }}
+                                  transition={{
+                                    type: "spring",
+                                    stiffness: 340,
+                                    damping: 26,
+                                  }}
+                                  className="relative"
+                                >
+                                  <NavItem
+                                    href={it.href}
+                                    label={it.label}
+                                    icon={it.icon}
+                                    onClick={() => setOpen(false)}
+                                  />
+                                </motion.div>
+                              </li>
+                            );
+                          })}
+                        </>
+                      )}
                     </AnimatePresence>
                   </ul>
 
