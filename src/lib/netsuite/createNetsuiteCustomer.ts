@@ -250,6 +250,7 @@ const COUNTRY_CODES: Record<string, string> = {
   "United States": "US",
   USA: "US",
   Usa: "US",
+  usa: "US",
   Uzbekistan: "UZ",
   "Holy See (Vatican City State)": "VA",
   "Saint Vincent and the Grenadines": "VC",
@@ -433,14 +434,14 @@ export async function createNetsuiteCustomer(customer: any) {
       billingCity: customer.billingCity ?? undefined,
       billingState: customer.billingState ?? undefined,
       billingZip: customer.billingZip ?? undefined,
-      billingCountry: customer.billingCountry ?? undefined,
+      billingCountry: getCountryCode(customer.billingCountry) ?? undefined,
 
       shippingAddress1: customer.shippingAddress1 ?? undefined,
       shippingAddress2: customer.shippingAddress2 ?? undefined,
       shippingCity: customer.shippingCity ?? undefined,
       shippingState: customer.shippingState ?? undefined,
       shippingZip: customer.shippingZip ?? undefined,
-      shippingCountry: customer.shippingCountry ?? undefined,
+      shippingCountry: getCountryCode(customer.shippingCountry) ?? undefined,
 
       shippingcarrier:
         (customer.shippingcarrier || "")?.toLowerCase() || undefined,

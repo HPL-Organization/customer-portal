@@ -72,21 +72,10 @@ function csvEscape(v: any) {
 }
 
 function computeSubtotalFromLines(inv: Invoice) {
-  const printable = (inv.lines ?? []).filter((l) => {
-    const desc = String(l.description ?? "").toLowerCase();
-    return !desc.includes("cost of sales");
-  });
-  return (
-    printable.reduce((sum, l) => {
-      const qty = Number(l.quantity ?? 0);
-      const rate = Number(l.rate ?? 0);
-      const isDiscount = !(rate > 0);
-      const amt = isDiscount ? rate : qty * rate;
-      return sum + (Number.isFinite(amt) ? amt : 0);
-    }, 0) || 0
-  );
+  const headerTotal = Number(inv.total ?? 0);
+  const tax = Number(inv.taxTotal ?? 0);
+  return Math.max(0, headerTotal - tax);
 }
-
 function getLineDetails(l: any, invMemo: string) {
   const parts = [l?.description, l?.details, l?.comment, l?.comments, l?.memo]
     .map((x) => (x == null ? "" : String(x).trim()))
@@ -119,9 +108,11 @@ function buildInvoicesCsv(allInvoices: Invoice[]) {
     const dateStr = inv.trandate
       ? new Date(inv.trandate as any).toLocaleDateString()
       : "";
-    const subtotal = computeSubtotalFromLines(inv);
+
+    const headerTotal = Number(inv.total ?? 0);
     const tax = Number(inv.taxTotal ?? 0);
-    const total = subtotal + tax;
+    const subtotal = Math.max(0, headerTotal - tax);
+    const total = headerTotal;
     const paid = Number(inv.amountPaid || 0);
     const remaining = Number(inv.amountRemaining || Math.max(total - paid, 0));
 
