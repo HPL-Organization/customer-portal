@@ -9,6 +9,9 @@ const NETSUITE_ACCOUNT_ID = isSB
 //const NETSUITE_ACCOUNT_ID = process.env.NETSUITE_ACCOUNT_ID!;
 const BASE_URL = `https://${NETSUITE_ACCOUNT_ID}.suitetalk.api.netsuite.com/services/rest`;
 
+const NSW_BASE = process.env.NS_WRITES_URL!;
+const NSW_CLIENT_BEARER = process.env.NS_WRITES_ADMIN_BEARER!;
+
 const COUNTRY_CODES: Record<string, string> = {
   Aruba: "AW",
   Afghanistan: "AF",
@@ -267,126 +270,6 @@ function getCountryCode(name: string): string {
   return COUNTRY_CODES[name] || name; // fallback to input if already a code
 }
 
-export async function createNetsuiteCustomer(customer: any) {
-  const accessToken = await getValidToken();
-
-  const hubspotId: string | null = customer.hsContactId || customer.id || null;
-
-  let existingId: string | null = null;
-  if (hubspotId) {
-    existingId = await findCustomerByHubspotId(hubspotId, accessToken);
-  }
-  if (!existingId && customer.email) {
-    existingId = await findCustomerByEmail(customer.email, accessToken);
-  }
-
-  let billingId: string | null = null;
-  let shippingId: string | null = null;
-  let billingAddressId: string | null = null;
-  let shippingAddressId: string | null = null;
-
-  if (existingId) {
-    const customerData = await getCustomerWithAddressbook(
-      existingId,
-      accessToken
-    );
-
-    for (const addr of customerData?.addressbook?.items || []) {
-      if (addr.defaultBilling) {
-        billingId = addr.internalId;
-        billingAddressId = addr.addressbookaddress?.internalId;
-      }
-      if (addr.defaultShipping) {
-        shippingId = addr.internalId;
-        shippingAddressId = addr.addressbookaddress?.internalId;
-      }
-    }
-  }
-
-  const payload = {
-    entityId: customer.email,
-    subsidiary: { id: "2" },
-    companyName: `${customer.firstName} ${customer.lastName}`,
-    email: customer.email,
-    phone: customer.phone,
-    mobilephone: customer.mobile,
-    firstName: customer.firstName,
-    middleName: customer.middleName,
-    lastName: customer.lastName,
-    custentityhs_id: hubspotId || undefined,
-    addressbook: {
-      replaceAll: true,
-      items: [
-        {
-          internalId: billingId || undefined,
-          defaultBilling: true,
-          defaultShipping: false,
-          label: "Billing",
-          addressbookaddress: {
-            internalId: billingAddressId || undefined,
-            addr1: customer.billingAddress1,
-            addr2: customer.billingAddress2,
-            city: customer.billingCity,
-            state: customer.billingState,
-            zip: customer.billingZip,
-            country: getCountryCode(customer.billingCountry),
-            addressee: `${customer.firstName} ${customer.lastName}`,
-            defaultBilling: true,
-            defaultShipping: false,
-          },
-        },
-        {
-          internalId: shippingId || undefined,
-          defaultBilling: false,
-          defaultShipping: true,
-          label: "Shipping",
-          addressbookaddress: {
-            internalId: shippingAddressId || undefined,
-            addr1: customer.shippingAddress1,
-            addr2: customer.shippingAddress2,
-            city: customer.shippingCity,
-            state: customer.shippingState,
-            zip: customer.shippingZip,
-            country: getCountryCode(customer.shippingCountry),
-            addressee: `${customer.firstName} ${customer.lastName}`,
-            defaultBilling: false,
-            defaultShipping: true,
-          },
-        },
-      ],
-    },
-    shippingcarrier: (customer.shippingcarrier || "").toLowerCase(),
-  };
-
-  if (existingId) {
-    const response = await axios.patch(
-      `${BASE_URL}/record/v1/customer/${existingId}`,
-      payload,
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          Accept: "application/json",
-          "Content-Type": "application/json",
-        },
-      }
-    );
-    return response.data;
-  } else {
-    const response = await axios.post(
-      `${BASE_URL}/record/v1/customer`,
-      payload,
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          Accept: "application/json",
-          "Content-Type": "application/json",
-        },
-      }
-    );
-    return response.data;
-  }
-}
-
 function escapeSqlLiteral(v: string) {
   return v.replace(/'/g, "''");
 }
@@ -420,7 +303,7 @@ function sanitizeSuiteQL(str: string) {
 async function findCustomerByHubspotId(hsId: string, accessToken: string) {
   const suiteQL = `
     SELECT id FROM customer
-    WHERE custentityhs_id = '${escapeSqlLiteral(hsId)}'
+    WHERE custentity_hpl_hs_id = '${escapeSqlLiteral(hsId)}'
   `;
 
   const resp = await axios.post(
@@ -472,4 +355,164 @@ async function getCustomerWithAddressbook(id: string, accessToken: string) {
   );
 
   return { addressbook: { items: addressItems } };
+}
+
+async function enqueueUpdateCustomerToNSWrites(payload: any, idem?: string) {
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${NSW_CLIENT_BEARER}`,
+    "Content-Type": "application/json",
+  };
+  if (idem) headers["Idempotency-Key"] = idem;
+
+  const r = await fetch(`${NSW_BASE}/api/netsuite/update-customer`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(payload),
+  });
+
+  const txt = await r.text();
+  let json: any;
+  try {
+    json = txt ? JSON.parse(txt) : undefined;
+  } catch {}
+  console.log("ns_writes response", {
+    status: r.status,
+    idem,
+    body: json ?? txt,
+  });
+  if (!r.ok || json?.error) {
+    const msg = json?.error || `HTTP ${r.status}: ${txt}`;
+    throw new Error(`nswrites update-customer failed: ${msg}`);
+  }
+  return json; // { jobId }
+}
+
+function idemForUpdate(customer: any) {
+  const ts = Date.now().toString(36);
+  const rand = Math.random().toString(36).slice(2, 8);
+
+  const idPart = customer.customerInternalId
+    ? String(customer.customerInternalId)
+    : "noid";
+
+  return `upd2-${idPart}-${ts}-${rand}`;
+}
+export async function createNetsuiteCustomer(customer: any) {
+  const accessToken = await getValidToken();
+
+  let existingId: string | null =
+    customer.customerInternalId != null && customer.customerInternalId !== ""
+      ? String(customer.customerInternalId)
+      : null;
+
+  const hubspotId: string | null = customer.hsContactId || customer.id || null;
+
+  if (!existingId && hubspotId) {
+    existingId = await findCustomerByHubspotId(hubspotId, accessToken);
+  }
+  if (!existingId && customer.email) {
+    existingId = await findCustomerByEmail(customer.email, accessToken);
+  }
+
+  if (existingId) {
+    console.log("→ PATH A: ns_writes update-customer", { existingId });
+    const nswPayload = {
+      customerInternalId: existingId,
+      hsContactId: hubspotId ?? undefined,
+      id: hubspotId ?? undefined,
+
+      email: customer.email ?? undefined,
+      firstName: customer.firstName ?? undefined,
+      middleName: customer.middleName ?? undefined,
+      lastName: customer.lastName ?? undefined,
+      phone: customer.phone ?? undefined,
+      mobile: customer.mobile ?? undefined,
+
+      billingAddress1: customer.billingAddress1 ?? undefined,
+      billingAddress2: customer.billingAddress2 ?? undefined,
+      billingCity: customer.billingCity ?? undefined,
+      billingState: customer.billingState ?? undefined,
+      billingZip: customer.billingZip ?? undefined,
+      billingCountry: customer.billingCountry ?? undefined,
+
+      shippingAddress1: customer.shippingAddress1 ?? undefined,
+      shippingAddress2: customer.shippingAddress2 ?? undefined,
+      shippingCity: customer.shippingCity ?? undefined,
+      shippingState: customer.shippingState ?? undefined,
+      shippingZip: customer.shippingZip ?? undefined,
+      shippingCountry: customer.shippingCountry ?? undefined,
+
+      shippingcarrier:
+        (customer.shippingcarrier || "")?.toLowerCase() || undefined,
+    };
+
+    const idem = idemForUpdate(nswPayload);
+    return await enqueueUpdateCustomerToNSWrites(nswPayload, idem);
+  }
+  console.log("→ PATH B: direct REST create in NetSuite");
+  const payload = {
+    entityId: customer.email,
+    subsidiary: { id: "2" },
+    companyName: `${customer.firstName ?? ""} ${
+      customer.lastName ?? ""
+    }`.trim(),
+    email: customer.email,
+    phone: customer.phone,
+    mobilephone: customer.mobile,
+    firstName: customer.firstName,
+    middleName: customer.middleName,
+    lastName: customer.lastName,
+    custentity_hpl_hs_id: hubspotId || undefined,
+    addressbook: {
+      replaceAll: true,
+      items: [
+        {
+          defaultBilling: true,
+          defaultShipping: false,
+          label: "Billing",
+          addressbookaddress: {
+            addr1: customer.billingAddress1,
+            addr2: customer.billingAddress2,
+            city: customer.billingCity,
+            state: customer.billingState,
+            zip: customer.billingZip,
+            country: getCountryCode(customer.billingCountry),
+            addressee: `${customer.firstName ?? ""} ${
+              customer.lastName ?? ""
+            }`.trim(),
+            defaultBilling: true,
+            defaultShipping: false,
+          },
+        },
+        {
+          defaultBilling: false,
+          defaultShipping: true,
+          label: "Shipping",
+          addressbookaddress: {
+            addr1: customer.shippingAddress1,
+            addr2: customer.shippingAddress2,
+            city: customer.shippingCity,
+            state: customer.shippingState,
+            zip: customer.shippingZip,
+            country: getCountryCode(customer.shippingCountry),
+            addressee: `${customer.firstName ?? ""} ${
+              customer.lastName ?? ""
+            }`.trim(),
+            defaultBilling: false,
+            defaultShipping: true,
+          },
+        },
+      ],
+    },
+    shippingcarrier: (customer.shippingcarrier || "").toLowerCase(),
+  };
+
+  const response = await axios.post(`${BASE_URL}/record/v1/customer`, payload, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+  });
+  return response.data;
 }

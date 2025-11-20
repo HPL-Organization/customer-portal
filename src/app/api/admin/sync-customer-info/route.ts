@@ -63,6 +63,7 @@ type Database = {
           terms_compliance: boolean;
           terms_agreed_at: string | null;
           user_id: string | null;
+          hubspot_id: number | null;
         };
         Insert: Partial<
           Database["public"]["Tables"]["customer_information"]["Row"]
@@ -289,6 +290,7 @@ async function fetchExistingCustomers(
           "terms_compliance",
           "terms_agreed_at",
           "user_id",
+          "hubspot_id",
         ].join(",")
       )
       .in("customer_id", chunk);
@@ -300,6 +302,7 @@ async function fetchExistingCustomers(
 
 type Incoming = {
   customer_id: number;
+  hubspot_id?: string | number | null;
   email?: string | null;
   first_name?: string | null;
   middle_name?: string | null;
@@ -353,6 +356,13 @@ function coerceStr(v: any): string | null {
   const s = String(v).trim();
   return s === "" ? null : s;
 }
+function coerceBigint(v: any): number | null {
+  if (v === undefined || v === null || v === "") return null;
+  const s = String(v).replace(/[, ]/g, "").trim();
+  if (!/^\d+$/.test(s)) return null;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+}
 
 function buildRow(inc: Incoming, existing?: CustomerRow): CustomerInsert {
   const bill = pickAddress(inc, "billing");
@@ -383,6 +393,13 @@ function buildRow(inc: Incoming, existing?: CustomerRow): CustomerInsert {
     terms_compliance: existing ? existing.terms_compliance : false,
     terms_agreed_at: existing ? existing.terms_agreed_at : null,
     user_id: existing ? existing.user_id : null,
+
+    hubspot_id:
+      inc.hubspot_id != null
+        ? coerceBigint(inc.hubspot_id)
+        : existing
+        ? (existing as any).hubspot_id
+        : null,
   };
 }
 

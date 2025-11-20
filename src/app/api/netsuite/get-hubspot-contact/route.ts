@@ -50,7 +50,7 @@ export async function GET(req: NextRequest) {
 
   const suiteqlUrl = getSuiteQLUrl();
 
-  const sql = `SELECT id AS customer_id, custentityhs_id AS hubspot_id FROM customer WHERE id = ${customerId}`;
+  const sql = `SELECT id AS customer_id, custentity_hpl_hs_id AS hubspot_id FROM customer WHERE id = ${customerId}`;
 
   const r = await fetch(suiteqlUrl, {
     method: "POST",
@@ -87,7 +87,7 @@ export async function GET(req: NextRequest) {
   const hubspotId = row?.hubspot_id ?? null;
   if (!hubspotId)
     return NextResponse.json(
-      { error: "custentityhs_id is empty on customer" },
+      { error: "custentity_hpl_hs_id is empty on customer" },
       { status: 404 }
     );
 

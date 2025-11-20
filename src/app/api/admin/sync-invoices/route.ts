@@ -846,7 +846,7 @@ export async function POST(req: NextRequest) {
 
     const linesQ = `
       SELECT TL.transaction AS invoiceId, TL.linesequencenumber AS lineNo, I.id AS itemId, I.itemid AS sku, I.displayname AS displayName,
-             NVL(ABS(TL.quantity),0) AS quantity, TL.rate AS rate, NVL(ABS(TL.amount),0) AS amount, TL.memo AS description, TL.custcolns_comment AS lineComment
+             NVL(ABS(TL.quantity),0) AS quantity, TL.rate AS rate, NVL(ABS(TL.amount),0) AS amount, TL.memo AS description, TL.custcol_hpl_comment AS lineComment
       FROM transactionline TL
       JOIN item I ON I.id = TL.item
       WHERE TL.transaction IN (${idList})

@@ -30,6 +30,21 @@ type BootstrapState = {
 const Ctx = createContext<BootstrapState | undefined>(undefined);
 
 async function resolveHubSpotId(nsId: string) {
+  try {
+    const r1 = await fetch(
+      `/api/supabase/get-customer-info?nsId=${encodeURIComponent(nsId)}`,
+      { cache: "no-store" }
+    );
+    if (r1.ok) {
+      const body = await r1.json();
+      const hubspotId = body?.data?.hubspot_id as string | number | null;
+      console.log("Hubspot id from Hubspot", hubspotId);
+      if (hubspotId) {
+        return { hsId: String(hubspotId), error: null };
+      }
+    }
+  } catch {}
+
   const r = await fetch(
     `/api/netsuite/get-hubspot-contact?nsId=${encodeURIComponent(nsId)}`,
     { cache: "no-store" }
