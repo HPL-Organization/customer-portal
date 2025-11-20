@@ -59,7 +59,7 @@ type Row = {
   detail?: string;
 };
 
-function computePdfRows(inv: Invoice): { rows: Row[]; subtotal: number } {
+function computePdfRows(inv: Invoice): { rows: Row[] } {
   const printable = (inv.lines ?? []).filter(isPrintableLine);
   const rows: Row[] = printable.map((l) => {
     const qty = Number(l.quantity ?? 0);
@@ -75,12 +75,7 @@ function computePdfRows(inv: Invoice): { rows: Row[]; subtotal: number } {
       description: (l.description ?? "") as string,
     };
   });
-  const subtotal =
-    rows.reduce(
-      (s: number, r: Row) => s + (Number.isFinite(r.amount) ? r.amount : 0),
-      0
-    ) || 0;
-  return { rows, subtotal };
+  return { rows };
 }
 
 function fitRect(w: number, h: number, maxW: number, maxH: number) {
@@ -140,7 +135,7 @@ async function buildAndDownloadPdf(
   doc.setFontSize(10);
   cursorY += 16;
 
-  const { rows, subtotal } = computePdfRows(inv);
+  const { rows } = computePdfRows(inv);
   const lineHeight = 14;
   const bottomY = 700;
 
@@ -189,10 +184,10 @@ async function buildAndDownloadPdf(
   doc.line(marginX, cursorY, 558, cursorY);
   cursorY += 18;
 
-  const tax = Number.isFinite(Number(inv.taxTotal))
-    ? Number(inv.taxTotal)
-    : Math.max(0, Number(inv.total ?? 0) - subtotal);
-  const total = subtotal + tax;
+  const headerTotal = Number(inv.total ?? 0);
+  const tax = Number.isFinite(Number(inv.taxTotal)) ? Number(inv.taxTotal) : 0;
+  const subtotal = Math.max(0, headerTotal - tax);
+  const total = headerTotal;
   const paid = Number(inv.amountPaid || 0);
   const remaining = Number(inv.amountRemaining || Math.max(total - paid, 0));
 
@@ -833,17 +828,10 @@ function Details({ inv, mobile = false }: { inv: Invoice; mobile?: boolean }) {
 
           <div className="flex justify-end px-3 py-3">
             {(() => {
-              const printable = (inv.lines ?? []).filter(isPrintableLine);
-              const subtotal =
-                printable.reduce((s, l) => {
-                  const qty = Number(l.quantity ?? 0);
-                  const rate = Number(l.rate ?? 0);
-                  const isDiscount = !(rate > 0);
-                  const amt = isDiscount ? rate : qty * rate;
-                  return s + (Number.isFinite(amt) ? amt : 0);
-                }, 0) || 0;
+              const headerTotal = Number(inv.total ?? 0);
               const tax = Number(inv.taxTotal ?? 0);
-              const total = subtotal + tax;
+              const subtotal = Math.max(0, headerTotal - tax);
+              const total = headerTotal;
 
               return (
                 <div className="w-full max-w-[360px]">
