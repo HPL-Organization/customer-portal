@@ -749,7 +749,7 @@ function AddMethodDialog({
         </MUIButton>
       </DialogActions>
 
-      <Backdrop open={processing} sx={{ zIndex: 1400 }}>
+      <Backdrop open={processing && !!token} sx={{ zIndex: 1400 }}>
         <div className="flex items-center gap-3 bg-white/85 rounded-full px-3 py-2 shadow">
           <CircularProgress size={20} />
           <span className="text-sm text-[#17152A]">
