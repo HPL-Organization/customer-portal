@@ -37,6 +37,21 @@ export interface PaginatedUsersResult {
   totalPages: number;
 }
 
+interface UserRow {
+  id: string;
+  email: string | null;
+  created_at: string;
+  last_sign_in_at: string | null;
+  raw_user_meta_data: Record<string, unknown> | null;
+  raw_app_meta_data: Record<string, unknown> | null;
+  netsuite_customer_id: number | null;
+  role: string | null;
+  profile_email: string | null;
+  customer_first_name: string | null;
+  customer_last_name: string | null;
+  total_count: number;
+}
+
 export async function fetchUsers(
   page: number = 1,
   limit: number = 25,
@@ -55,10 +70,11 @@ export async function fetchUsers(
 
     const supabase = getAdminSupabase();
 
-    // Fetch all users for search and filtering - Supabase doesn't support metadata search directly
-    const { data: allUsersData, error } = await supabase.auth.admin.listUsers({
-      page: 1,
-      perPage: 1000, // Reasonable limit for admin interface
+    // Fetch users with their profiles using the RPC function with pagination and search
+    const { data: usersData, error } = await supabase.rpc('get_users_with_profiles', {
+      page_param: page,
+      limit_param: limit,
+      search_term: searchTerm || null
     });
 
     if (error) {
@@ -66,7 +82,7 @@ export async function fetchUsers(
       throw new Error("Failed to fetch users");
     }
 
-    if (!allUsersData?.users) {
+    if (!usersData || usersData.length === 0) {
       return {
         users: [],
         totalCount: 0,
@@ -76,53 +92,42 @@ export async function fetchUsers(
       };
     }
 
-    // For each user, also fetch their profile data if available
-    const usersWithProfiles = await Promise.all(
-      allUsersData.users.map(async (user) => {
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("netsuite_customer_id, role, email")
-          .eq("user_id", user.id)
-          .single();
+    // Transform the data to match the User interface
+    const users: User[] = usersData.map((row: UserRow) => {
+      // Use customer_information names if available, otherwise fall back to auth metadata
+      const firstName = row.customer_first_name ||
+        (typeof row.raw_user_meta_data?.first_name === 'string' ? row.raw_user_meta_data.first_name : undefined);
+      const lastName = row.customer_last_name ||
+        (typeof row.raw_user_meta_data?.last_name === 'string' ? row.raw_user_meta_data.last_name : undefined);
 
-        return {
-          id: user.id,
-          email: user.email,
-          created_at: user.created_at,
-          last_sign_in_at: user.last_sign_in_at,
-          user_metadata: user.user_metadata,
-          app_metadata: user.app_metadata,
-          profile: profile || null,
-        };
-      })
-    );
+      // Merge names into user_metadata for backward compatibility
+      const enhancedUserMetadata = {
+        ...row.raw_user_meta_data,
+        first_name: firstName,
+        last_name: lastName,
+      };
 
-    // Filter users based on search term if provided
-    let filteredUsers = usersWithProfiles;
-    if (searchTerm && searchTerm.trim()) {
-      const search = searchTerm.toLowerCase().trim();
-      filteredUsers = usersWithProfiles.filter(user => {
-        const email = user.email?.toLowerCase() ?? '';
-        const fullName = typeof user.user_metadata?.full_name === 'string' ? user.user_metadata.full_name.toLowerCase() : '';
-        const name = typeof user.user_metadata?.name === 'string' ? user.user_metadata.name.toLowerCase() : '';
-        const displayName = typeof user.user_metadata?.display_name === 'string' ? user.user_metadata.display_name.toLowerCase() : '';
+      return {
+        id: row.id,
+        email: row.email,
+        created_at: row.created_at,
+        last_sign_in_at: row.last_sign_in_at,
+        user_metadata: enhancedUserMetadata,
+        app_metadata: row.raw_app_meta_data || {},
+        profile: row.netsuite_customer_id || row.role || row.profile_email ? {
+          netsuite_customer_id: row.netsuite_customer_id,
+          role: row.role,
+          email: row.profile_email,
+        } : null,
+      };
+    });
 
-        return email.includes(search) ||
-               fullName.includes(search) ||
-               name.includes(search) ||
-               displayName.includes(search);
-      });
-    }
-
-    // Apply pagination to filtered results
-    const totalCount = filteredUsers.length;
+    // Get total count from the first row (all rows have the same total_count)
+    const totalCount = usersData[0].total_count;
     const totalPages = Math.ceil(totalCount / limit);
-    const startIndex = (page - 1) * limit;
-    const endIndex = startIndex + limit;
-    const paginatedUsers = filteredUsers.slice(startIndex, endIndex);
 
     return {
-      users: paginatedUsers,
+      users,
       totalCount,
       page,
       limit,

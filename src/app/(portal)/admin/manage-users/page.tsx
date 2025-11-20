@@ -32,7 +32,7 @@ import {
   Trash2,
   User,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "react-toastify";
 import { useDebouncedCallback } from "use-debounce";
 import { deleteUser, fetchUsers, type PaginatedUsersResult } from "./actions";
@@ -66,6 +66,9 @@ export default function ManageUsersPage() {
   const [page, setPage] = useState(0); // MUI TablePagination uses 0-based indexing
   const [rowsPerPage, setRowsPerPage] = useState(DEFAULT_ROWS_PER_PAGE);
   const [totalCount, setTotalCount] = useState(0);
+
+  // Ref for search input
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
 
   const loadUsers = useCallback(async (currentPage: number = page, currentRowsPerPage: number = rowsPerPage, search?: string) => {
@@ -106,6 +109,12 @@ export default function ManageUsersPage() {
     }
   }, [isAdmin, loadUsers]);
 
+  // Focus search input after loading completes when searching
+  useEffect(() => {
+    if (!loading && searchInputRef.current) {
+      searchInputRef.current.focus();
+    }
+  }, [loading, searchTerm]);
 
   const handleViewUser = (user: User) => {
     setSelectedUser(user);
@@ -170,6 +179,14 @@ export default function ManageUsersPage() {
   };
 
   const getUserDisplayName = (user: User): string => {
+    const firstName = typeof user.user_metadata?.first_name === 'string' ? user.user_metadata.first_name : '';
+    const lastName = typeof user.user_metadata?.last_name === 'string' ? user.user_metadata.last_name : '';
+
+    if (firstName || lastName) {
+      return `${firstName} ${lastName}`.trim();
+    }
+
+    // Fallback to legacy fields
     return (typeof user.user_metadata?.full_name === 'string' ? user.user_metadata.full_name : undefined) ||
            (typeof user.user_metadata?.name === 'string' ? user.user_metadata.name : undefined) ||
            (typeof user.user_metadata?.display_name === 'string' ? user.user_metadata.display_name : undefined) ||
@@ -223,6 +240,7 @@ export default function ManageUsersPage() {
             value={searchTerm}
             onChange={(e) => handleSearchChange(e.target.value)}
             disabled={loading}
+            inputRef={searchInputRef}
             InputProps={{
               startAdornment: (
                 <InputAdornment position="start">
@@ -242,7 +260,8 @@ export default function ManageUsersPage() {
             <Table>
               <TableHead>
                 <TableRow>
-                  <TableCell>Name</TableCell>
+                  <TableCell>First Name</TableCell>
+                  <TableCell>Last Name</TableCell>
                   <TableCell>Email</TableCell>
                   <TableCell>Created</TableCell>
                   <TableCell>Last Sign In</TableCell>
@@ -252,7 +271,7 @@ export default function ManageUsersPage() {
               <TableBody>
                 {filteredUsers.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} align="center" sx={{ py: 4 }}>
+                    <TableCell colSpan={6} align="center" sx={{ py: 4 }}>
                       <Typography variant="body2" color="text.secondary">
                         {users.length === 0 ? 'No users found' : 'No users match your search'}
                       </Typography>
@@ -264,8 +283,11 @@ export default function ManageUsersPage() {
                       <TableCell>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                           <User size={16} />
-                          {getUserDisplayName(user)}
+                          {typeof user.user_metadata?.first_name === 'string' ? user.user_metadata.first_name : '—'}
                         </Box>
+                      </TableCell>
+                      <TableCell>
+                        {typeof user.user_metadata?.last_name === 'string' ? user.user_metadata.last_name : '—'}
                       </TableCell>
                       <TableCell>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -343,8 +365,11 @@ export default function ManageUsersPage() {
                   Contact Information
                 </Typography>
                 <Typography>Email: {selectedUser.email || 'No email'}</Typography>
-                {typeof selectedUser.user_metadata?.full_name === 'string' && (
-                  <Typography>Full Name: {selectedUser.user_metadata.full_name}</Typography>
+                {typeof selectedUser.user_metadata?.first_name === 'string' && (
+                  <Typography>First Name: {selectedUser.user_metadata.first_name}</Typography>
+                )}
+                {typeof selectedUser.user_metadata?.last_name === 'string' && (
+                  <Typography>Last Name: {selectedUser.user_metadata.last_name}</Typography>
                 )}
               </Box>
 
