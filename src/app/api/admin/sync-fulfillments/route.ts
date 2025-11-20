@@ -436,7 +436,7 @@ function extractIFLines(rec: any) {
       }
     }
 
-    const commentVal = row.custcolns_comment ?? row.comments ?? null;
+    const commentVal = row.custcol_hpl_comment ?? row.comments ?? null;
     const comments = commentVal != null ? [String(commentVal)] : null;
 
     out.push({

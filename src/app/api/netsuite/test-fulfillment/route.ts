@@ -210,7 +210,7 @@ export async function GET(req: NextRequest) {
           if (sn) serials.push(String(sn));
         }
       }
-      const commentVal = row?.custcolns_comment ?? row?.comments ?? null;
+      const commentVal = row?.custcol_hpl_comment ?? row?.comments ?? null;
       const comments = commentVal != null ? [String(commentVal)] : null;
 
       return {

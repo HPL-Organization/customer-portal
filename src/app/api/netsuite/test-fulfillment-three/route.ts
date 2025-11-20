@@ -194,7 +194,7 @@ export async function POST(req: NextRequest) {
         I.displayname AS displayName,
         NVL(ABS(TL.quantity),0) AS quantity,
         TL.memo AS description,
-        TL.custcolns_comment AS comment
+        TL.custcol_hpl_comment AS comment
       FROM transactionline TL
       JOIN item I ON I.id = TL.item
       WHERE TL.transaction IN (${idList})

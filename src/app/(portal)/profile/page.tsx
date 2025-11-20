@@ -322,6 +322,12 @@ const InfoTab = () => {
     };
   }, [dirty]);
 
+  useEffect(() => {
+    if (initialized && !loading && contactId) {
+      setHasHubSpot(true);
+    }
+  }, [initialized, loading, contactId]);
+
   const proceedNavigation = () => {
     allowNextNavRef.current = true;
     setNavOpen(false);
@@ -453,7 +459,7 @@ const InfoTab = () => {
       shippingState: formData.shipping.state,
       shippingZip: formData.shipping.zip,
       shippingCountry: formData.shipping.country,
-      //customerInternalId: nsId || null,
+      customerInternalId: nsId || null,
     };
 
     const hsToSend = hsIdOverride || contactId || null;

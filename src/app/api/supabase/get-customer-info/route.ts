@@ -47,7 +47,8 @@ export async function GET(req: NextRequest) {
           billing_verified,
           terms_compliance,
           terms_agreed_at,
-          user_id
+          user_id,
+          hubspot_id
         `
       )
       .eq("customer_id", Number(nsId))
