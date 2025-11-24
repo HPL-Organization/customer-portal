@@ -23,6 +23,7 @@ export const IMAGE_MAP_EXACT: Record<string, string> = {
   thursday_afternoon_live_event: `${IMG_BASE}/thursday_afternoon_live_event.png`,
   wednesday_rough_rock_event: `${IMG_BASE}/wednesday_rough_rock_event.png`,
   machine_event: `${IMG_BASE}/machine_night.png`,
+  tumbling_event: `${IMG_BASE}/tumbling_event.png`,
 };
 
 export const IMAGE_FALLBACK_BY_KEYWORD: ImageRule[] = [
@@ -189,14 +190,16 @@ export function processEvents(
     description: string;
   }>,
   liveEventsData: LiveEvent[]
-): Array<VipEvent & {
-  _live?: {
-    isLive: boolean;
-    badge: string;
-    timeText: string;
-    sortKey: number;
-  };
-}> {
+): Array<
+  VipEvent & {
+    _live?: {
+      isLive: boolean;
+      badge: string;
+      timeText: string;
+      sortKey: number;
+    };
+  }
+> {
   return eventTypes
     .map((eventType) => {
       const matches = liveEventsData.filter(
@@ -208,9 +211,7 @@ export function processEvents(
         const s = new Date(
           hasTZS ? e.startTime : (e.startTime || "") + "Z"
         ).getTime();
-        const eHasTZ = e.endTime
-          ? /Z|[+-]\d{2}:\d{2}$/.test(e.endTime)
-          : true;
+        const eHasTZ = e.endTime ? /Z|[+-]\d{2}:\d{2}$/.test(e.endTime) : true;
         const end = e.endTime
           ? new Date(eHasTZ ? e.endTime : e.endTime + "Z").getTime()
           : s + 3 * 60 * 60 * 1000;
@@ -246,9 +247,7 @@ export function processEvents(
           ? /Z|[+-]\d{2}:\d{2}$/.test(chosen.endTime)
           : true;
         const end = chosen.endTime
-          ? new Date(
-              eHasTZ ? chosen.endTime : chosen.endTime + "Z"
-            ).getTime()
+          ? new Date(eHasTZ ? chosen.endTime : chosen.endTime + "Z").getTime()
           : s + 3 * 60 * 60 * 1000;
         if (now >= s && now <= end) {
           const mins = Math.max(0, Math.round((now - s) / 60000));
@@ -261,9 +260,7 @@ export function processEvents(
               ? (() => {
                   const d = Math.floor(hours / 24);
                   const rh = hours % 24;
-                  return rh
-                    ? `started ${d}d ${rh}h ago`
-                    : `started ${d}d ago`;
+                  return rh ? `started ${d}d ${rh}h ago` : `started ${d}d ago`;
                 })()
               : `started ${hours}h ago`;
           sortKey = 0;
