@@ -206,8 +206,8 @@ const liveEventTypes: LiveEventType[] = [
   },
   {
     internalName: "wednesday_rough_rock_event",
-    label: "Machine Night", //Wednesday Rough Rock Event
-    description: "This is a special event!", //This is a rough rock event that occurs on Wednesday
+    label: "Wednesday Rough Rock Event", // Machine Night
+    description: "This is a rough rock event that occurs on Wednesday", //This is a special event!
     category: "EVENT_TYPE",
     createdAt: "2024-09-06T08:17:40.141Z",
     updatedAt: "2024-09-06T08:17:40.141Z",
@@ -216,6 +216,14 @@ const liveEventTypes: LiveEventType[] = [
     internalName: "machine_event",
     label: "Machine Event",
     description: "Machine Event for Day and Night use",
+    category: "EVENT_TYPE",
+    createdAt: "2025-11-11T14:29:04.569Z",
+    updatedAt: "2025-11-11T14:29:04.569Z",
+  },
+  {
+    internalName: "tumbling_event",
+    label: "Tumble Event",
+    description: "This is a Tumble Event",
     category: "EVENT_TYPE",
     createdAt: "2025-11-11T14:29:04.569Z",
     updatedAt: "2025-11-11T14:29:04.569Z",
