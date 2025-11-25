@@ -17,9 +17,13 @@ import { createBrowserClient } from "@supabase/ssr";
 import { AnimatePresence, motion } from "framer-motion";
 import { Sparkles } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { toast } from "react-toastify";
-import { useMemo } from "react";
+import { useBilling } from "@/components/providers/BillingProvider";
+import type {
+  InvoiceDateParts,
+  InvoiceRange,
+} from "./admin/manage-users/actions";
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -63,6 +67,24 @@ export default function Dashboard() {
   const [showTerms, setShowTerms] = useState(false);
   const [agreeSaving, setAgreeSaving] = useState(false);
   const [pendingEventId, setPendingEventId] = useState<string | null>(null);
+
+  const {
+    invoices,
+    unpaidInvoices,
+    loading: billingLoading,
+    error: billingError,
+    refresh: refreshBilling,
+  } = useBilling();
+  console.log(
+    "invoices",
+    invoices,
+    "unpaidInvoices",
+    unpaidInvoices,
+    "billingLoading",
+    billingLoading,
+    "billingError",
+    billingError
+  );
 
   const SAFETY_MS = 6 * 60 * 60 * 1000;
 
@@ -169,6 +191,134 @@ export default function Dashboard() {
     });
   }, [events, liveEvents]);
 
+  function datePartsToDate(parts?: InvoiceDateParts | null): Date | null {
+    if (!parts) return null;
+    return new Date(parts.year, parts.month - 1, parts.day);
+  }
+
+  function formatRangeForMessage(range: InvoiceRange | null): string {
+    if (!range || !range.from) return "the configured date window";
+
+    const d = datePartsToDate(range.from);
+    if (!d || Number.isNaN(d.getTime())) return "the configured date window";
+
+    return d.toLocaleDateString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+  }
+
+  function hasUnpaidOlderThanThreshold(
+    invoices: typeof unpaidInvoices,
+    range: InvoiceRange | null
+  ): boolean | null {
+    if (!range || !range.from) return null;
+
+    const threshold = datePartsToDate(range.from);
+    if (!threshold) return null;
+
+    return invoices.some((inv) => {
+      if (!inv.trandate) return false;
+      const d = new Date(inv.trandate);
+      if (Number.isNaN(d.getTime())) return false;
+      return d < threshold;
+    });
+  }
+
+  async function runInvoiceCheck(): Promise<boolean> {
+    try {
+      const res = await fetch("/api/supabase/get-invoice-check", {
+        cache: "no-store",
+      });
+
+      if (!res.ok) {
+        console.error(
+          "Failed to load customer invoice settings:",
+          res.status,
+          await res.text().catch(() => "")
+        );
+        return true;
+      }
+
+      const j = await res.json();
+
+      const checkInvoiceRaw = j?.check_invoice;
+      const rangeRaw = j?.check_invoice_range;
+      const existingResultRaw = j?.check_invoice_result;
+
+      const checkInvoice: boolean = !!checkInvoiceRaw;
+      const range: InvoiceRange | null = (rangeRaw as InvoiceRange) ?? null;
+      const existingResult: boolean | null =
+        typeof existingResultRaw === "boolean" ? existingResultRaw : null;
+
+      console.log("invoice check payload", j, {
+        checkInvoice,
+        range,
+        existingResult,
+      });
+
+      if (!checkInvoice) {
+        if (existingResult !== null) {
+          try {
+            await fetch("/api/supabase/set-invoice-check", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ checkInvoiceResult: null }),
+            });
+          } catch (e) {
+            console.error("Failed to reset invoice check result to null", e);
+          }
+        }
+        return true;
+      }
+
+      const overdue = hasUnpaidOlderThanThreshold(unpaidInvoices, range);
+      console.log("overdue", overdue);
+
+      if (overdue === null) {
+        if (existingResult !== null) {
+          try {
+            await fetch("/api/supabase/set-invoice-check", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ checkInvoiceResult: null }),
+            });
+          } catch (e) {
+            console.error("Failed to reset invoice check result to null", e);
+          }
+        }
+        return true;
+      }
+
+      const computedResult = overdue;
+
+      if (computedResult !== existingResult) {
+        try {
+          await fetch("/api/supabase/set-invoice-check", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ checkInvoiceResult: computedResult }),
+          });
+        } catch (e) {
+          console.error("Failed to store invoice check result", e);
+        }
+      }
+
+      if (computedResult) {
+        const rangeLabel = formatRangeForMessage(range);
+        toast.warn(
+          `You have unpaid invoices older than ${rangeLabel}. Your bids won't be taken into account.`
+        );
+      }
+
+      return true;
+    } catch (err) {
+      console.error("Error running invoice check", err);
+      return true;
+    }
+  }
+
   async function ensureNames(): Promise<{
     firstName: string;
     lastName: string;
@@ -211,6 +361,8 @@ export default function Dashboard() {
         toast.error("No live events found for this event type");
         return;
       }
+
+      await runInvoiceCheck();
 
       const ok = await ensureTermsAccepted();
       if (!ok) {
@@ -302,29 +454,7 @@ export default function Dashboard() {
         toast.error("No live events found for this event type");
         return;
       }
-      // const matchingLiveEvents = liveEvents.filter(
-      //   (le) => le.type === targetEventId
-      // );
-      // if (matchingLiveEvents.length === 0) {
-      //   toast.error("No live events found for this event type");
-      //   return;
-      // }
-      // const latestEvent = matchingLiveEvents.sort(
-      //   (a, b) =>
-      //     new Date(b.startTime).getTime() - new Date(a.startTime).getTime()
-      // )[0];
-      // if (latestEvent.isEnded) {
-      //   toast.error("This event has already ended.");
-      //   return;
-      // }
-      // if (!latestEvent.startTime) {
-      //   toast.error("This event has no start time.");
-      //   return;
-      // }
-      // if (Date.now() < new Date(latestEvent.startTime).getTime()) {
-      //   toast.error("This event has not started yet.");
-      //   return;
-      // }
+
       const isJoinable = await isEventCurrentlyLive(latestEvent);
       if (!isJoinable) {
         toast.error(
