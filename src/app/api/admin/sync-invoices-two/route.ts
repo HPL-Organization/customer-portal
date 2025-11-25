@@ -56,6 +56,7 @@ type Database = {
           ship_address: string | null;
           so_reference: string | null;
           payment_processing: boolean;
+          is_backordered: boolean | null;
         };
         Insert: Partial<Database["public"]["Tables"]["invoices"]["Row"]>;
         Update: Partial<Database["public"]["Tables"]["invoices"]["Row"]>;
@@ -427,6 +428,10 @@ async function upsertSnapshotToSupabase(
       ship_address: coerceNull(f.ship_address),
       so_reference: coerceNull(f.so_reference),
       payment_processing: existing?.payment_processing ?? false,
+      is_backordered:
+        typeof f.isBackordered === "boolean"
+          ? f.isBackordered
+          : existing?.is_backordered ?? null,
     };
   };
 
@@ -670,6 +675,7 @@ export async function POST(req: NextRequest) {
         "ship_address",
         "so_reference",
         "payment_processing",
+        "is_backordered",
       ],
       "invoice_id",
       fileInvoiceIds
@@ -770,6 +776,7 @@ export async function POST(req: NextRequest) {
       "ship_address",
       "so_reference",
       "payment_processing",
+      "is_backordered",
     ];
     const invoiceNumeric = new Set([
       "total",
@@ -916,6 +923,10 @@ export async function POST(req: NextRequest) {
         ship_address: f.ship_address ?? null,
         so_reference: f.so_reference ?? null,
         payment_processing: d.payment_processing ?? null,
+        is_backordered:
+          typeof f.isBackordered === "boolean"
+            ? f.isBackordered
+            : d.is_backordered ?? null,
       };
 
       const dNorm: Record<string, any> = {
@@ -935,6 +946,7 @@ export async function POST(req: NextRequest) {
         ship_address: d.ship_address,
         so_reference: d.so_reference,
         payment_processing: d.payment_processing,
+        is_backordered: d.is_backordered,
       };
 
       const changes = diffObject(dNorm, fNorm, invoiceFields, invoiceNumeric);

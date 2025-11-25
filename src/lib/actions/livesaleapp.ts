@@ -275,7 +275,7 @@ export async function isEventCurrentlyLive(event: LiveEvent): Promise<boolean> {
   const startTime = new Date(event.startTime);
   const endTime = new Date(event.endTime);
 
-  const HALF_HOUR_MS = 0.5 * 60 * 60 * 1000;
+  const HALF_HOUR_MS = 1 * 60 * 60 * 1000; // 1 hour
   const thresholdStartTime = new Date(startTime.getTime() - HALF_HOUR_MS);
   const thresholdEndTime = new Date(endTime.getTime() + HALF_HOUR_MS);
 
