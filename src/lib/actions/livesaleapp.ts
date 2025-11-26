@@ -229,6 +229,39 @@ const liveEventTypes: LiveEventType[] = [
     updatedAt: "2025-11-11T14:29:04.569Z",
   },
 ];
+const LIVE_EVENT_TYPE_OVERRIDES: Record<
+  string,
+  Partial<Pick<LiveEventType, "label" | "description">>
+> = {
+  wednesday_rough_rock_event: {
+    label: "Wednesday Rough Rock Event",
+    description: "This is a special Machine Night event",
+  },
+};
+
+const IGNORED_TYPES = new Set<string>(["test_type"]);
+
+function typeToLabel(type: string): string {
+  return type
+    .split("_")
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
+function buildDescriptionFromLabel(label: string): string {
+  return `This is ${label}`;
+}
+const fallbackLiveEventTypes: LiveEventType[] = [
+  {
+    internalName: "cut_and_chat_live_event",
+    label: "Cut And Chat Live Event",
+    description: "This is Cut And Chat Live Event",
+    category: "EVENT_TYPE",
+    createdAt: "",
+    updatedAt: "",
+  },
+];
 
 export async function fetchLiveEvents(page: number = 1) {
   const [error, resp] = await to(
@@ -258,7 +291,50 @@ export async function fetchLiveEvents(page: number = 1) {
 }
 
 export async function getEventTypes(): Promise<LiveEventType[]> {
-  return liveEventTypes;
+  const [error, resp] = await to(
+    livesaleappGot
+      .get("live-event", {
+        searchParams: {
+          page: "1",
+          distinctType: "true",
+          take: "100",
+        },
+      })
+      .json<LiveEventsResponse>()
+  );
+
+  if (error || !resp?.results) {
+    logger.error("LiveSaleApp API error building event types", { error });
+    return fallbackLiveEventTypes;
+  }
+
+  const seen = new Set<string>();
+  const types: LiveEventType[] = [];
+
+  for (const ev of resp.results) {
+    const t = ev.type;
+    if (!t) continue;
+    if (IGNORED_TYPES.has(t)) continue;
+    if (seen.has(t)) continue;
+    seen.add(t);
+
+    const override = LIVE_EVENT_TYPE_OVERRIDES[t];
+    const label = override?.label ?? typeToLabel(t);
+    const description =
+      override?.description ?? buildDescriptionFromLabel(label);
+
+    types.push({
+      internalName: t,
+      label,
+      description,
+      category: "EVENT_TYPE",
+
+      createdAt: ev.date ?? "",
+      updatedAt: ev.date ?? "",
+    });
+  }
+
+  return types;
 }
 
 export async function getEventTypeByInternalName(

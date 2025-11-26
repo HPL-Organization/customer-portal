@@ -75,16 +75,16 @@ export default function Dashboard() {
     error: billingError,
     refresh: refreshBilling,
   } = useBilling();
-  console.log(
-    "invoices",
-    invoices,
-    "unpaidInvoices",
-    unpaidInvoices,
-    "billingLoading",
-    billingLoading,
-    "billingError",
-    billingError
-  );
+  // console.log(
+  //   "invoices",
+  //   invoices,
+  //   "unpaidInvoices",
+  //   unpaidInvoices,
+  //   "billingLoading",
+  //   billingLoading,
+  //   "billingError",
+  //   billingError
+  // );
 
   const SAFETY_MS = 6 * 60 * 60 * 1000;
 
