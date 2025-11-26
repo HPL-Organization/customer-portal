@@ -8,6 +8,7 @@ import Image from "next/image";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { useEffect, useRef } from "react";
+import { validateSignupNames } from "@/lib/auth/validateNames";
 
 export const dynamic = "force-dynamic";
 
@@ -152,6 +153,16 @@ function LoginInner() {
     setResendMsg(null);
     setLoading(true);
 
+    const fn = firstName.trim();
+    const ln = lastName.trim();
+
+    const nameError = validateSignupNames(fn, ln);
+    if (nameError) {
+      setLoading(false);
+      setErrorMsg(nameError);
+      return;
+    }
+
     if (password.length < 6) {
       setLoading(false);
       setErrorMsg("Password must be at least 6 characters.");
@@ -164,8 +175,6 @@ function LoginInner() {
     }
 
     try {
-      const fn = firstName.trim();
-      const ln = lastName.trim();
       if (fn && ln && !nameWarned) {
         const r = await fetch("/api/admin/lookup-by-name", {
           method: "POST",
