@@ -115,6 +115,16 @@ function normalizeInvoice(raw: any): Invoice {
     createdFromSoUrl:
       raw.createdFromSoUrl != null ? String(raw.createdFromSoUrl) : undefined,
     paymentProcessing: Boolean((raw.payment_processing ?? false) === true),
+    isBackordered:
+      typeof raw.isBackordered === "boolean"
+        ? raw.isBackordered
+        : typeof raw.is_backordered === "boolean"
+        ? raw.is_backordered
+        : null,
+    salesRep:
+      raw.salesRep ??
+      raw.sales_rep ??
+      (typeof raw.salesrep === "string" ? raw.salesrep : null),
   };
   return inv as Invoice;
 }

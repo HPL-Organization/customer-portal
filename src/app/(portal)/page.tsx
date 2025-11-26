@@ -215,14 +215,49 @@ export default function Dashboard() {
   ): boolean | null {
     if (!range || !range.from) return null;
 
-    const threshold = datePartsToDate(range.from);
-    if (!threshold) return null;
+    const mode = (range as any).mode ?? "rolling";
+    const fromDate = datePartsToDate(range.from);
+    if (!fromDate) return null;
+
+    const isInvoiceBackordered = (inv: any) =>
+      inv.isBackordered === true || inv.is_backordered === true;
+
+    const isLiveEventRep = (inv: any) => {
+      const repRaw =
+        (inv as any).salesRep ??
+        (inv as any).sales_rep ??
+        (inv as any).salesrep ??
+        "";
+      const rep = String(repRaw).trim().toLowerCase();
+      return rep === "live event";
+    };
+
+    if (mode === "fixed") {
+      if (!range.to) return null;
+      const toDate = datePartsToDate(range.to);
+      if (!toDate) return null;
+
+      return invoices.some((inv) => {
+        if (isInvoiceBackordered(inv)) return false;
+        if (!isLiveEventRep(inv)) return false;
+        if (!inv.trandate) return false;
+
+        const d = new Date(inv.trandate);
+        if (Number.isNaN(d.getTime())) return false;
+
+        return d >= fromDate && d <= toDate;
+      });
+    }
 
     return invoices.some((inv) => {
+      if (isInvoiceBackordered(inv)) return false;
+      if (!isLiveEventRep(inv)) return false;
       if (!inv.trandate) return false;
+
       const d = new Date(inv.trandate);
       if (Number.isNaN(d.getTime())) return false;
-      return d < threshold;
+
+      return d < fromDate;
     });
   }
 
