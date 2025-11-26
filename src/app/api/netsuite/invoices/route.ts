@@ -173,6 +173,14 @@ export async function GET(req: NextRequest) {
           payments: pmts,
           netsuiteUrl: h.netsuite_url ?? invoiceUrl(id),
           payment_processing: (h as any).payment_processing === true,
+          isBackordered:
+            typeof (h as any).is_backordered === "boolean"
+              ? (h as any).is_backordered
+              : null,
+          salesRep:
+            typeof (h as any).sales_rep === "string"
+              ? (h as any).sales_rep
+              : null,
         };
       });
 

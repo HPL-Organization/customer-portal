@@ -88,12 +88,12 @@ export function whenText(iso: string) {
 
 export function categoryPill(c?: VipEvent["category"]) {
   switch (c) {
-    case "rough_rock":
-      return { label: "Rough Rock", className: "bg-[#FFF2F2] text-[#8C0F0F]" };
-    case "machines":
-      return { label: "Machines", className: "bg-[#F2F7FF] text-[#0F3D8C]" };
-    case "agate":
-      return { label: "Agate", className: "bg-[#F7FFF2] text-[#2D6A00]" };
+    // case "rough_rock":
+    //   return { label: "Rough Rock", className: "bg-[#FFF2F2] text-[#8C0F0F]" };
+    // case "machines":
+    //   return { label: "Machines", className: "bg-[#F2F7FF] text-[#0F3D8C]" };
+    // case "agate":
+    //   return { label: "Agate", className: "bg-[#F7FFF2] text-[#2D6A00]" };
     default:
       return { label: "VIP", className: "bg-white/70 text-[#17152A]" };
   }
