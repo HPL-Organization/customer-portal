@@ -1,5 +1,6 @@
 "use server";
 
+import { getCustomerCache } from "@/lib/cache";
 import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 
@@ -77,6 +78,7 @@ interface InvoiceSettingsRow {
 
 interface CustomerInfoRow {
   info_id: number;
+  email: string;
 }
 
 function sanitizeInvoiceRange(
@@ -341,7 +343,7 @@ async function findCustomerInfoRow(
   userId: string,
   netsuiteCustomerId?: number | null
 ) {
-  const selectColumns = "info_id";
+  const selectColumns = "info_id,email";
 
   if (userId) {
     const { data, error } = await supabase
@@ -426,6 +428,10 @@ export async function upsertCustomerInvoiceSettings(params: {
       console.error("Error updating invoice settings:", error);
       throw new Error("Failed to update invoice settings");
     }
+
+    // Invalidate customer cache after successful update
+    const customerCache = getCustomerCache();
+    await customerCache.invalidateCustomerByEmail((existing as CustomerInfoRow).email);
 
     return { success: true };
   } catch (error) {
