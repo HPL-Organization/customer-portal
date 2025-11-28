@@ -231,6 +231,9 @@ export default function Dashboard() {
       const rep = String(repRaw).trim().toLowerCase();
       return rep === "live event";
     };
+    const isPaymentProcessing = (inv: any) =>
+      (inv as any).paymentProcessing === true ||
+      (inv as any).payment_processing === true;
 
     if (mode === "fixed") {
       if (!range.to) return null;
@@ -241,6 +244,7 @@ export default function Dashboard() {
         if (isInvoiceBackordered(inv)) return false;
         if (!isLiveEventRep(inv)) return false;
         if (!inv.trandate) return false;
+        if (isPaymentProcessing(inv)) return false;
 
         const d = new Date(inv.trandate);
         if (Number.isNaN(d.getTime())) return false;
@@ -252,6 +256,7 @@ export default function Dashboard() {
     return invoices.some((inv) => {
       if (isInvoiceBackordered(inv)) return false;
       if (!isLiveEventRep(inv)) return false;
+      if (isPaymentProcessing(inv)) return false;
       if (!inv.trandate) return false;
 
       const d = new Date(inv.trandate);
