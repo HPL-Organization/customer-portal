@@ -35,6 +35,7 @@ function Inner() {
   const sp = useSearchParams();
   const next = sp.get("next") || "/";
   const prefillParam = sp.get("prefill") || "";
+  const forceSessionFail = "1";
   const [phase, setPhase] = useState<Phase>("checking");
   const [detail, setDetail] = useState<string>(
     "Searching to see if you exist in our records…"
@@ -60,23 +61,58 @@ function Inner() {
       try {
         try {
           await supabase.auth.exchangeCodeForSession(window.location.href);
-        } catch {}
+        } catch (ex: any) {
+          console.error("[CALLBACK_EXCHANGE_ERROR]", {
+            message: ex?.message,
+            name: ex?.name,
+            stack: ex?.stack,
+            href: window.location.href,
+            raw: ex,
+          });
+        }
 
         {
-          const deadline = Date.now() + 5000;
+          const deadline = Date.now() + 25000;
           let ok = false;
+          let lastSessionDebug: any = null;
+
           while (Date.now() < deadline) {
-            const { data } = await supabase.auth.getSession();
-            if (data.session) {
+            const { data, error } = await supabase.auth.getSession();
+
+            if (error) {
+              console.error("[CALLBACK_GET_SESSION_ERROR]", {
+                message: error.message,
+                name: error.name,
+                status: (error as any)?.status,
+                stack: (error as any)?.stack,
+                href: window.location.href,
+                raw: error,
+              });
+              lastSessionDebug = { errorMessage: error.message };
+            } else {
+              lastSessionDebug = {
+                hasSession: !!data?.session,
+                userId: data?.session?.user?.id,
+              };
+            }
+
+            if (data?.session) {
               ok = true;
               break;
             }
             await new Promise((r) => setTimeout(r, 120));
           }
           if (!ok) {
+            console.error("[CALLBACK_SESSION_ERROR]", {
+              reason: "no-session-established",
+              ok,
+              href: window.location.href,
+              lastSessionDebug,
+            });
+
             setPhase("error");
             setDetail(
-              "Could not establish session. Please click the email link again."
+              "Your email was verified, but we couldn't finish signing you in. Please try logging in with your email and password. If that doesn't work, contact HPL support."
             );
             return;
           }
@@ -96,7 +132,14 @@ function Inner() {
               middleName: (d.middleName || "").toString(),
               lastName: (d.lastName || "").toString(),
             };
-          } catch {}
+          } catch (ex: any) {
+            console.error("[CALLBACK_NAME_PREFILL_ERROR]", {
+              message: ex?.message,
+              name: ex?.name,
+              stack: ex?.stack,
+              raw,
+            });
+          }
         }
 
         setPhase("checking");
@@ -115,11 +158,16 @@ function Inner() {
           sessionStorage.removeItem("name_prefill");
 
         if (j?.error) {
+          console.error("[CALLBACK_PROVISION_ERROR]", {
+            error: j.error,
+            step: j.step,
+            details: j.details,
+            raw: j,
+          });
+
           setPhase("error");
           setDetail(
-            j?.step === "netsuite"
-              ? "We couldn't create your NetSuite record. Please try again or contact support."
-              : "We couldn't finish linking your account. Please try again."
+            "Your email was verified, but we couldn't finish setting up your customer record. Please try logging in again. If that still doesn't work, contact HPL support."
           );
           return;
         }
@@ -153,7 +201,13 @@ function Inner() {
 
         try {
           localStorage.setItem("hpl:lastActive", String(Date.now()));
-        } catch {}
+        } catch (ex: any) {
+          console.error("[CALLBACK_LAST_ACTIVE_ERROR]", {
+            message: ex?.message,
+            name: ex?.name,
+            stack: ex?.stack,
+          });
+        }
 
         setPhase("redirecting");
         setDetail("Taking you to your portal…");
@@ -161,8 +215,18 @@ function Inner() {
 
         router.replace(url.pathname + url.search);
       } catch (e: any) {
+        console.error("[CALLBACK_UNEXPECTED_ERROR]", {
+          message: e?.message,
+          name: e?.name,
+          stack: e?.stack,
+          href: typeof window !== "undefined" ? window.location.href : null,
+          raw: e,
+        });
+
         setPhase("error");
-        setDetail(e?.message || "Please try signing in again.");
+        setDetail(
+          "Your email was verified, but something went wrong while finishing sign-in. Please try logging in with your email and password. If that doesn't work, contact HPL support."
+        );
       }
     })();
   }, [router, next, prefillParam]);
