@@ -2,6 +2,7 @@
 
 import { CardSkeleton, EventCard } from "@/components/EventCard";
 import { ProfileUpdateDialog } from "@/components/ProfileUpdateDialog";
+import { useBilling } from "@/components/providers/BillingProvider";
 import { useCustomerBootstrap } from "@/components/providers/CustomerBootstrap";
 import TermsModal from "@/components/TermsModal";
 import { openPlaceholderPopup } from "@/components/UI/popup";
@@ -17,9 +18,8 @@ import { createBrowserClient } from "@supabase/ssr";
 import { AnimatePresence, motion } from "framer-motion";
 import { Sparkles } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "react-toastify";
-import { useBilling } from "@/components/providers/BillingProvider";
 import type {
   InvoiceDateParts,
   InvoiceRange,
@@ -29,6 +29,7 @@ const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
+const SAFETY_MS = 6 * 60 * 60 * 1000;
 
 export default function Dashboard() {
   const router = useRouter();
@@ -85,8 +86,6 @@ export default function Dashboard() {
   //   "billingError",
   //   billingError
   // );
-
-  const SAFETY_MS = 6 * 60 * 60 * 1000;
 
   useEffect(() => {
     let alive = true;

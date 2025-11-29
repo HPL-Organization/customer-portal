@@ -320,7 +320,11 @@ export async function getEventTypes(): Promise<LiveEventType[]> {
     seen.add(t);
 
     const override = LIVE_EVENT_TYPE_OVERRIDES[t];
-    const label = override?.label ?? typeToLabel(t);
+    let label = override?.label ?? typeToLabel(t);
+    if (t === "saturday_slab_event") {
+      label = "Saturday Live Event";
+    }
+
     const description =
       override?.description ?? buildDescriptionFromLabel(label);
 
