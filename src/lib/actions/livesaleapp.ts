@@ -3,6 +3,7 @@
 import logger from "@/lib/logger";
 import to from "await-to-js";
 import got, { HTTPError } from "got";
+import { getCustomerCache } from "../cache";
 
 const LIVESALEAPP_BASE_URL =
   process.env.LIVESALEAPP_BASE_URL || "https://bademail.onrender.com/v1";
@@ -397,6 +398,9 @@ export async function joinLiveSession(
   logger.info("Getting zoom join URL", { eventId, email });
 
   let joinUrlData;
+
+  const customerCache = getCustomerCache();
+  await customerCache.invalidateCustomerByEmail(email);
   const [getUrlError, getUrlResponse] = await to(
     livesaleappGot
       .post(`live-event/${eventId}/get-zoom-join-url`, {
