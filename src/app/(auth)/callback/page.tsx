@@ -102,6 +102,7 @@ function Inner() {
             }
             await new Promise((r) => setTimeout(r, 120));
           }
+
           if (!ok) {
             console.error("[CALLBACK_SESSION_ERROR]", {
               reason: "no-session-established",

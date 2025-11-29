@@ -33,6 +33,8 @@ const InfoTab = () => {
     loading,
     setHsId,
   } = useCustomerBootstrap();
+  console.log("NS id ", nsId);
+  const nsPending = nsId === "-1" || nsId === null;
 
   const [contactLoading, setContactLoading] = useState(false);
   const [hasHubSpot, setHasHubSpot] = useState<boolean | null>(null);
@@ -190,7 +192,7 @@ const InfoTab = () => {
   useEffect(() => {
     if (!initialized || loading) return;
 
-    if (!nsId) {
+    if (!nsId || nsPending) {
       setHasPortalInfo(false);
       setContactLoading(false);
       return;
@@ -205,15 +207,18 @@ const InfoTab = () => {
         );
 
         if (!res.ok) {
+          console.log("heye ");
           setHasPortalInfo(false);
           return;
         }
 
         const { data } = await res.json();
         if (!data) {
+          console.log("heye2 ", res);
           setHasPortalInfo(false);
           return;
         }
+        console.log("data", data);
 
         setHasPortalInfo(true);
 
@@ -556,99 +561,112 @@ const InfoTab = () => {
             </div>
           )}
 
-          <div className="mb-5 flex items-center justify-between">
-            <div>
-              <h1 className="mt-2 text-2xl font-bold tracking-tight text-[#17152A]">
-                My Info
-              </h1>
-              <div className="mt-3 h-[3px] w-24 rounded-full bg-gradient-to-r from-[#8C0F0F] to-[#E01C24]" />
+          {nsPending && (
+            <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 shadow-sm">
+              Full functionality of the portal will soon be available on logging
+              in again. You can still experience VIP events right now.
             </div>
-            <Button
-              onClick={handleSaveAll}
-              className="px-4 py-2 text-sm rounded-xl bg-[#8C0F0F] text-white hover:bg-[#E01C24] shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8C0F0F]/30"
-            >
-              Save
-            </Button>
-          </div>
+          )}
+          <div className={nsPending ? "pointer-events-none opacity-50" : ""}>
+            <div className="mb-5 flex items-center justify-between">
+              <div>
+                <h1 className="mt-2 text-2xl font-bold tracking-tight text-[#17152A]">
+                  My Info
+                </h1>
+                <div className="mt-3 h-[3px] w-24 rounded-full bg-gradient-to-r from-[#8C0F0F] to-[#E01C24]" />
+              </div>
+              <Button
+                onClick={handleSaveAll}
+                className="px-4 py-2 text-sm rounded-xl bg-[#8C0F0F] text-white hover:bg-[#E01C24] shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8C0F0F]/30"
+              >
+                Save
+              </Button>
+            </div>
 
-          <section className="mb-8 rounded-2xl border border-[#BFBFBF]/60 bg-white p-4 shadow-sm">
-            <h2 className="mb-4 text-lg font-semibold text-[#17152A]">
-              Contact Details
-            </h2>
-            <div className="grid grid-cols-1 gap-4 text-black md:grid-cols-3">
-              <InputField
-                label="First Name"
-                name="firstName"
-                value={formData.firstName}
-                onChange={handleChange}
-              />
-              <InputField
-                label="Middle Name"
-                name="middleName"
-                value={formData.middleName}
-                onChange={handleChange}
-              />
-              <InputField
-                label="Last Name"
-                name="lastName"
-                value={formData.lastName}
-                onChange={handleChange}
-              />
-              <InputField
-                label="Email"
-                name="email"
-                value={formData.email}
-                onChange={handleChange}
-                disabled
-              />
-              <InputField
-                label="Phone"
-                name="phone"
-                value={formData.phone}
-                onChange={handleChange}
-              />
-              <InputField
-                label="Mobile"
-                name="mobile"
-                value={formData.mobile}
-                onChange={handleChange}
-              />
-            </div>
-          </section>
-
-          <section className="mb-8 rounded-2xl border border-[#BFBFBF]/60 bg-white p-4 shadow-sm">
-            <div className="mb-2 flex items-center justify-between">
-              <span className="inline-flex items-center gap-2 rounded-full border border-[#8C0F0F]/30 bg-[#8C0F0F]/10 px-3 py-1 text-[11px] font-medium text-[#8C0F0F]">
-                Google Shipping Address Lookup
-              </span>
-              <FormControlLabel
-                control={<Checkbox checked={shippingVerified} disabled />}
-                label="Verified via Google"
-              />
-            </div>
-            <div className="mb-4">
-              <GoogleMapsLoader>
-                <AddressAutocomplete
-                  onAddressSelect={(p: any) => {
-                    handleAddressChange("shipping", "address1", p.address1);
-                    handleAddressChange("shipping", "city", p.city);
-                    handleAddressChange("shipping", "state", p.state);
-                    handleAddressChange("shipping", "zip", p.zip);
-                    handleAddressChange("shipping", "country", p.country);
-                    setShippingVerified(true);
-                    markDirty();
-                  }}
+            <section className="mb-8 rounded-2xl border border-[#BFBFBF]/60 bg-white p-4 shadow-sm">
+              <h2 className="mb-4 text-lg font-semibold text-[#17152A]">
+                Contact Details
+              </h2>
+              <div className="grid grid-cols-1 gap-4 text-black md:grid-cols-3">
+                <InputField
+                  label="First Name"
+                  name="firstName"
+                  value={formData.firstName}
+                  onChange={handleChange}
                 />
-              </GoogleMapsLoader>
-            </div>
-            <div className="my-4 h-px w-full bg-[#BFBFBF]/60" />
+                <InputField
+                  label="Middle Name"
+                  name="middleName"
+                  value={formData.middleName}
+                  onChange={handleChange}
+                />
+                <InputField
+                  label="Last Name"
+                  name="lastName"
+                  value={formData.lastName}
+                  onChange={handleChange}
+                />
+                <InputField
+                  label="Email"
+                  name="email"
+                  value={formData.email}
+                  onChange={handleChange}
+                  disabled
+                />
+                <InputField
+                  label="Phone"
+                  name="phone"
+                  value={formData.phone}
+                  onChange={handleChange}
+                />
+                <InputField
+                  label="Mobile"
+                  name="mobile"
+                  value={formData.mobile}
+                  onChange={handleChange}
+                />
+              </div>
+            </section>
 
-            <h2 className="mb-2 text-lg font-semibold text-[#17152A]">
-              Shipping Address
-            </h2>
-            <div className="grid grid-cols-1 gap-4 text-black md:grid-cols-2">
-              {["address1", "city", "address2", "state", "zip", "country"].map(
-                (field) => (
+            <section className="mb-8 rounded-2xl border border-[#BFBFBF]/60 bg-white p-4 shadow-sm">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="inline-flex items-center gap-2 rounded-full border border-[#8C0F0F]/30 bg-[#8C0F0F]/10 px-3 py-1 text-[11px] font-medium text-[#8C0F0F]">
+                  Google Shipping Address Lookup
+                </span>
+                <FormControlLabel
+                  control={<Checkbox checked={shippingVerified} disabled />}
+                  label="Verified via Google"
+                />
+              </div>
+              <div className="mb-4">
+                <GoogleMapsLoader>
+                  <AddressAutocomplete
+                    onAddressSelect={(p: any) => {
+                      handleAddressChange("shipping", "address1", p.address1);
+                      handleAddressChange("shipping", "city", p.city);
+                      handleAddressChange("shipping", "state", p.state);
+                      handleAddressChange("shipping", "zip", p.zip);
+                      handleAddressChange("shipping", "country", p.country);
+                      setShippingVerified(true);
+                      markDirty();
+                    }}
+                  />
+                </GoogleMapsLoader>
+              </div>
+              <div className="my-4 h-px w-full bg-[#BFBFBF]/60" />
+
+              <h2 className="mb-2 text-lg font-semibold text-[#17152A]">
+                Shipping Address
+              </h2>
+              <div className="grid grid-cols-1 gap-4 text-black md:grid-cols-2">
+                {[
+                  "address1",
+                  "city",
+                  "address2",
+                  "state",
+                  "zip",
+                  "country",
+                ].map((field) => (
                   <InputField
                     key={field}
                     label={field.charAt(0).toUpperCase() + field.slice(1)}
@@ -657,44 +675,49 @@ const InfoTab = () => {
                       handleAddressChange("shipping", field, e.target.value)
                     }
                   />
-                )
-              )}
-            </div>
-          </section>
+                ))}
+              </div>
+            </section>
 
-          <section className="mb-8 rounded-2xl border border-[#BFBFBF]/60 bg-white p-4 shadow-sm">
-            <div className="mb-2 flex items-center justify-between">
-              <span className="inline-flex items-center gap-2 rounded-full border border-[#8C0F0F]/30 bg-[#8C0F0F]/10 px-3 py-1 text-[11px] font-medium text-[#8C0F0F]">
-                Google Billing Address Lookup
-              </span>
-              <FormControlLabel
-                control={<Checkbox checked={billingVerified} disabled />}
-                label="Verified via Google"
-              />
-            </div>
-            <div className="mb-4">
-              <GoogleMapsLoader>
-                <AddressAutocomplete
-                  onAddressSelect={(p: any) => {
-                    handleAddressChange("billing", "address1", p.address1);
-                    handleAddressChange("billing", "city", p.city);
-                    handleAddressChange("billing", "state", p.state);
-                    handleAddressChange("billing", "zip", p.zip);
-                    handleAddressChange("billing", "country", p.country);
-                    setBillingVerified(true);
-                    markDirty();
-                  }}
+            <section className="mb-8 rounded-2xl border border-[#BFBFBF]/60 bg-white p-4 shadow-sm">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="inline-flex items-center gap-2 rounded-full border border-[#8C0F0F]/30 bg-[#8C0F0F]/10 px-3 py-1 text-[11px] font-medium text-[#8C0F0F]">
+                  Google Billing Address Lookup
+                </span>
+                <FormControlLabel
+                  control={<Checkbox checked={billingVerified} disabled />}
+                  label="Verified via Google"
                 />
-              </GoogleMapsLoader>
-            </div>
-            <div className="my-4 h-px w-full bg-[#BFBFBF]/60" />
+              </div>
+              <div className="mb-4">
+                <GoogleMapsLoader>
+                  <AddressAutocomplete
+                    onAddressSelect={(p: any) => {
+                      handleAddressChange("billing", "address1", p.address1);
+                      handleAddressChange("billing", "city", p.city);
+                      handleAddressChange("billing", "state", p.state);
+                      handleAddressChange("billing", "zip", p.zip);
+                      handleAddressChange("billing", "country", p.country);
+                      setBillingVerified(true);
+                      markDirty();
+                    }}
+                  />
+                </GoogleMapsLoader>
+              </div>
+              <div className="my-4 h-px w-full bg-[#BFBFBF]/60" />
 
-            <h2 className="mb-2 text-lg font-semibold text-[#17152A]">
-              Billing Address
-            </h2>
-            <div className="grid grid-cols-1 gap-4 text-black md:grid-cols-2">
-              {["address1", "city", "address2", "state", "zip", "country"].map(
-                (field) => (
+              <h2 className="mb-2 text-lg font-semibold text-[#17152A]">
+                Billing Address
+              </h2>
+              <div className="grid grid-cols-1 gap-4 text-black md:grid-cols-2">
+                {[
+                  "address1",
+                  "city",
+                  "address2",
+                  "state",
+                  "zip",
+                  "country",
+                ].map((field) => (
                   <InputField
                     key={field}
                     label={field.charAt(0).toUpperCase() + field.slice(1)}
@@ -703,113 +726,113 @@ const InfoTab = () => {
                       handleAddressChange("billing", field, e.target.value)
                     }
                   />
-                )
-              )}
-            </div>
-          </section>
+                ))}
+              </div>
+            </section>
 
-          <div className="flex justify-end">
-            <Button
-              onClick={handleSaveAll}
-              className="px-4 py-2 text-sm rounded-xl bg-[#8C0F0F] text-white hover:bg-[#E01C24] shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8C0F0F]/30"
+            <div className="flex justify-end">
+              <Button
+                onClick={handleSaveAll}
+                className="px-4 py-2 text-sm rounded-xl bg-[#8C0F0F] text-white hover:bg-[#E01C24] shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8C0F0F]/30"
+              >
+                Save
+              </Button>
+            </div>
+
+            <Backdrop
+              open={saving}
+              sx={{
+                color: "#fff",
+                zIndex: (t) => t.zIndex.modal + 1,
+                flexDirection: "column",
+                gap: 2,
+              }}
             >
-              Save
-            </Button>
-          </div>
+              <CircularProgress />
+              <div className="text-lg font-medium text-white">
+                {loaderMsgs[loaderIdx] ?? "Working…"}
+              </div>
+              <Box sx={{ width: 320 }}>
+                <LinearProgress />
+              </Box>
+            </Backdrop>
 
-          <Backdrop
-            open={saving}
-            sx={{
-              color: "#fff",
-              zIndex: (t) => t.zIndex.modal + 1,
-              flexDirection: "column",
-              gap: 2,
-            }}
-          >
-            <CircularProgress />
-            <div className="text-lg font-medium text-white">
-              {loaderMsgs[loaderIdx] ?? "Working…"}
-            </div>
-            <Box sx={{ width: 320 }}>
-              <LinearProgress />
-            </Box>
-          </Backdrop>
-
-          <Dialog
-            open={navOpen}
-            onClose={() => {
-              cancelNavigation();
-            }}
-            aria-labelledby="unsaved-dialog-title"
-            PaperProps={{
-              sx: {
-                borderRadius: 3,
-                width: 520,
-                maxWidth: "90vw",
-                boxShadow:
-                  "0 10px 30px rgba(2,6,23,0.25), 0 1px 0 rgba(2,6,23,0.05)",
-              },
-            }}
-          >
-            <DialogTitle id="unsaved-dialog-title" sx={{ pb: 1 }}>
-              <Box className="flex items-center gap-3">
-                <Box
+            <Dialog
+              open={navOpen}
+              onClose={() => {
+                cancelNavigation();
+              }}
+              aria-labelledby="unsaved-dialog-title"
+              PaperProps={{
+                sx: {
+                  borderRadius: 3,
+                  width: 520,
+                  maxWidth: "90vw",
+                  boxShadow:
+                    "0 10px 30px rgba(2,6,23,0.25), 0 1px 0 rgba(2,6,23,0.05)",
+                },
+              }}
+            >
+              <DialogTitle id="unsaved-dialog-title" sx={{ pb: 1 }}>
+                <Box className="flex items-center gap-3">
+                  <Box
+                    sx={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: "9999px",
+                      backgroundColor: "#fee2e2",
+                      display: "grid",
+                      placeItems: "center",
+                    }}
+                  >
+                    <Save className="h-4 w-4" color="#b91c1c" />
+                  </Box>
+                  <Box>
+                    <div style={{ fontWeight: 700, fontSize: 18 }}>
+                      Leave without saving?
+                    </div>
+                    <div style={{ fontSize: 12, color: "rgba(0,0,0,0.6)" }}>
+                      You have unsaved changes on this page.
+                    </div>
+                  </Box>
+                </Box>
+              </DialogTitle>
+              <DialogContent sx={{ pt: 1 }}>
+                <Box className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <div style={{ fontSize: 13, color: "rgba(0,0,0,0.6)" }}>
+                    If you leave now, your changes will be discarded. To keep
+                    them, click Save first.
+                  </div>
+                </Box>
+              </DialogContent>
+              <Divider />
+              <DialogActions sx={{ px: 3, py: 2, gap: 1.5 }}>
+                <MUIButton
+                  onClick={cancelNavigation}
+                  variant="outlined"
                   sx={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: "9999px",
-                    backgroundColor: "#fee2e2",
-                    display: "grid",
-                    placeItems: "center",
+                    textTransform: "none",
+                    borderRadius: 2,
+                    borderColor: "rgba(100,116,139,0.4)",
                   }}
                 >
-                  <Save className="h-4 w-4" color="#b91c1c" />
-                </Box>
-                <Box>
-                  <div style={{ fontWeight: 700, fontSize: 18 }}>
-                    Leave without saving?
-                  </div>
-                  <div style={{ fontSize: 12, color: "rgba(0,0,0,0.6)" }}>
-                    You have unsaved changes on this page.
-                  </div>
-                </Box>
-              </Box>
-            </DialogTitle>
-            <DialogContent sx={{ pt: 1 }}>
-              <Box className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <div style={{ fontSize: 13, color: "rgba(0,0,0,0.6)" }}>
-                  If you leave now, your changes will be discarded. To keep
-                  them, click Save first.
-                </div>
-              </Box>
-            </DialogContent>
-            <Divider />
-            <DialogActions sx={{ px: 3, py: 2, gap: 1.5 }}>
-              <MUIButton
-                onClick={cancelNavigation}
-                variant="outlined"
-                sx={{
-                  textTransform: "none",
-                  borderRadius: 2,
-                  borderColor: "rgba(100,116,139,0.4)",
-                }}
-              >
-                Stay on this page
-              </MUIButton>
-              <MUIButton
-                onClick={proceedNavigation}
-                variant="contained"
-                sx={{
-                  textTransform: "none",
-                  borderRadius: 2,
-                  backgroundColor: "#dc2626",
-                  "&:hover": { backgroundColor: "#b91c1c" },
-                }}
-              >
-                Discard & leave
-              </MUIButton>
-            </DialogActions>
-          </Dialog>
+                  Stay on this page
+                </MUIButton>
+                <MUIButton
+                  onClick={proceedNavigation}
+                  variant="contained"
+                  sx={{
+                    textTransform: "none",
+                    borderRadius: 2,
+                    backgroundColor: "#dc2626",
+                    "&:hover": { backgroundColor: "#b91c1c" },
+                  }}
+                >
+                  Discard & leave
+                </MUIButton>
+              </DialogActions>
+            </Dialog>
+          </div>
         </div>
       )}
     </>
