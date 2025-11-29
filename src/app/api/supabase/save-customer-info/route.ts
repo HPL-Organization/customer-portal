@@ -106,16 +106,30 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const row = toRow(
-      body,
-      Number(profile.netsuite_customer_id),
-      profile.email ?? undefined,
-      user.id
-    );
+    const customerIdNum = Number(profile.netsuite_customer_id);
+
+    let conflictTarget: "customer_id" | "user_id" = "customer_id";
+
+    if (customerIdNum === -1) {
+      conflictTarget = "user_id";
+    } else {
+      const { data: existingByUser } = await supabase
+        .from("customer_information")
+        .select("info_id")
+        .eq("user_id", user.id)
+        .limit(1)
+        .maybeSingle();
+
+      if (existingByUser) {
+        conflictTarget = "user_id";
+      }
+    }
+
+    const row = toRow(body, customerIdNum, profile.email ?? undefined, user.id);
 
     const { data: saved, error: upErr } = await supabase
       .from("customer_information")
-      .upsert(row, { onConflict: "customer_id" })
+      .upsert(row, { onConflict: conflictTarget })
       .select()
       .single();
 
