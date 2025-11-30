@@ -277,42 +277,17 @@ export async function fetchLiveEvents(page: number = 1) {
       .json<LiveEventsResponse>()
   );
 
-  let events: LiveEvent[] = [];
-
   if (error) {
-    if (error instanceof HTTPError && error.response?.statusCode === 422) {
-      const body = error.response.body as any;
-      const maybeEvents = body?.found?.results;
-
-      if (Array.isArray(maybeEvents)) {
-        logger.info(
-          "LiveSaleApp 422 with valid events payload, treating as success",
-          { statusCode: error.response.statusCode }
-        );
-
-        events = maybeEvents as LiveEvent[];
-      } else {
-        logger.error("LiveSaleApp API error", { error });
-        return {
-          success: false,
-          message: "Failed to fetch live events. Please try again later.",
-        };
-      }
-    } else {
-      logger.error("LiveSaleApp API error", { error });
-      return {
-        success: false,
-        message: "Failed to fetch live events. Please try again later.",
-      };
-    }
-  } else {
-    const body = resp as LiveEventsResponse;
-    events = (body.results ?? body.found?.results ?? []) as LiveEvent[];
+    logger.error("LiveSaleApp API error", { error });
+    return {
+      success: false,
+      message: "Failed to fetch live events. Please try again later.",
+    };
   }
 
   return {
     success: true,
-    events,
+    events: resp?.results || [],
   } satisfies LiveEventsResult;
 }
 
@@ -329,43 +304,15 @@ export async function getEventTypes(): Promise<LiveEventType[]> {
       .json<LiveEventsResponse>()
   );
 
-  let sourceEvents: LiveEvent[] | undefined;
-
-  if (error) {
-    if (error instanceof HTTPError && error.response?.statusCode === 422) {
-      const body = error.response.body as any;
-      const maybeEvents = body?.found?.results;
-
-      if (Array.isArray(maybeEvents)) {
-        logger.info(
-          "LiveSaleApp 422 with valid events payload when building event types, using found.results",
-          { statusCode: error.response.statusCode }
-        );
-        sourceEvents = maybeEvents as LiveEvent[];
-      } else {
-        logger.error("LiveSaleApp API error building event types", { error });
-        return fallbackLiveEventTypes;
-      }
-    } else {
-      logger.error("LiveSaleApp API error building event types", { error });
-      return fallbackLiveEventTypes;
-    }
-  } else {
-    const body = resp as LiveEventsResponse;
-    sourceEvents = (body.results ?? body.found?.results) as
-      | LiveEvent[]
-      | undefined;
-  }
-
-  if (!sourceEvents) {
-    logger.error("LiveSaleApp API returned no events for type building");
+  if (error || !resp?.results) {
+    logger.error("LiveSaleApp API error building event types", { error });
     return fallbackLiveEventTypes;
   }
 
   const seen = new Set<string>();
   const types: LiveEventType[] = [];
 
-  for (const ev of sourceEvents) {
+  for (const ev of resp.results) {
     const t = ev.type;
     if (!t) continue;
     if (IGNORED_TYPES.has(t)) continue;
@@ -386,12 +333,13 @@ export async function getEventTypes(): Promise<LiveEventType[]> {
       label,
       description,
       category: "EVENT_TYPE",
+
       createdAt: ev.date ?? "",
       updatedAt: ev.date ?? "",
     });
   }
 
-  return types.length > 0 ? types : fallbackLiveEventTypes;
+  return types;
 }
 
 export async function getEventTypeByInternalName(
@@ -429,10 +377,6 @@ interface JoinLiveSessionResult {
 
 interface LiveEventsResponse {
   results?: LiveEvent[];
-  found?: {
-    results?: LiveEvent[];
-    total?: number;
-  };
 }
 
 interface LiveEventsResult {
