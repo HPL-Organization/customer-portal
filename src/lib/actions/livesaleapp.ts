@@ -271,7 +271,7 @@ export async function fetchLiveEvents(page: number = 1) {
         searchParams: {
           page: page.toString(),
           distinctType: "true",
-          take: "20",
+          take: "30",
         },
       })
       .json<LiveEventsResponse>()
@@ -298,7 +298,7 @@ export async function getEventTypes(): Promise<LiveEventType[]> {
         searchParams: {
           page: "1",
           distinctType: "true",
-          take: "100",
+          take: "30",
         },
       })
       .json<LiveEventsResponse>()
