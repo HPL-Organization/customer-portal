@@ -367,6 +367,7 @@ interface JoinLiveSessionArgs {
   email: string;
   firstName: string;
   lastName: string;
+  middleName?: string;
 }
 
 interface JoinLiveSessionResult {
@@ -396,7 +397,7 @@ export async function joinLiveSession(
   eventId: string,
   args: JoinLiveSessionArgs
 ): Promise<JoinLiveSessionResult> {
-  const { email, firstName, lastName } = args;
+  const { email, firstName, lastName, middleName } = args;
 
   // First, try to get existing zoom join url
   logger.info("Getting zoom join URL", { eventId, email });
@@ -456,6 +457,7 @@ export async function joinLiveSession(
             email,
             firstName: firstName || "",
             lastName: lastName || "",
+            middleName: middleName || "",
           },
         })
         .json<ZoomJoinUrlResponse>()

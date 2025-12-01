@@ -424,6 +424,7 @@ export default function Dashboard() {
         email: authEmail,
         firstName: names.firstName,
         lastName: names.lastName,
+        middleName: names.middleName,
       });
 
       if (result.success && result.joinUrl) {
@@ -505,6 +506,7 @@ export default function Dashboard() {
         email: authEmail,
         firstName,
         lastName,
+        middleName,
       });
       if (reg.success && reg.joinUrl) {
         window.open(reg.joinUrl, "_blank");
@@ -605,6 +607,7 @@ export default function Dashboard() {
         email: authEmail,
         firstName: authFirstName || "Guest",
         lastName: authLastName || "",
+        middleName: authMiddleName || "",
       });
 
       if (result.success && result.joinUrl) {
