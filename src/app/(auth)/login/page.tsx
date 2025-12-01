@@ -222,9 +222,14 @@ function LoginInner() {
       }
     } catch {}
 
+    const encodedEmail =
+      typeof window !== "undefined" ? btoa(emailClean) : null;
+
     const emailRedirectTo =
       typeof window !== "undefined"
-        ? `${window.location.origin}/callback?next=${encodeURIComponent(next)}`
+        ? `${window.location.origin}/callback?next=${encodeURIComponent(next)}${
+            encodedEmail ? `&e=${encodeURIComponent(encodedEmail)}` : ""
+          }`
         : undefined;
 
     const { data, error } = await supabase.auth.signUp({
@@ -274,10 +279,17 @@ function LoginInner() {
     setInfoMsg(null);
     setConfirmBannerEmail(null);
     setLoading(true);
+
     const emailClean = email.trim().toLowerCase();
+
+    const encodedEmail =
+      typeof window !== "undefined" ? btoa(emailClean) : null;
+
     const emailRedirectTo =
       typeof window !== "undefined"
-        ? `${window.location.origin}/callback?next=${encodeURIComponent(next)}`
+        ? `${window.location.origin}/callback?next=${encodeURIComponent(next)}${
+            encodedEmail ? `&e=${encodeURIComponent(encodedEmail)}` : ""
+          }`
         : undefined;
 
     const { error } = await supabase.auth.signInWithOtp({
