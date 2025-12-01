@@ -28,13 +28,20 @@ export default function CallbackPage() {
   );
 }
 
-type Phase = "checking" | "found" | "welcome" | "redirecting" | "error";
+type Phase =
+  | "checking"
+  | "found"
+  | "welcome"
+  | "redirecting"
+  | "verified_no_session"
+  | "error";
 
 function Inner() {
   const router = useRouter();
   const sp = useSearchParams();
   const next = sp.get("next") || "/";
   const prefillParam = sp.get("prefill") || "";
+  const encodedEmailParam = sp.get("e") || "";
   const forceSessionFail = "1";
   const [phase, setPhase] = useState<Phase>("checking");
   const [detail, setDetail] = useState<string>(
@@ -51,6 +58,8 @@ function Inner() {
         return "Welcome to the HPL community!";
       case "redirecting":
         return "All set";
+      case "verified_no_session":
+        return "You're all set!";
       case "error":
         return "Something went wrong";
     }
@@ -59,10 +68,70 @@ function Inner() {
   useEffect(() => {
     (async () => {
       try {
+        let error: string | null = null;
+        let errorCode: string | null = null;
+        let errorDescription: string | null = null;
+
         try {
-          await supabase.auth.exchangeCodeForSession(window.location.href);
+          const searchParams = new URLSearchParams(window.location.search);
+          const hash = window.location.hash.startsWith("#")
+            ? window.location.hash.slice(1)
+            : window.location.hash;
+          const hashParams = new URLSearchParams(hash);
+
+          error = searchParams.get("error") || hashParams.get("error");
+          errorCode =
+            searchParams.get("error_code") || hashParams.get("error_code");
+          errorDescription =
+            searchParams.get("error_description") ||
+            hashParams.get("error_description");
         } catch (ex: any) {
-          console.error("[CALLBACK_EXCHANGE_ERROR]", {
+          console.error("[CALLBACK_URL_PARSE_ERROR]", {
+            message: ex?.message,
+            name: ex?.name,
+            stack: ex?.stack,
+            href: typeof window !== "undefined" ? window.location.href : null,
+            raw: ex,
+          });
+        }
+
+        if (error || errorCode) {
+          console.error("[CALLBACK_LINK_ERROR]", {
+            error,
+            errorCode,
+            errorDescription,
+            href: typeof window !== "undefined" ? window.location.href : null,
+          });
+
+          setPhase("error");
+          setDetail(
+            errorDescription ||
+              "This verification link is invalid or has expired. Please request a new verification email and try again."
+          );
+          return;
+        }
+
+        try {
+          const { data, error: exchangeError } =
+            await supabase.auth.exchangeCodeForSession(window.location.href);
+
+          if (exchangeError) {
+            console.error("[CALLBACK_EXCHANGE_ERROR]", {
+              message: exchangeError.message,
+              name: exchangeError.name,
+              status: (exchangeError as any)?.status,
+              stack: (exchangeError as any)?.stack,
+              href: window.location.href,
+              raw: exchangeError,
+            });
+          } else {
+            console.log("[CALLBACK_EXCHANGE_SUCCESS]", {
+              hasSession: !!data?.session,
+              userId: data?.session?.user?.id,
+            });
+          }
+        } catch (ex: any) {
+          console.error("[CALLBACK_EXCHANGE_THROW]", {
             message: ex?.message,
             name: ex?.name,
             stack: ex?.stack,
@@ -111,10 +180,94 @@ function Inner() {
               lastSessionDebug,
             });
 
-            setPhase("error");
-            setDetail(
-              "Your email was verified, but we couldn't finish signing you in. Please try logging in with your email and password. If that doesn't work, contact HPL support."
-            );
+            let verificationStatus: "verified" | "unverified" | "unknown" =
+              "unknown";
+
+            try {
+              if (encodedEmailParam) {
+                console.log("[CALLBACK_EMAIL_PARAM_RECEIVED]", {
+                  encodedEmail: encodedEmailParam,
+                });
+
+                let decodedEmail: string | null = null;
+
+                try {
+                  decodedEmail = atob(encodedEmailParam);
+                  console.log("[CALLBACK_EMAIL_DECODED]", {
+                    encodedEmail: encodedEmailParam,
+                    decodedEmail,
+                  });
+                } catch (ex: any) {
+                  console.error("[CALLBACK_EMAIL_DECODE_ERROR]", {
+                    message: ex?.message,
+                    name: ex?.name,
+                    stack: ex?.stack,
+                    raw: ex,
+                  });
+                }
+
+                if (decodedEmail) {
+                  console.log("[CALLBACK_VERIFY_REQUEST]", {
+                    email: decodedEmail,
+                  });
+
+                  const res = await fetch(
+                    "/api/auth/check-email-verification",
+                    {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ email: decodedEmail }),
+                    }
+                  );
+
+                  const j = await res.json().catch(() => ({}));
+
+                  console.log("[CALLBACK_VERIFY_RESPONSE]", {
+                    status: res.status,
+                    body: j,
+                  });
+
+                  if (res.ok && j && typeof j === "object") {
+                    if (j.emailVerified === true) {
+                      verificationStatus = "verified";
+                    } else if (j.exists === true && j.emailVerified === false) {
+                      verificationStatus = "unverified";
+                    } else {
+                      verificationStatus = "unknown";
+                    }
+                  }
+                }
+              } else {
+                console.log("[CALLBACK_EMAIL_PARAM_MISSING]", {
+                  note: "No 'e' query param, skipping verification check route.",
+                });
+              }
+            } catch (ex: any) {
+              console.error("[CALLBACK_VERIFY_CHECK_ERROR]", {
+                message: ex?.message,
+                name: ex?.name,
+                stack: ex?.stack,
+                raw: ex,
+              });
+            }
+
+            if (verificationStatus === "verified") {
+              setPhase("verified_no_session");
+              setDetail(
+                "Email verification was successful, Please log in to the portal using your new account (email and password)."
+              );
+            } else if (verificationStatus === "unverified") {
+              setPhase("error");
+              setDetail(
+                "We couldn't verify your email address yet. Please request a new verification email from the portal and try again. If the problem continues, contact HPL support."
+              );
+            } else {
+              setPhase("error");
+              setDetail(
+                "We couldn't finish signing you in. Please try logging in with your email and password. If that doesn't work, request a new verification email or contact HPL support."
+              );
+            }
+
             return;
           }
         }
@@ -155,8 +308,9 @@ function Inner() {
         });
         const j: any = await r.json().catch(() => ({}));
 
-        if (typeof window !== "undefined")
+        if (typeof window !== "undefined") {
           sessionStorage.removeItem("name_prefill");
+        }
 
         if (j?.error) {
           console.error("[CALLBACK_PROVISION_ERROR]", {
@@ -197,7 +351,9 @@ function Inner() {
         const url = new URL(next, window.location.origin);
         if (nsId) {
           url.searchParams.set("nsId", nsId);
-          if (typeof window !== "undefined") localStorage.setItem("nsId", nsId);
+          if (typeof window !== "undefined") {
+            localStorage.setItem("nsId", nsId);
+          }
         }
 
         try {
@@ -226,11 +382,11 @@ function Inner() {
 
         setPhase("error");
         setDetail(
-          "Your email was verified, but something went wrong while finishing sign-in. Please try logging in with your email and password. If that doesn't work, contact HPL support."
+          "We couldn't finish signing you in. Please try logging in with your email and password. If that doesn't work, contact HPL support."
         );
       }
     })();
-  }, [router, next, prefillParam]);
+  }, [router, next, prefillParam, encodedEmailParam]);
 
   return (
     <main className="min-h-screen grid place-items-center bg-gradient-to-br from-sky-50 via-white to-emerald-50 px-6 py-16">
@@ -255,7 +411,8 @@ function Inner() {
               phase === "checking" ||
               phase === "found" ||
               phase === "welcome" ||
-              phase === "redirecting"
+              phase === "redirecting" ||
+              phase === "verified_no_session"
             }
             label="Check records"
           />
@@ -263,11 +420,15 @@ function Inner() {
             active={
               phase === "found" ||
               phase === "welcome" ||
-              phase === "redirecting"
+              phase === "redirecting" ||
+              phase === "verified_no_session"
             }
             label="Link your account"
           />
-          <StepCard active={phase === "redirecting"} label="Redirect" />
+          <StepCard
+            active={phase === "redirecting" || phase === "verified_no_session"}
+            label="Redirect"
+          />
         </div>
       </div>
     </main>
@@ -296,7 +457,12 @@ function StatusIcon({ phase }: { phase: Phase }) {
       </div>
     );
   }
-  if (phase === "found" || phase === "welcome" || phase === "redirecting") {
+  if (
+    phase === "found" ||
+    phase === "welcome" ||
+    phase === "redirecting" ||
+    phase === "verified_no_session"
+  ) {
     return (
       <div className="grid h-10 w-10 place-items-center rounded-full bg-emerald-50 ring-1 ring-emerald-200">
         <svg
@@ -323,7 +489,7 @@ function Progress({ phase }: { phase: Phase }) {
       ? 20
       : phase === "found" || phase === "welcome"
       ? 70
-      : phase === "redirecting"
+      : phase === "redirecting" || phase === "verified_no_session"
       ? 100
       : 0;
 
