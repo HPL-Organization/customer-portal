@@ -8,7 +8,10 @@ import { getCustomerCache } from "../cache";
 const LIVESALEAPP_BASE_URL =
   process.env.LIVESALEAPP_BASE_URL || "https://bademail.onrender.com/v1";
 
-// Create a got instance with default authorization header
+function getBaseUrl() {
+  return "https://portal.hplapidary.com"; //"http://localhost:3001";
+}
+
 const livesaleappGot = got.extend({
   prefixUrl: LIVESALEAPP_BASE_URL,
   headers: {
@@ -33,7 +36,6 @@ const livesaleappGot = got.extend({
     ],
     afterResponse: [
       (response) => {
-        // Check body size to determine if we should log it
         const bodyInfo = (() => {
           if (!response.body) {
             return { hasBody: false };
@@ -46,7 +48,6 @@ const livesaleappGot = got.extend({
                   try {
                     return JSON.stringify(response.body).length;
                   } catch (error) {
-                    // Handle circular references or other stringify errors
                     logger.warn(
                       "Failed to stringify response body for size calculation",
                       {
@@ -56,12 +57,11 @@ const livesaleappGot = got.extend({
                             : String(error),
                       }
                     );
-                    return Number.MAX_SAFE_INTEGER; // Treat as very large to skip logging
+                    return Number.MAX_SAFE_INTEGER;
                   }
                 })();
 
-          // Log body if under 10KB threshold
-          const MAX_BODY_LOG_SIZE = 10 * 1024; // 10KB
+          const MAX_BODY_LOG_SIZE = 10 * 1024;
           if (bodySize <= MAX_BODY_LOG_SIZE) {
             return { hasBody: true, body: response.body };
           } else {
@@ -113,12 +113,13 @@ export interface LiveEventType {
   category: "EVENT_TYPE";
   createdAt: string;
   updatedAt: string;
+  imageUrl?: string | null;
 }
 
 export interface LiveEvent {
   id: string;
   date: string;
-  type: string; // This is the eventTypeId that matches internalName
+  type: string;
   isEnded: boolean;
   targetRevenue: number;
   zoomMeetingId: number;
@@ -189,14 +190,6 @@ const liveEventTypes: LiveEventType[] = [
     createdAt: "2024-09-06T08:17:40.141Z",
     updatedAt: "2024-09-06T08:17:40.141Z",
   },
-  // {
-  //   "internalName": "test_type",
-  //   "label": "Test Type",
-  //   "description": "",
-  //   "category": "EVENT_TYPE",
-  //   "createdAt": "2024-10-21T07:34:54.408Z",
-  //   "updatedAt": "2025-03-29T16:56:55.790Z"
-  // },
   {
     internalName: "thursday_afternoon_live_event",
     label: "Thursday Afternoon Event",
@@ -207,8 +200,8 @@ const liveEventTypes: LiveEventType[] = [
   },
   {
     internalName: "wednesday_rough_rock_event",
-    label: "Wednesday Rough Rock Event", // Machine Night
-    description: "This is a rough rock event that occurs on Wednesday", //This is a special event!
+    label: "Wednesday Rough Rock Event",
+    description: "This is a rough rock event that occurs on Wednesday",
     category: "EVENT_TYPE",
     createdAt: "2024-09-06T08:17:40.141Z",
     updatedAt: "2024-09-06T08:17:40.141Z",
@@ -230,6 +223,7 @@ const liveEventTypes: LiveEventType[] = [
     updatedAt: "2025-11-11T14:29:04.569Z",
   },
 ];
+
 const LIVE_EVENT_TYPE_OVERRIDES: Record<
   string,
   Partial<Pick<LiveEventType, "label" | "description">>
@@ -253,6 +247,7 @@ function typeToLabel(type: string): string {
 function buildDescriptionFromLabel(label: string): string {
   return `This is ${label}`;
 }
+
 const fallbackLiveEventTypes: LiveEventType[] = [
   {
     internalName: "cut_and_chat_live_event",
@@ -264,87 +259,141 @@ const fallbackLiveEventTypes: LiveEventType[] = [
   },
 ];
 
+type EventsRouteResponse = {
+  success: boolean;
+  eventTypes?: LiveEventType[];
+  events?: any[];
+  message?: string;
+};
+
+interface LiveEventsResult {
+  success: boolean;
+  events?: LiveEvent[];
+  message?: string;
+}
+
 export async function fetchLiveEvents(page: number = 1) {
-  const [error, resp] = await to(
-    livesaleappGot
-      .get("live-event", {
-        searchParams: {
-          page: page.toString(),
-          distinctType: "true",
-          take: "30",
-        },
-      })
-      .json<LiveEventsResponse>()
+  const baseUrl = getBaseUrl();
+
+  const [error, json] = await to(
+    fetch(`${baseUrl}/api/supabase/events/get`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      cache: "no-store",
+    }).then((res) => res.json() as Promise<EventsRouteResponse>)
   );
 
-  if (error) {
-    logger.error("LiveSaleApp API error", { error });
+  if (error || !json?.success || !json.events) {
+    logger.error("Supabase route error fetching events", {
+      error,
+      json,
+    });
     return {
       success: false,
       message: "Failed to fetch live events. Please try again later.",
-    };
+    } satisfies LiveEventsResult;
   }
+
+  const defaultCounts: LiveEvent["_count"] = {
+    customers: 0,
+    products: 0,
+    lots: 0,
+    hosts: 0,
+    producers: 0,
+    hands: 0,
+    manualPriceProducts: 0,
+    ChangeLog: 0,
+    E2ETesting: 0,
+    subscriberRegistrants: 0,
+  };
+
+  const events: LiveEvent[] = (json.events as any[])
+    .filter((ev) => ev && ev.type && !IGNORED_TYPES.has(ev.type))
+    .map((ev) => ({
+      id: ev.id,
+      type: ev.type,
+      date: ev.date,
+      startTime: ev.startTime,
+      endTime: ev.endTime,
+      isEnded: ev.isEnded,
+      targetRevenue: ev.targetRevenue ?? 0,
+      zoomMeetingId: ev.zoomMeetingId ?? 0,
+      totalSale: ev.totalSale ?? 0,
+      averageDiscount: ev.averageDiscount ?? 0,
+      _count: ev.counts ?? defaultCounts,
+    }));
 
   return {
     success: true,
-    events: resp?.results || [],
+    events,
   } satisfies LiveEventsResult;
 }
 
 export async function getEventTypes(): Promise<LiveEventType[]> {
-  const [error, resp] = await to(
-    livesaleappGot
-      .get("live-event", {
-        searchParams: {
-          page: "1",
-          distinctType: "true",
-          take: "30",
-        },
-      })
-      .json<LiveEventsResponse>()
+  const baseUrl = getBaseUrl();
+
+  const [error, json] = await to(
+    fetch(`${baseUrl}/api/supabase/events/get`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      cache: "no-store",
+    }).then((res) => res.json() as Promise<EventsRouteResponse>)
   );
 
-  if (error || !resp?.results) {
-    logger.error("LiveSaleApp API error building event types", { error });
+  if (error || !json?.success || !json.eventTypes) {
+    logger.error("Supabase route error building event types", {
+      error,
+      json,
+    });
     return fallbackLiveEventTypes;
   }
 
-  const seen = new Set<string>();
-  const types: LiveEventType[] = [];
+  const filtered = json.eventTypes.filter(
+    (t) => !IGNORED_TYPES.has(t.internalName)
+  );
 
-  for (const ev of resp.results) {
-    const t = ev.type;
-    if (!t) continue;
-    if (IGNORED_TYPES.has(t)) continue;
-    if (seen.has(t)) continue;
-    seen.add(t);
+  if (!filtered.length) {
+    return fallbackLiveEventTypes;
+  }
 
-    const override = LIVE_EVENT_TYPE_OVERRIDES[t];
-    let label = override?.label ?? typeToLabel(t);
-    if (t === "saturday_slab_event") {
+  return filtered.map((t) => {
+    const override = LIVE_EVENT_TYPE_OVERRIDES[t.internalName];
+
+    let baseLabel = t.label;
+    if (!baseLabel || baseLabel.includes("_")) {
+      baseLabel = typeToLabel(t.internalName);
+    }
+
+    let label = override?.label ?? baseLabel;
+
+    if (t.internalName === "saturday_slab_event" && !override?.label) {
       label = "Saturday Live Event";
     }
 
     const description =
-      override?.description ?? buildDescriptionFromLabel(label);
+      override?.description ??
+      t.description ??
+      buildDescriptionFromLabel(label);
 
-    types.push({
-      internalName: t,
+    return {
+      ...t,
       label,
       description,
       category: "EVENT_TYPE",
-
-      createdAt: ev.date ?? "",
-      updatedAt: ev.date ?? "",
-    });
-  }
-
-  return types;
+    };
+  });
 }
 
 export async function getEventTypeByInternalName(
   internalName: string
 ): Promise<LiveEventType | undefined> {
+  const types = await getEventTypes();
+  const fromSupabase = types.find((type) => type.internalName === internalName);
+  if (fromSupabase) return fromSupabase;
   return liveEventTypes.find((type) => type.internalName === internalName);
 }
 
@@ -356,7 +405,7 @@ export async function isEventCurrentlyLive(event: LiveEvent): Promise<boolean> {
   const startTime = new Date(event.startTime);
   const endTime = new Date(event.endTime);
 
-  const HALF_HOUR_MS = 1 * 60 * 60 * 1000; // 1 hour
+  const HALF_HOUR_MS = 1 * 60 * 60 * 1000;
   const thresholdStartTime = new Date(startTime.getTime() - HALF_HOUR_MS);
   const thresholdEndTime = new Date(endTime.getTime() + HALF_HOUR_MS);
 
@@ -376,16 +425,6 @@ interface JoinLiveSessionResult {
   message: string;
 }
 
-interface LiveEventsResponse {
-  results?: LiveEvent[];
-}
-
-interface LiveEventsResult {
-  success: boolean;
-  events?: LiveEvent[];
-  message?: string;
-}
-
 interface ZoomJoinUrlResponse {
   data?: {
     joinUrl?: string;
@@ -399,7 +438,6 @@ export async function joinLiveSession(
 ): Promise<JoinLiveSessionResult> {
   const { email, firstName, lastName, middleName } = args;
 
-  // First, try to get existing zoom join url
   logger.info("Getting zoom join URL", { eventId, email });
 
   let joinUrlData;
@@ -415,7 +453,6 @@ export async function joinLiveSession(
   );
 
   if (getUrlError) {
-    // got throws HTTPError for non-2xx responses
     if (getUrlError instanceof HTTPError && getUrlError.response) {
       joinUrlData = getUrlError.response.body as ZoomJoinUrlResponse;
     } else {
@@ -440,7 +477,6 @@ export async function joinLiveSession(
     }
   }
 
-  // Check if the response indicates no join URL found
   if ((joinUrlData as ZoomJoinUrlResponse).code === "ZOOM_JOIN_URL_NOT_FOUND") {
     logger.info("No existing join URL found, creating new one", {
       eventId,
@@ -449,7 +485,6 @@ export async function joinLiveSession(
       lastName,
     });
 
-    // Call the zoom-join-by-email API to create a new join URL
     const [createError, createJoinData] = await to(
       livesaleappGot
         .post(`live-event/${eventId}/zoom-join-by-email`, {
