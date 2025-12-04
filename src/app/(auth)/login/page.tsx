@@ -1058,6 +1058,11 @@ function AuthForm(props: {
               type={showPass ? "text" : "password"}
               minLength={mode === "signup" ? 6 : undefined}
               pattern={mode === "signup" ? ".*[^A-Za-z0-9].*" : undefined}
+              title={
+                mode === "signup"
+                  ? "Password must be at least 6 characters and include at least one special character (e.g. !, @, #)."
+                  : undefined
+              }
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -1096,6 +1101,12 @@ function AuthForm(props: {
               )}
             </button>
           </div>
+          {mode === "signup" && (
+            <p className="mt-1 text-[11px] text-slate-500">
+              Must be at least 6 characters and include at least one special
+              character (like !, @, #).
+            </p>
+          )}
         </div>
 
         {errorMsg && (
