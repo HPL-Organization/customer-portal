@@ -247,6 +247,29 @@ function isPrintableLine(l: Invoice["lines"][number]): boolean {
   const desc = String(l.description ?? "").toLowerCase();
   return !desc.includes("cost of sales");
 }
+function useMobileLikeLayout() {
+  const [isMobileLike, setIsMobileLike] = React.useState(false);
+
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const update = () => {
+      const width = window.innerWidth;
+      const isTouch =
+        "ontouchstart" in window ||
+        (navigator as any).maxTouchPoints > 0 ||
+        (navigator as any).msMaxTouchPoints > 0;
+
+      setIsMobileLike(isTouch && width <= 1200);
+    };
+
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+
+  return isMobileLike;
+}
 
 export default function InvoicesTable({
   loading,
@@ -260,6 +283,8 @@ export default function InvoicesTable({
   variant: "open" | "closed";
 }) {
   const [logoMeta, setLogoMeta] = React.useState<LogoMeta>(null);
+  const isMobileLike = useMobileLikeLayout();
+
   React.useEffect(() => {
     let active = true;
     (async () => {
@@ -301,20 +326,8 @@ export default function InvoicesTable({
 
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-md">
-      <div className="hidden md:block">
-        {loading ? (
-          <SkeletonTable />
-        ) : (
-          <DesktopTable
-            invoices={invoices}
-            onPay={onPay}
-            onDownload={onDownload}
-            variant={variant}
-          />
-        )}
-      </div>
-      <div className="md:hidden">
-        {loading ? (
+      {isMobileLike ? (
+        loading ? (
           <MobileSkeleton />
         ) : (
           <MobileList
@@ -323,8 +336,17 @@ export default function InvoicesTable({
             onDownload={onDownload}
             variant={variant}
           />
-        )}
-      </div>
+        )
+      ) : loading ? (
+        <SkeletonTable />
+      ) : (
+        <DesktopTable
+          invoices={invoices}
+          onPay={onPay}
+          onDownload={onDownload}
+          variant={variant}
+        />
+      )}
     </div>
   );
 }
