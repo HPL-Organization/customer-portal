@@ -443,7 +443,7 @@ export async function joinLiveSession(
   let joinUrlData;
 
   const customerCache = getCustomerCache();
-  await customerCache.invalidateCustomerByEmail(email);
+  // await customerCache.invalidateCustomerByEmail(email);
   const [getUrlError, getUrlResponse] = await to(
     livesaleappGot
       .post(`live-event/${eventId}/get-zoom-join-url`, {
