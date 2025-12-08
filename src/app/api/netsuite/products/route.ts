@@ -59,41 +59,41 @@ async function netsuiteQuery(
 export async function GET(req: NextRequest) {
   try {
     const url = new URL(req.url);
-    const skuParam = url.searchParams.get("sku");
-    const skusCsv = url.searchParams.get("skus");
+    const upccodeParam = url.searchParams.get("upccode");
+    const upccodesCsv = url.searchParams.get("upccodes");
 
-    // Validate that at least one SKU parameter is provided
-    if (!skuParam && !skusCsv) {
+    // Validate that at least one UPC code parameter is provided
+    if (!upccodeParam && !upccodesCsv) {
       return new Response(
         JSON.stringify({
-          error: "Missing required parameter: either 'sku' or 'skus' must be provided"
+          error: "Missing required parameter: either 'upccode' or 'upccodes' must be provided"
         }),
         { status: 400, headers: { "Content-Type": "application/json" } }
       );
     }
 
-    // Parse SKUs
-    let skus: string[] = [];
-    if (skusCsv) {
-      skus = skusCsv
+    // Parse UPC codes
+    let upccodes: string[] = [];
+    if (upccodesCsv) {
+      upccodes = upccodesCsv
         .split(",")
         .map((s) => s.trim())
         .filter((s) => s.length > 0);
-    } else if (skuParam) {
-      skus = [skuParam.trim()];
+    } else if (upccodeParam) {
+      upccodes = [upccodeParam.trim()];
     }
 
-    if (skus.length === 0) {
+    if (upccodes.length === 0) {
       return new Response(
-        JSON.stringify({ error: "No valid SKUs provided" }),
+        JSON.stringify({ error: "No valid UPC codes provided" }),
         { status: 400, headers: { "Content-Type": "application/json" } }
       );
     }
 
     // Limit to prevent excessive queries
-    if (skus.length > 100) {
+    if (upccodes.length > 100) {
       return new Response(
-        JSON.stringify({ error: "Too many SKUs requested. Maximum 100 allowed." }),
+        JSON.stringify({ error: "Too many UPC codes requested. Maximum 100 allowed." }),
         { status: 400, headers: { "Content-Type": "application/json" } }
       );
     }
@@ -107,9 +107,9 @@ export async function GET(req: NextRequest) {
       Prefer: "transient, maxpagesize=1000",
     } as Record<string, string>;
 
-    // Build the WHERE clause for SKU matching
-    const skuConditions = skus.map((sku) => `I.itemid = '${sku.replace(/'/g, "''")}'`);
-    const whereClause = skuConditions.join(" OR ");
+    // Build the WHERE clause for UPC code matching
+    const upccodeConditions = upccodes.map((upccode) => `I.upccode = '${upccode.replace(/'/g, "''")}'`);
+    const whereClause = upccodeConditions.join(" OR ");
 
     // Query for products by SKU
     const query = `
@@ -126,7 +126,7 @@ export async function GET(req: NextRequest) {
         I.isinactive AS isInactive
       FROM item I
       WHERE (${whereClause})
-      ORDER BY I.itemid
+      ORDER BY I.upccode
     `;
 
     const response = await netsuiteQuery(query, headers, "productLookup");
@@ -154,17 +154,17 @@ export async function GET(req: NextRequest) {
       return acc;
     }, {});
 
-    // Check for SKUs that weren't found
-    const foundSkus = new Set(products.map((p: any) => p.sku));
-    const notFoundSkus = skus.filter((sku) => !foundSkus.has(sku));
+    // Check for UPC codes that weren't found
+    const foundUpccodes = new Set(products.map((p: any) => p.barcode));
+    const notFoundUpccodes = upccodes.filter((upccode) => !foundUpccodes.has(upccode));
 
     return new Response(
       JSON.stringify({
         success: true,
-        requestedSkus: skus,
+        requestedUpccodes: upccodes,
         foundCount: products.length,
-        notFoundCount: notFoundSkus.length,
-        notFoundSkus: notFoundSkus,
+        notFoundCount: notFoundUpccodes.length,
+        notFoundUpccodes: notFoundUpccodes,
         products: products,
         productsBySku: productsBySku,
       }),
