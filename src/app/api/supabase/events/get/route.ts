@@ -1,6 +1,7 @@
 // src/app/api/supabase/events/get/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import logger from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 
@@ -48,6 +49,8 @@ export async function GET(_req: NextRequest) {
     );
   }
 
+  logger.info("Events data", { data });
+
   const rows = data ?? [];
 
   const events = rows.map((row) => ({
@@ -69,6 +72,8 @@ export async function GET(_req: NextRequest) {
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   }));
+
+  logger.info("Events", { events });
 
   const typeMap = new Map<
     string,
@@ -114,6 +119,8 @@ export async function GET(_req: NextRequest) {
   }
 
   const eventTypes = Array.from(typeMap.values());
+
+  logger.info("Event types", { eventTypes });
 
   return NextResponse.json(
     {
