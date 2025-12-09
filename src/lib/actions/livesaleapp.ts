@@ -398,9 +398,7 @@ export async function getEventTypeByInternalName(
 }
 
 export async function isEventCurrentlyLive(event: LiveEvent): Promise<boolean> {
-  if (event.isEnded) {
-    return false;
-  }
+  logger.info("Checking if event is currently live", { event });
   const now = new Date();
   const startTime = new Date(event.startTime);
   const endTime = new Date(event.endTime);
