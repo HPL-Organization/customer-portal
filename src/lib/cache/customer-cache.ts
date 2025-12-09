@@ -1,10 +1,6 @@
 import logger from '@/lib/logger'
 import { getServerSupabase } from '@/lib/supabase/server'
-import {
-  PREFIX_CUSTOMER_PORTAL_INVOICE_INFO_CACHE,
-  type RedisCache,
-  customerPortalInvoiceInfoCache,
-} from './redis-cache'
+import { type RedisCache, createCache } from './redis-cache'
 
 /**
  * Customer invoice information type
@@ -44,12 +40,17 @@ export interface CustomerInvoiceInfo {
  * Customer cache for caching customer information by email
  * Uses Redis as the backing store with configurable TTL
  */
+
+export const PREFIX_CUSTOMER_PORTAL_INVOICE_INFO_CACHE = process.env.REDIS_KEY_PREFIX_CUSTOMER_PORTAL_INVOICE_INFO || 'customer-portal-invoice-info'
+
 export class CustomerCache {
   private cache: RedisCache<CustomerInvoiceInfo | null>
 
   constructor() {
-    // Use pre-configured customer cache
-    this.cache = customerPortalInvoiceInfoCache as RedisCache<CustomerInvoiceInfo | null>
+    this.cache = createCache<CustomerInvoiceInfo | null>({
+      prefix: PREFIX_CUSTOMER_PORTAL_INVOICE_INFO_CACHE,
+      ttl: 3600 * 5, // 5 hours
+    })
   }
 
   /**

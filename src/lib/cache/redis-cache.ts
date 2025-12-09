@@ -1,10 +1,13 @@
 import logger from '@/lib/logger'
 import { getRedisClient } from '@/lib/redis'
+import { createClient, RedisClientType } from 'redis'
 
 export interface CacheOptions {
   ttl?: number // Time to live in seconds
   prefix?: string // Cache key prefix
   compress?: boolean // Whether to compress data (for large objects)
+  redisUrl?: string // Custom Redis URL (uses REDIS_URL by default)
+  useTls?: boolean // Whether to use TLS for custom Redis connection
 }
 
 export interface CacheStats {
@@ -18,6 +21,7 @@ export interface CacheStats {
 export class RedisCache<T = any> {
   private prefix: string
   private defaultTtl: number
+  private customClient: RedisClientType | null = null
   private stats: CacheStats = {
     hits: 0,
     misses: 0,
@@ -28,7 +32,47 @@ export class RedisCache<T = any> {
 
   constructor(options: CacheOptions = {}) {
     this.prefix = options.prefix || 'cache'
-    this.defaultTtl = options.ttl || 300 // 5 minutes default
+    this.defaultTtl = options.ttl || 43200 // 12 hours default
+
+    // Create custom Redis client if a custom URL is provided
+    if (options.redisUrl) {
+      this.customClient = createClient({
+        url: options.redisUrl,
+        socket: {
+          tls: options.useTls ? true : undefined,
+          connectTimeout: 10000,
+          keepAlive: true,
+        },
+        commandsQueueMaxLength: 5000, // Similar to commandTimeout
+      })
+
+      this.customClient.on('ready', () => {
+        logger.info(`Redis cache client ready for prefix: ${this.prefix}`)
+      })
+
+      this.customClient.on('error', error => {
+        logger.error({
+          message: `Redis cache client error for prefix: ${this.prefix}`,
+          error: error instanceof Error ? error : String(error),
+        })
+      })
+
+      // Connect to Redis
+      this.customClient.connect().catch((err) => {
+        logger.error({
+          message: `Failed to connect to custom Redis for prefix: ${this.prefix}`,
+          error: err.message,
+          data: { redisUrl: options.redisUrl },
+        })
+      })
+    }
+  }
+
+  /**
+   * Get the Redis client (custom or default)
+   */
+  private getClient(): RedisClientType {
+    return this.customClient || getRedisClient()
   }
 
   /**
@@ -43,7 +87,7 @@ export class RedisCache<T = any> {
    */
   async get(key: string): Promise<T | null> {
     try {
-      const redis = getRedisClient()
+      const redis = this.getClient()
       const cacheKey = this.generateKey(key)
       const cached = await redis.get(cacheKey)
 
@@ -81,7 +125,7 @@ export class RedisCache<T = any> {
    */
   async set(key: string, value: T, ttl?: number): Promise<boolean> {
     try {
-      const redis = getRedisClient()
+      const redis = this.getClient()
       const cacheKey = this.generateKey(key)
       const serializedValue = JSON.stringify(value)
       const expiry = ttl || this.defaultTtl
@@ -108,7 +152,7 @@ export class RedisCache<T = any> {
    */
   async delete(key: string): Promise<boolean> {
     try {
-      const redis = getRedisClient()
+      const redis = this.getClient()
       const cacheKey = this.generateKey(key)
       await redis.del(cacheKey)
       this.stats.deletes++
@@ -132,7 +176,7 @@ export class RedisCache<T = any> {
    */
   async exists(key: string): Promise<boolean> {
     try {
-      const redis = getRedisClient()
+      const redis = this.getClient()
       const cacheKey = this.generateKey(key)
       const result = await redis.exists(cacheKey)
       return result === 1
@@ -180,7 +224,7 @@ export class RedisCache<T = any> {
    */
   async clear(): Promise<boolean> {
     try {
-      const redis = getRedisClient()
+      const redis = this.getClient()
       const pattern = `${this.prefix}:*`
       const keys = await redis.keys(pattern)
 
@@ -228,22 +272,29 @@ export class RedisCache<T = any> {
     const total = this.stats.hits + this.stats.misses
     return total > 0 ? this.stats.hits / total : 0
   }
+
+  /**
+   * Disconnect custom Redis client (if using custom URL)
+   */
+  async disconnect(): Promise<void> {
+    if (this.customClient) {
+      await this.customClient.quit()
+      this.customClient = null
+      logger.info(`Redis cache client disconnected for prefix: ${this.prefix}`)
+    }
+  }
 }
 
 /**
  * Create a typed cache instance
  */
 export function createCache<T = any>(options: CacheOptions = {}): RedisCache<T> {
+  const redisUrl = process.env.REDIS_CACHE_URL
+
+  if (redisUrl) {
+    return new RedisCache<T>({ ...options, redisUrl })
+  }
+
   return new RedisCache<T>(options)
 }
 
-/**
- * Pre-configured customer cache
- */
-export const PREFIX_CUSTOMER_PORTAL_INVOICE_INFO_CACHE =
-  process.env.REDIS_KEY_PREFIX_CUSTOMER_PORTAL_INVOICE_INFO || 'customer-portal-invoice-info'
-
-export const customerPortalInvoiceInfoCache = createCache({
-  prefix: PREFIX_CUSTOMER_PORTAL_INVOICE_INFO_CACHE,
-  ttl: 3600 * 5, // 5 hours
-})
