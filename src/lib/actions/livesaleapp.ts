@@ -230,7 +230,7 @@ const LIVE_EVENT_TYPE_OVERRIDES: Record<
 > = {
   wednesday_rough_rock_event: {
     label: "Wednesday Rough Rock Event",
-    description: "This is a special Machine Night event",
+    description: "This is a rough rock event that occurs on Wednesday",
   },
 };
 
