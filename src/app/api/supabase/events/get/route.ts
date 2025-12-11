@@ -37,7 +37,7 @@ export async function GET(_req: NextRequest) {
         updated_at
       `
     )
-    .order("date", { ascending: true });
+    .order("date", { ascending: false });
 
   if (error) {
     return NextResponse.json(
