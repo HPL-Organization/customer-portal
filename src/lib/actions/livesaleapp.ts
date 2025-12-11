@@ -407,7 +407,7 @@ export async function isEventCurrentlyLive(event: LiveEvent): Promise<boolean> {
   const thresholdStartTime = new Date(startTime.getTime() - HALF_HOUR_MS);
   const thresholdEndTime = new Date(endTime.getTime() + HALF_HOUR_MS);
 
-  return now >= thresholdStartTime && now <= thresholdEndTime;
+  return true; //now >= thresholdStartTime && now <= thresholdEndTime;
 }
 
 interface JoinLiveSessionArgs {
