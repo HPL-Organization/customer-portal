@@ -11,6 +11,7 @@ import {
   getEventTypes,
   isEventCurrentlyLive,
   joinLiveSession,
+  type EventsRouteResponse,
   type LiveEvent,
 } from "@/lib/actions/livesaleapp";
 import { processEvents, type VipEvent } from "@/lib/utils/events";
@@ -113,11 +114,26 @@ export default function Dashboard() {
       try {
         setLoaderLabel("Cutting your rock…");
         setLoaderProgress(12);
-        const [eventTypes, liveEventsResult] = await Promise.all([
-          getEventTypes(),
-          fetchLiveEvents(),
-        ]);
+
+        const res = await fetch("/api/supabase/events/get", {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          cache: "no-store",
+        });
+
+        if (!res.ok) {
+          throw new Error(`Failed to load events (${res.status})`);
+        }
+
+        const json = (await res.json()) as EventsRouteResponse;
         if (!alive) return;
+
+        const [eventTypes, liveEventsResult] = await Promise.all([
+          getEventTypes(json),
+          fetchLiveEvents(1, json),
+        ]);
 
         setLoaderProgress(62);
 

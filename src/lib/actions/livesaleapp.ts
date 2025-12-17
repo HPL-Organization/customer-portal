@@ -8,10 +8,6 @@ import { getCustomerCache } from "../cache";
 const LIVESALEAPP_BASE_URL =
   process.env.LIVESALEAPP_BASE_URL || "https://bademail.onrender.com/v1";
 
-function getBaseUrl() {
-  return "https://portal.hplapidary.com"; //"http://localhost:3001";
-}
-
 const livesaleappGot = got.extend({
   prefixUrl: LIVESALEAPP_BASE_URL,
   headers: {
@@ -259,7 +255,7 @@ const fallbackLiveEventTypes: LiveEventType[] = [
   },
 ];
 
-type EventsRouteResponse = {
+export type EventsRouteResponse = {
   success: boolean;
   eventTypes?: LiveEventType[];
   events?: any[];
@@ -272,22 +268,15 @@ interface LiveEventsResult {
   message?: string;
 }
 
-export async function fetchLiveEvents(page: number = 1) {
-  const baseUrl = getBaseUrl();
+export async function fetchLiveEvents(
+  page: number = 1,
+  jsonFromClient: EventsRouteResponse
+) {
+  const json = jsonFromClient;
 
-  const [error, json] = await to(
-    fetch(`${baseUrl}/api/supabase/events/get`, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      cache: "no-store",
-    }).then((res) => res.json() as Promise<EventsRouteResponse>)
-  );
-
-  if (error || !json?.success || !json.events) {
+  if (!json?.success || !json.events) {
     logger.error("Supabase route error fetching events", {
-      error,
+      error: null,
       json,
     });
     return {
@@ -331,22 +320,14 @@ export async function fetchLiveEvents(page: number = 1) {
   } satisfies LiveEventsResult;
 }
 
-export async function getEventTypes(): Promise<LiveEventType[]> {
-  const baseUrl = getBaseUrl();
+export async function getEventTypes(
+  jsonFromClient: EventsRouteResponse
+): Promise<LiveEventType[]> {
+  const json = jsonFromClient;
 
-  const [error, json] = await to(
-    fetch(`${baseUrl}/api/supabase/events/get`, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      cache: "no-store",
-    }).then((res) => res.json() as Promise<EventsRouteResponse>)
-  );
-
-  if (error || !json?.success || !json.eventTypes) {
+  if (!json?.success || !json.eventTypes) {
     logger.error("Supabase route error building event types", {
-      error,
+      error: null,
       json,
     });
     return fallbackLiveEventTypes;
@@ -389,10 +370,12 @@ export async function getEventTypes(): Promise<LiveEventType[]> {
 }
 
 export async function getEventTypeByInternalName(
-  internalName: string
+  internalName: string,
+  typesFromSupabase?: LiveEventType[]
 ): Promise<LiveEventType | undefined> {
-  const types = await getEventTypes();
-  const fromSupabase = types.find((type) => type.internalName === internalName);
+  const fromSupabase = typesFromSupabase?.find(
+    (type) => type.internalName === internalName
+  );
   if (fromSupabase) return fromSupabase;
   return liveEventTypes.find((type) => type.internalName === internalName);
 }
@@ -407,7 +390,7 @@ export async function isEventCurrentlyLive(event: LiveEvent): Promise<boolean> {
   const thresholdStartTime = new Date(startTime.getTime() - HALF_HOUR_MS);
   const thresholdEndTime = new Date(endTime.getTime() + HALF_HOUR_MS);
 
-  return true; //now >= thresholdStartTime && now <= thresholdEndTime;
+  return true;
 }
 
 interface JoinLiveSessionArgs {
