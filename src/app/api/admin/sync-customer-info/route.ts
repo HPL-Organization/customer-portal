@@ -1,7 +1,11 @@
+// src/app/api/admin/sync-customer-info/route.ts
 import { NextRequest } from "next/server";
 import axios from "axios";
 import { getValidToken } from "@/lib/netsuite/token";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 const NS_ENV = process.env.NETSUITE_ENV?.toLowerCase() || "prod";
 const isSB = NS_ENV === "sb";
@@ -31,48 +35,125 @@ const RL_DEPLOY_ID = String(
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
+type CustomerInformationRow = {
+  info_id: string;
+  customer_id: number;
+  email: string | null;
+  first_name: string | null;
+  middle_name: string | null;
+  last_name: string | null;
+  phone: string | null;
+  mobile: string | null;
+  shipping_address1: string | null;
+  shipping_address2: string | null;
+  shipping_city: string | null;
+  shipping_state: string | null;
+  shipping_zip: string | null;
+  shipping_country: string | null;
+  billing_address1: string | null;
+  billing_address2: string | null;
+  billing_city: string | null;
+  billing_state: string | null;
+  billing_zip: string | null;
+  billing_country: string | null;
+  shipping_verified: boolean;
+  billing_verified: boolean;
+  created_at: string;
+  updated_at: string;
+  terms_compliance: boolean;
+  terms_agreed_at: string | null;
+  user_id: string | null;
+  hubspot_id: number | null;
+  check_invoice: boolean;
+  check_invoice_range: unknown | null;
+  check_invoice_result: boolean | null;
+  ns_deleted_at: string | null;
+};
+
+type CustomerInformationInsert = {
+  info_id?: string;
+  customer_id: number;
+  email?: string | null;
+  first_name?: string | null;
+  middle_name?: string | null;
+  last_name?: string | null;
+  phone?: string | null;
+  mobile?: string | null;
+  shipping_address1?: string | null;
+  shipping_address2?: string | null;
+  shipping_city?: string | null;
+  shipping_state?: string | null;
+  shipping_zip?: string | null;
+  shipping_country?: string | null;
+  billing_address1?: string | null;
+  billing_address2?: string | null;
+  billing_city?: string | null;
+  billing_state?: string | null;
+  billing_zip?: string | null;
+  billing_country?: string | null;
+  shipping_verified?: boolean;
+  billing_verified?: boolean;
+  created_at?: string;
+  updated_at?: string;
+  terms_compliance?: boolean;
+  terms_agreed_at?: string | null;
+  user_id?: string | null;
+  hubspot_id?: number | null;
+  check_invoice?: boolean;
+  check_invoice_range?: unknown | null;
+  check_invoice_result?: boolean | null;
+  ns_deleted_at?: string | null;
+};
+
+type CustomerInformationUpdate = {
+  info_id?: string;
+  customer_id?: number;
+  email?: string | null;
+  first_name?: string | null;
+  middle_name?: string | null;
+  last_name?: string | null;
+  phone?: string | null;
+  mobile?: string | null;
+  shipping_address1?: string | null;
+  shipping_address2?: string | null;
+  shipping_city?: string | null;
+  shipping_state?: string | null;
+  shipping_zip?: string | null;
+  shipping_country?: string | null;
+  billing_address1?: string | null;
+  billing_address2?: string | null;
+  billing_city?: string | null;
+  billing_state?: string | null;
+  billing_zip?: string | null;
+  billing_country?: string | null;
+  shipping_verified?: boolean;
+  billing_verified?: boolean;
+  created_at?: string;
+  updated_at?: string;
+  terms_compliance?: boolean;
+  terms_agreed_at?: string | null;
+  user_id?: string | null;
+  hubspot_id?: number | null;
+  check_invoice?: boolean;
+  check_invoice_range?: unknown | null;
+  check_invoice_result?: boolean | null;
+  ns_deleted_at?: string | null;
+};
+
 type Database = {
   public: {
     Tables: {
       customer_information: {
-        Row: {
-          info_id: string;
-          customer_id: number;
-          email: string | null;
-          first_name: string | null;
-          middle_name: string | null;
-          last_name: string | null;
-          phone: string | null;
-          mobile: string | null;
-          shipping_address1: string | null;
-          shipping_address2: string | null;
-          shipping_city: string | null;
-          shipping_state: string | null;
-          shipping_zip: string | null;
-          shipping_country: string | null;
-          billing_address1: string | null;
-          billing_address2: string | null;
-          billing_city: string | null;
-          billing_state: string | null;
-          billing_zip: string | null;
-          billing_country: string | null;
-          shipping_verified: boolean;
-          billing_verified: boolean;
-          created_at: string;
-          updated_at: string;
-          terms_compliance: boolean;
-          terms_agreed_at: string | null;
-          user_id: string | null;
-          hubspot_id: number | null;
-        };
-        Insert: Partial<
-          Database["public"]["Tables"]["customer_information"]["Row"]
-        >;
-        Update: Partial<
-          Database["public"]["Tables"]["customer_information"]["Row"]
-        >;
+        Row: CustomerInformationRow;
+        Insert: CustomerInformationInsert;
+        Update: CustomerInformationUpdate;
+        Relationships: [];
       };
     };
+    Views: {};
+    Functions: {};
+    Enums: {};
+    CompositeTypes: {};
   };
 };
 
@@ -81,6 +162,14 @@ type CustomerInsert = Omit<
   CustomerRow,
   "info_id" | "created_at" | "updated_at"
 >;
+
+const SELECT_EXISTING_CUSTOMERS =
+  "info_id,customer_id,email,first_name,middle_name,last_name,phone,mobile,shipping_address1,shipping_address2,shipping_city,shipping_state,shipping_zip,shipping_country,billing_address1,billing_address2,billing_city,billing_state,billing_zip,billing_country,shipping_verified,billing_verified,terms_compliance,terms_agreed_at,user_id,hubspot_id,check_invoice,check_invoice_range,check_invoice_result,ns_deleted_at" as const;
+
+const SELECT_ALL_MINIMAL =
+  "customer_id,email,user_id,shipping_verified,billing_verified,terms_compliance,terms_agreed_at,check_invoice,check_invoice_range,check_invoice_result,ns_deleted_at" as const;
+
+const SELECT_TARGET_USER = "customer_id,user_id" as const;
 
 function authHeaders(token: string): Record<string, string> {
   return {
@@ -260,42 +349,65 @@ async function fetchExistingCustomers(
   const out: CustomerRow[] = [];
   const batch = 1000;
   for (let i = 0; i < ids.length; i += batch) {
-    const chunk = ids.slice(i, i + batch);
+    const chunkIds = ids.slice(i, i + batch);
     const { data, error } = await supabase
       .from("customer_information")
-      .select(
-        [
-          "info_id",
-          "customer_id",
-          "email",
-          "first_name",
-          "middle_name",
-          "last_name",
-          "phone",
-          "mobile",
-          "shipping_address1",
-          "shipping_address2",
-          "shipping_city",
-          "shipping_state",
-          "shipping_zip",
-          "shipping_country",
-          "billing_address1",
-          "billing_address2",
-          "billing_city",
-          "billing_state",
-          "billing_zip",
-          "billing_country",
-          "shipping_verified",
-          "billing_verified",
-          "terms_compliance",
-          "terms_agreed_at",
-          "user_id",
-          "hubspot_id",
-        ].join(",")
-      )
-      .in("customer_id", chunk);
+      .select(SELECT_EXISTING_CUSTOMERS)
+      .in("customer_id", chunkIds);
     if (error) throw error;
-    if (data?.length) out.push(...(data as CustomerRow[]));
+    if (data?.length) out.push(...data);
+  }
+  return out;
+}
+
+async function fetchAllCustomersMinimal(
+  supabase: SupabaseClient<Database>
+): Promise<
+  Pick<
+    CustomerRow,
+    | "customer_id"
+    | "email"
+    | "user_id"
+    | "shipping_verified"
+    | "billing_verified"
+    | "terms_compliance"
+    | "terms_agreed_at"
+    | "check_invoice"
+    | "check_invoice_range"
+    | "check_invoice_result"
+    | "ns_deleted_at"
+  >[]
+> {
+  const out: Pick<
+    CustomerRow,
+    | "customer_id"
+    | "email"
+    | "user_id"
+    | "shipping_verified"
+    | "billing_verified"
+    | "terms_compliance"
+    | "terms_agreed_at"
+    | "check_invoice"
+    | "check_invoice_range"
+    | "check_invoice_result"
+    | "ns_deleted_at"
+  >[] = [];
+
+  const pageSize = 1000;
+  let from = 0;
+  for (;;) {
+    const to = from + pageSize - 1;
+    const { data, error } = await supabase
+      .from("customer_information")
+      .select(SELECT_ALL_MINIMAL)
+      .order("customer_id", { ascending: true })
+      .range(from, to);
+
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    out.push(...data);
+    if (data.length < pageSize) break;
+    from += pageSize;
   }
   return out;
 }
@@ -350,18 +462,23 @@ function pickAddress(
   };
 }
 
-// Always return string|null (no undefined)
 function coerceStr(v: any): string | null {
   if (v === undefined || v === null) return null;
   const s = String(v).trim();
   return s === "" ? null : s;
 }
+
 function coerceBigint(v: any): number | null {
   if (v === undefined || v === null || v === "") return null;
   const s = String(v).replace(/[, ]/g, "").trim();
   if (!/^\d+$/.test(s)) return null;
   const n = Number(s);
   return Number.isFinite(n) ? n : null;
+}
+
+function normalizeEmail(v: any): string | null {
+  const s = coerceStr(v);
+  return s ? s.toLowerCase() : null;
 }
 
 function buildRow(inc: Incoming, existing?: CustomerRow): CustomerInsert {
@@ -387,12 +504,17 @@ function buildRow(inc: Incoming, existing?: CustomerRow): CustomerInsert {
     billing_state: coerceStr(bill.state),
     billing_zip: coerceStr(bill.zip),
     billing_country: coerceStr(bill.country),
-    // preserve portal-controlled fields on update
+
     shipping_verified: existing ? existing.shipping_verified : false,
     billing_verified: existing ? existing.billing_verified : false,
     terms_compliance: existing ? existing.terms_compliance : false,
     terms_agreed_at: existing ? existing.terms_agreed_at : null,
     user_id: existing ? existing.user_id : null,
+    check_invoice: existing ? existing.check_invoice : false,
+    check_invoice_range: existing ? existing.check_invoice_range : null,
+    check_invoice_result: existing ? existing.check_invoice_result : null,
+
+    ns_deleted_at: null,
 
     hubspot_id:
       inc.hubspot_id != null
@@ -403,6 +525,86 @@ function buildRow(inc: Incoming, existing?: CustomerRow): CustomerInsert {
   };
 }
 
+function chunk<T>(arr: T[], size: number) {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+async function safeUpsertBatch(
+  supabase: SupabaseClient<Database>,
+  batch: CustomerInsert[]
+) {
+  const { error } = await supabase
+    .from("customer_information")
+    .upsert(batch, { onConflict: "customer_id" });
+
+  if (!error) return;
+
+  const msg = String((error as any)?.message || "");
+  const likelyHubspotConflict =
+    msg.includes("hubspot") ||
+    msg.includes("customer_information_hubspot_id_key") ||
+    msg.toLowerCase().includes("duplicate key");
+
+  if (!likelyHubspotConflict) throw error;
+
+  for (const row of batch) {
+    const { error: e1 } = await supabase
+      .from("customer_information")
+      .upsert(row as any, { onConflict: "customer_id" });
+
+    if (!e1) continue;
+
+    const m1 = String((e1 as any)?.message || "");
+    const hubspotHit =
+      m1.includes("hubspot") ||
+      m1.includes("customer_information_hubspot_id_key") ||
+      m1.toLowerCase().includes("hubspot");
+
+    if (hubspotHit) {
+      const retry: CustomerInsert = { ...row, hubspot_id: null };
+      const { error: e2 } = await supabase
+        .from("customer_information")
+        .upsert(retry as any, { onConflict: "customer_id" });
+      if (e2) throw e2;
+      continue;
+    }
+
+    throw e1;
+  }
+}
+
+function parseBoolParam(v: string | null): boolean {
+  if (!v) return false;
+  const s = v.trim().toLowerCase();
+  return s === "1" || s === "true" || s === "yes" || s === "y" || s === "on";
+}
+
+type DeleteRowLog = {
+  customer_id: number;
+  email: string | null;
+  user_id: string | null;
+  ns_deleted_at?: string | null;
+  reason:
+    | "missing_from_stream_no_user_id"
+    | "missing_from_stream_with_user_id"
+    | "multiple_ns_candidates"
+    | "target_missing_or_user_conflict"
+    | "move_user_link_and_delete_old";
+  details?: any;
+};
+
+function emailIsHpl(email: string | null): boolean {
+  const e = (email || "").trim().toLowerCase();
+  return e.endsWith("@hplapidary.com");
+}
+
+function logArrayMaybe(tag: string, arr: any[], max = 500) {
+  if (arr.length <= max) console.log(tag, arr);
+  else console.log(tag, { total: arr.length, sample: arr.slice(0, max) });
+}
+
 export async function POST(req: NextRequest) {
   try {
     if (
@@ -411,9 +613,19 @@ export async function POST(req: NextRequest) {
     ) {
       return new Response(
         JSON.stringify({ ok: false, error: "Unauthorized" }),
-        { status: 401 }
+        {
+          status: 401,
+        }
       );
     }
+
+    const sp = req.nextUrl.searchParams;
+    const dryRun = parseBoolParam(sp.get("dry"));
+    const previewLimitRaw = sp.get("preview");
+    const previewLimit = Math.min(
+      200,
+      Math.max(0, Number(previewLimitRaw ?? "25") || 25)
+    );
 
     const token = await getValidToken();
     const headers = authHeaders(token);
@@ -461,6 +673,21 @@ export async function POST(req: NextRequest) {
     let inserted = 0;
     let updated = 0;
 
+    let moved_user_links = 0;
+    let soft_deleted = 0;
+    let hard_deleted = 0;
+    let ambiguous_skipped = 0;
+
+    const preview: any[] = [];
+
+    const hard_delete_rows: DeleteRowLog[] = [];
+    const soft_delete_rows: DeleteRowLog[] = [];
+    const ambiguous_rows: DeleteRowLog[] = [];
+    const risky_soft_deletes_hpl: DeleteRowLog[] = [];
+
+    const seenIds = new Set<number>();
+    const emailToNsIds = new Map<string, Set<number>>();
+
     for await (const page of restletStreamJsonlPages(token, sourceOpts, 2000)) {
       total += page.length;
 
@@ -468,43 +695,348 @@ export async function POST(req: NextRequest) {
         .map((r: any) => Number(r.customer_id))
         .filter((n: number) => Number.isFinite(n) && n > 0);
 
+      for (const id of ids) seenIds.add(id);
+
+      for (const r of page as Incoming[]) {
+        const id = Number(r.customer_id);
+        if (!Number.isFinite(id) || id <= 0) continue;
+        const e = normalizeEmail(r.email);
+        if (!e) continue;
+        const set = emailToNsIds.get(e) ?? new Set<number>();
+        set.add(id);
+        emailToNsIds.set(e, set);
+      }
+
       const existingRows = await fetchExistingCustomers(supabase, ids);
       const existingMap = new Map<number, CustomerRow>();
       for (const row of existingRows)
         existingMap.set(Number(row.customer_id), row);
 
-      const upserts: CustomerInsert[] = page.map((inc: Incoming) =>
+      const upserts: CustomerInsert[] = (page as Incoming[]).map((inc) =>
         buildRow(inc, existingMap.get(Number(inc.customer_id)))
       );
 
-      const chunk = <T>(arr: T[], size: number) => {
-        const out: T[][] = [];
-        for (let i = 0; i < arr.length; i += size)
-          out.push(arr.slice(i, i + size));
-        return out;
-      };
-
-      for (const batch of chunk(upserts, 1000)) {
-        const { error } = await supabase
-          .from("customer_information")
-          .upsert(batch as any, { onConflict: "customer_id" });
-        if (error) throw error;
-
-        const existed = batch.filter((b) =>
-          existingMap.has(Number(b.customer_id || 0))
+      for (const b of chunk(upserts, 1000)) {
+        const existed = b.filter((x) =>
+          existingMap.has(Number(x.customer_id || 0))
         ).length;
         updated += existed;
-        inserted += batch.length - existed;
+        inserted += b.length - existed;
+
+        if (!dryRun) {
+          await safeUpsertBatch(supabase, b);
+        } else if (preview.length < previewLimit) {
+          preview.push({
+            type: "upsert_batch",
+            size: b.length,
+            inserted: b.length - existed,
+            updated: existed,
+          });
+        }
       }
     }
 
-    return new Response(
-      JSON.stringify({
-        ok: true,
-        counts: { customers_processed: total, inserted, updated },
-      }),
-      { status: 200, headers: { "Content-Type": "application/json" } }
+    const all = await fetchAllCustomersMinimal(supabase);
+    const missing = all.filter((r) => {
+      const id = Number(r.customer_id);
+      if (id === -1) return false;
+      return !seenIds.has(id);
+    });
+    const nowIso = new Date().toISOString();
+
+    for (const row of missing) {
+      const customerId = Number(row.customer_id);
+      const userId = row.user_id ? String(row.user_id) : null;
+      const emailNorm = normalizeEmail(row.email);
+
+      if (!userId) {
+        hard_delete_rows.push({
+          customer_id: customerId,
+          email: row.email ?? null,
+          user_id: null,
+          reason: "missing_from_stream_no_user_id",
+        });
+
+        if (dryRun) {
+          hard_deleted++;
+          if (preview.length < previewLimit) {
+            preview.push({
+              type: "hard_delete_no_user",
+              reason: "missing_from_stream_no_user_id",
+              customer_id: customerId,
+              email: row.email ?? null,
+            });
+          }
+        } else {
+          const { error } = await supabase
+            .from("customer_information")
+            .delete()
+            .eq("customer_id", customerId);
+          if (error) throw error;
+          hard_deleted++;
+        }
+        continue;
+      }
+
+      if (emailNorm) {
+        const candidates = emailToNsIds.get(emailNorm);
+
+        if (candidates && candidates.size === 1) {
+          const targetCustomerId = Array.from(candidates)[0];
+
+          const { data: targetRows, error: targetErr } = await supabase
+            .from("customer_information")
+            .select(SELECT_TARGET_USER)
+            .eq("customer_id", targetCustomerId)
+            .limit(1);
+
+          if (targetErr) throw targetErr;
+
+          const target = targetRows?.[0] ?? null;
+          const targetUserId = target?.user_id ? String(target.user_id) : null;
+
+          if (target && (targetUserId == null || targetUserId === userId)) {
+            hard_delete_rows.push({
+              customer_id: customerId,
+              email: row.email ?? null,
+              user_id: userId,
+              reason: "move_user_link_and_delete_old",
+              details: { to_customer_id: targetCustomerId },
+            });
+
+            if (dryRun) {
+              moved_user_links++;
+              hard_deleted++;
+              if (preview.length < previewLimit) {
+                preview.push({
+                  type: "move_user_link_and_delete_old",
+                  reason: "move_user_link_and_delete_old",
+                  from_customer_id: customerId,
+                  to_customer_id: targetCustomerId,
+                  user_id: userId,
+                  moved_fields: [
+                    "user_id",
+                    "terms_compliance",
+                    "terms_agreed_at",
+                    "shipping_verified",
+                    "billing_verified",
+                    "check_invoice",
+                    "check_invoice_range",
+                    "check_invoice_result",
+                    "ns_deleted_at(null)",
+                  ],
+                });
+              }
+            } else {
+              const detach: CustomerInformationUpdate = { user_id: null };
+              const { error: e1 } = await supabase
+                .from("customer_information")
+                .update(detach)
+                .eq("customer_id", customerId)
+                .eq("user_id", userId);
+              if (f1(e1)) throw e1;
+
+              const move: CustomerInformationUpdate = {
+                user_id: userId,
+                terms_compliance: row.terms_compliance ?? false,
+                terms_agreed_at: row.terms_agreed_at ?? null,
+                shipping_verified: row.shipping_verified ?? false,
+                billing_verified: row.billing_verified ?? false,
+                check_invoice: row.check_invoice ?? false,
+                check_invoice_range: row.check_invoice_range ?? null,
+                check_invoice_result: row.check_invoice_result ?? null,
+                ns_deleted_at: null,
+              };
+
+              const { error: e2 } = await supabase
+                .from("customer_information")
+                .update(move)
+                .eq("customer_id", targetCustomerId);
+
+              if (e2) {
+                const undo: CustomerInformationUpdate = { user_id: userId };
+                await supabase
+                  .from("customer_information")
+                  .update(undo)
+                  .eq("customer_id", customerId)
+                  .is("user_id", null);
+                throw e2;
+              }
+
+              const { error: e3 } = await supabase
+                .from("customer_information")
+                .delete()
+                .eq("customer_id", customerId)
+                .is("user_id", null);
+              if (e3) throw e3;
+
+              moved_user_links++;
+              hard_deleted++;
+            }
+            continue;
+          }
+
+          ambiguous_skipped++;
+          const amb: DeleteRowLog = {
+            customer_id: customerId,
+            email: row.email ?? null,
+            user_id: userId,
+            ns_deleted_at: nowIso,
+            reason: "target_missing_or_user_conflict",
+            details: {
+              target_customer_id: targetCustomerId,
+              target_user_id: targetUserId,
+            },
+          };
+          ambiguous_rows.push(amb);
+          soft_delete_rows.push(amb);
+          if (emailIsHpl(amb.email)) risky_soft_deletes_hpl.push(amb);
+
+          if (dryRun) {
+            soft_deleted++;
+            if (preview.length < previewLimit) {
+              preview.push({
+                type: "ambiguous_target_user_conflict_soft_delete",
+                reason: "target_missing_or_user_conflict",
+                customer_id: customerId,
+                email: row.email ?? null,
+                user_id: userId,
+                target_customer_id: targetCustomerId,
+                target_user_id: targetUserId,
+                ns_deleted_at: nowIso,
+              });
+            }
+          } else {
+            const soft: CustomerInformationUpdate = { ns_deleted_at: nowIso };
+            const { error: e4 } = await supabase
+              .from("customer_information")
+              .update(soft)
+              .eq("customer_id", customerId);
+            if (e4) throw e4;
+            soft_deleted++;
+          }
+          continue;
+        }
+      }
+
+      let softReason: DeleteRowLog["reason"] =
+        "missing_from_stream_with_user_id";
+      let softDetails: any = undefined;
+
+      if (emailNorm) {
+        const candidates = emailToNsIds.get(emailNorm);
+        if (candidates && candidates.size > 1) {
+          ambiguous_skipped++;
+          softReason = "multiple_ns_candidates";
+          softDetails = {
+            candidate_count: candidates.size,
+            candidate_customer_ids: Array.from(candidates).slice(0, 200),
+          };
+
+          const amb: DeleteRowLog = {
+            customer_id: customerId,
+            email: row.email ?? null,
+            user_id: userId,
+            ns_deleted_at: nowIso,
+            reason: "multiple_ns_candidates",
+            details: softDetails,
+          };
+          ambiguous_rows.push(amb);
+          if (dryRun && preview.length < previewLimit) {
+            preview.push({
+              type: "ambiguous_multiple_ns_candidates",
+              reason: "multiple_ns_candidates",
+              customer_id: customerId,
+              email: row.email ?? null,
+              user_id: userId,
+              candidate_customer_ids: Array.from(candidates).slice(0, 20),
+              candidate_count: candidates.size,
+              action: "soft_delete",
+              ns_deleted_at: nowIso,
+            });
+          }
+        }
+      }
+
+      const softLog: DeleteRowLog = {
+        customer_id: customerId,
+        email: row.email ?? null,
+        user_id: userId,
+        ns_deleted_at: nowIso,
+        reason: softReason,
+        details: softDetails,
+      };
+      soft_delete_rows.push(softLog);
+      if (emailIsHpl(softLog.email)) risky_soft_deletes_hpl.push(softLog);
+
+      if (dryRun) {
+        soft_deleted++;
+        if (preview.length < previewLimit) {
+          preview.push({
+            type: "soft_delete_missing_from_stream",
+            reason: softReason,
+            customer_id: customerId,
+            email: row.email ?? null,
+            user_id: userId,
+            ns_deleted_at: nowIso,
+          });
+        }
+      } else {
+        const soft: CustomerInformationUpdate = { ns_deleted_at: nowIso };
+        const { error } = await supabase
+          .from("customer_information")
+          .update(soft)
+          .eq("customer_id", customerId);
+        if (error) throw error;
+        soft_deleted++;
+      }
+    }
+
+    const result = {
+      ok: true,
+      dry_run: dryRun,
+      counts: {
+        customers_processed: total,
+        inserted,
+        updated,
+        moved_user_links,
+        soft_deleted,
+        hard_deleted,
+        ambiguous_skipped,
+        missing_in_supabase_not_in_stream: missing.length,
+        seen_ids_in_stream: seenIds.size,
+      },
+      deletions: {
+        hard: hard_delete_rows,
+        soft: soft_delete_rows,
+        ambiguous: ambiguous_rows,
+        risky_soft_deletes_hpl,
+      },
+      preview,
+    };
+
+    console.log(
+      `[sync-customer-info] ${dryRun ? "DRY RUN" : "LIVE"} counts=`,
+      result.counts
     );
+    console.log(
+      `[sync-customer-info] deletions hard=${hard_delete_rows.length} soft=${soft_delete_rows.length} ambiguous=${ambiguous_rows.length} risky_hpl_soft=${risky_soft_deletes_hpl.length}`
+    );
+
+    if (dryRun) {
+      logArrayMaybe("[sync-customer-info] hard_delete_rows=", hard_delete_rows);
+      logArrayMaybe("[sync-customer-info] soft_delete_rows=", soft_delete_rows);
+      logArrayMaybe("[sync-customer-info] ambiguous_rows=", ambiguous_rows);
+      logArrayMaybe(
+        "[sync-customer-info] risky_soft_deletes_hpl=",
+        risky_soft_deletes_hpl
+      );
+    }
+
+    return new Response(JSON.stringify(result), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
   } catch (err: any) {
     const msg = String(err?.message || "SyncFailed");
     const status = msg.startsWith("RestletFetchFailed ")
@@ -524,4 +1056,8 @@ export async function POST(req: NextRequest) {
       { status }
     );
   }
+}
+
+function f1(e: any) {
+  return !!e;
 }
