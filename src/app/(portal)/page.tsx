@@ -211,6 +211,17 @@ export default function Dashboard() {
     return new Date(parts.year, parts.month - 1, parts.day);
   }
 
+  function startOfDay(d: Date) {
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  }
+
+  function dayDiffInclusive(a: Date, b: Date) {
+    const msPerDay = 24 * 60 * 60 * 1000;
+    const aa = startOfDay(a).getTime();
+    const bb = startOfDay(b).getTime();
+    return Math.max(1, Math.round((bb - aa) / msPerDay) + 1);
+  }
+
   function formatRangeForMessage(range: InvoiceRange | null): string {
     if (!range || !range.from) return "the configured date window";
 
@@ -246,9 +257,20 @@ export default function Dashboard() {
       const rep = String(repRaw).trim().toLowerCase();
       return rep === "live event";
     };
+
     const isPaymentProcessing = (inv: any) =>
       (inv as any).paymentProcessing === true ||
       (inv as any).payment_processing === true;
+
+    const startOfDay = (d: Date) =>
+      new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
+    const dayDiffInclusive = (a: Date, b: Date) => {
+      const msPerDay = 24 * 60 * 60 * 1000;
+      const aa = startOfDay(a).getTime();
+      const bb = startOfDay(b).getTime();
+      return Math.max(1, Math.round((bb - aa) / msPerDay) + 1);
+    };
 
     if (mode === "fixed") {
       if (!range.to) return null;
@@ -268,6 +290,22 @@ export default function Dashboard() {
       });
     }
 
+    // rolling = grace period N days (derived from from/to length),
+    // block if any unpaid invoice is older than that grace period.
+    const today = startOfDay(new Date());
+
+    const toParts = range.to ?? range.from;
+    const toDate = datePartsToDate(toParts);
+    if (!toDate) return null;
+
+    const graceDays = dayDiffInclusive(fromDate, toDate);
+
+    // cutoff day = start of (today - (graceDays - 1))
+    // N=1 => cutoff=today; blocks anything before today
+    // N=2 => cutoff=yesterday; blocks anything before yesterday
+    const cutoff = new Date(today);
+    cutoff.setDate(today.getDate() - (graceDays - 1));
+
     return invoices.some((inv) => {
       if (isInvoiceBackordered(inv)) return false;
       if (!isLiveEventRep(inv)) return false;
@@ -277,7 +315,8 @@ export default function Dashboard() {
       const d = new Date(inv.trandate);
       if (Number.isNaN(d.getTime())) return false;
 
-      return d < fromDate;
+      const invDay = startOfDay(d);
+      return invDay < cutoff;
     });
   }
 

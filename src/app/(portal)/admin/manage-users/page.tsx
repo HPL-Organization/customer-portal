@@ -71,6 +71,9 @@ type PresetRangeConfig = {
 };
 
 const PRESET_RANGES: PresetRangeConfig[] = [
+  { key: "last_1_day", label: "Last 1 day", days: 1 },
+  { key: "last_2_days", label: "Last 2 days", days: 2 },
+  { key: "last_3_days", label: "Last 3 days", days: 3 },
   { key: "last_7_days", label: "Last 7 days", days: 7 },
   { key: "last_15_days", label: "Last 15 days", days: 15 },
   { key: "last_1_month", label: "Last 1 month", months: 1 },
