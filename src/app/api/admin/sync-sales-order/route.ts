@@ -61,6 +61,8 @@ type SalesOrdersRow = {
   billing_terms_id: string | null;
   sales_team: any | null;
   partners: any | null;
+  giveaway: boolean | null;
+  warranty: boolean | null;
 };
 
 type SalesOrderLinesRow = {
@@ -409,6 +411,8 @@ export async function POST(req: NextRequest) {
           billing_terms_id: coerceText(r.billing_terms_id),
           sales_team: Array.isArray(r.sales_team) ? r.sales_team : null,
           partners: Array.isArray(r.partners) ? r.partners : null,
+          giveaway: parseBool(r.giveaway ?? r.custbody_hpl_giveaway),
+          warranty: parseBool(r.warranty ?? r.custbody_hpl_warranty),
           ns_deleted_at: null,
         } as SalesOrderInsert;
       })
