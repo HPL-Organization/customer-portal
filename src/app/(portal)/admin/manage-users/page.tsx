@@ -752,6 +752,15 @@ export default function ManageUsersPage() {
         >
           Refresh
         </Button>
+        <Button
+          variant="outlined"
+          onClick={() => {
+            window.location.href = "/api/admin/portal-users-csv";
+          }}
+          disabled={loading}
+        >
+          Download CSV for current users
+        </Button>
       </Box>
 
       <Card sx={{ mb: 3 }}>
