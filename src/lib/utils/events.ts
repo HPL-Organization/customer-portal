@@ -30,6 +30,7 @@ export const IMAGE_MAP_EXACT: Record<string, string> = {
   tote_night: `${IMG_BASE}/tote_night.png`,
   saturday_rough_rock_event: `${IMG_BASE}/saturday_rough_rock_event.png`,
   tuesday_live_event: `${IMG_BASE}/tuesday_live_event.png`,
+  high_bid_night: `${IMG_BASE}/high_bid_night.png`,
 };
 
 export const IMAGE_FALLBACK_BY_KEYWORD: ImageRule[] = [
