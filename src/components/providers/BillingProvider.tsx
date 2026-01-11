@@ -125,6 +125,19 @@ function normalizeInvoice(raw: any): Invoice {
       raw.salesRep ??
       raw.sales_rep ??
       (typeof raw.salesrep === "string" ? raw.salesrep : null),
+    giveaway:
+      typeof raw.giveaway === "boolean"
+        ? raw.giveaway
+        : typeof raw.giveAway === "boolean"
+        ? raw.giveAway
+        : null,
+
+    warranty:
+      typeof raw.warranty === "boolean"
+        ? raw.warranty
+        : typeof raw.warrantyFlag === "boolean"
+        ? raw.warrantyFlag
+        : null,
   };
   return inv as Invoice;
 }

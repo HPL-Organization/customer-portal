@@ -20,7 +20,7 @@ export async function POST(req: Request) {
     const { data, error } = await supabase
       .from("payment_instruments")
       .select(
-        "instrument_id, payment_method, brand, last4, expiry, token_family, token_namespace, is_default, netsuite_writes_status"
+        "instrument_id, payment_method, brand, last4, expiry, token_family, token_namespace, is_default, netsuite_writes_status, payer_email"
       )
       .eq("customer_id", Number(customerInternalId))
       .is("ns_deleted_at", null)
@@ -42,6 +42,7 @@ export async function POST(req: Request) {
       expiry: r.expiry ?? null,
       tokenFamily: r.token_family ?? null,
       tokenNamespace: r.token_namespace ?? null,
+      payerEmail: r.payer_email ?? null,
       isDefault: !!r.is_default,
       netsuite_writes_status: r.netsuite_writes_status ?? null,
       instrument_id: r.instrument_id,

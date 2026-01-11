@@ -31,6 +31,7 @@ type Instrument = {
   last4: string | null;
   expiry: string | null;
   tokenFamily: string | null;
+  payerEmail?: string | null;
   netsuite_writes_status?: string | null;
 };
 
@@ -189,12 +190,18 @@ export default function PayDrawer({
   }
 
   const methodLabel = (pm: Instrument) => {
+    const email =
+      pm.payerEmail && String(pm.payerEmail).trim()
+        ? String(pm.payerEmail).trim()
+        : null;
+
     const bits = [
-      pm.paymentMethod || pm.brand || pm.tokenFamily || "Payment Method",
-      pm.brand || null,
+      pm.brand || pm.tokenFamily || "Payment Method",
       pm.last4 ? `•••• ${pm.last4}` : null,
       pm.expiry ? `Exp: ${pm.expiry}` : null,
+      email ? `Email: ${email}` : null,
     ].filter(Boolean);
+
     return bits.join(" · ");
   };
 

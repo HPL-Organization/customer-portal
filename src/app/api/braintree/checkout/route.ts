@@ -3,6 +3,27 @@ export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 import { gateway } from "@/lib/braintree/braintree";
 import { createClient } from "@supabase/supabase-js";
+import crypto from "crypto";
+
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+
+const NS_WRITES_URL =
+  process.env.NS_WRITES_URL || "https://netsuite-writes.onrender.com";
+const NS_WRITES_ADMIN_BEARER = process.env.NS_WRITES_ADMIN_BEARER || "test";
+
+const CALLBACK_URL =
+  process.env.NS_WRITES_PM_CALLBACK_URL ||
+  "https://portal.hplapidary.com/api/callbacks/save-payment-method-callback"; //"https://daine-coffinless-otelia.ngrok-free.dev/api/callbacks/save-payment-method-callback" ||
+
+const CALLBACK_SECRET =
+  process.env.NSWRITES_WEBHOOK_SECRET ||
+  process.env.PORTAL_CALLBACK_SECRET ||
+  "";
+
+function nowIso() {
+  return new Date().toISOString();
+}
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
@@ -12,6 +33,11 @@ export async function POST(req: NextRequest) {
   const nonce = body?.nonce ?? null;
   const paymentMethodToken = body?.paymentMethodToken ?? null;
   const vault = Boolean(body?.vault);
+
+  const payerEmailFromClient: string | null =
+    typeof body?.payerEmail === "string" && body.payerEmail.trim()
+      ? body.payerEmail.trim()
+      : null;
 
   if (!nsCustomerId)
     return NextResponse.json(
@@ -24,11 +50,9 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
 
-  const supabase = createClient(
-    process.env.SUPABASE_URL as string,
-    process.env.SUPABASE_SERVICE_ROLE_KEY as string,
-    { auth: { persistSession: false } }
-  );
+  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
+    auth: { persistSession: false },
+  });
 
   if (vault && (!amount || Number(amount) <= 0)) {
     const result = await gateway.paymentMethod.create({
@@ -40,28 +64,138 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: result.message }, { status: 422 });
 
     const pm = result.paymentMethod as any;
-    const token = pm?.token as string;
+    const token = String(pm?.token || "");
+    if (!token)
+      return NextResponse.json(
+        { error: "Vault succeeded but token missing" },
+        { status: 500 }
+      );
+
     const raw = JSON.parse(JSON.stringify(pm));
 
-    await supabase
+    const payerEmail: string | null =
+      (typeof pm?.email === "string" && pm.email.trim()
+        ? pm.email.trim()
+        : null) ?? payerEmailFromClient;
+
+    const processingId = `processing-${Date.now()}`;
+
+    const row = {
+      customer_id: Number(nsCustomerId),
+      instrument_id: processingId,
+      payment_method: "paypal",
+      brand: "paypal",
+      last4: null,
+      expiry: null,
+      token,
+      token_family: "PayPal",
+      token_namespace: "braintree",
+      is_default: true,
+      ns_deleted_at: null,
+      last_seen_at: nowIso(),
+      synced_at: nowIso(),
+      raw,
+      netsuite_writes_status: "processing" as const,
+      payer_email: payerEmail,
+    };
+
+    let pi_id: string | null = null;
+
+    const { data: inserted, error: insErr } = await supabase
       .from("payment_instruments")
-      .upsert({
-        customer_id: Number(nsCustomerId),
-        instrument_id: token,
-        payment_method: "paypal",
-        brand: "paypal",
-        last4: null,
-        expiry: null,
-        token: token,
-        token_family: "paypal",
-        token_namespace: "braintree",
-        is_default: true,
-        raw,
-      })
-      .select()
+      .insert([row])
+      .select("pi_id")
       .single();
 
-    return NextResponse.json({ ok: true, vaultedToken: token });
+    if (insErr) {
+      const { data: up, error: upErr } = await supabase
+        .from("payment_instruments")
+        .upsert([row], { onConflict: "customer_id,instrument_id" })
+        .select("pi_id")
+        .single();
+
+      if (upErr) {
+        console.error("Supabase PI write failed", insErr, upErr);
+        return NextResponse.json(
+          { error: "Supabase write failed" },
+          { status: 500 }
+        );
+      }
+      pi_id = up?.pi_id ?? null;
+    } else {
+      pi_id = inserted?.pi_id ?? null;
+    }
+
+    if (!pi_id) {
+      return NextResponse.json(
+        { error: "Supabase write failed (missing pi_id)" },
+        { status: 500 }
+      );
+    }
+
+    const idempotencyKey =
+      process.env.FORCE_STATIC_IDEMPOTENCY === "1"
+        ? `pm:${Number(nsCustomerId)}:${token}`
+        : crypto.randomUUID();
+
+    const nsRes = await fetch(
+      `${NS_WRITES_URL.replace(/\/$/, "")}/api/netsuite/save-payment-method`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${NS_WRITES_ADMIN_BEARER}`,
+          "Idempotency-Key": idempotencyKey,
+        },
+        body: JSON.stringify({
+          customerInternalId: Number(nsCustomerId),
+
+          token,
+          tokenFamily: "PayPal",
+
+          cardNameOnCard: payerEmail || "PayPal",
+
+          accountNumberLastFour: undefined,
+          tokenExpirationDate: undefined,
+
+          accountType: "paypal",
+
+          clientRef: pi_id,
+
+          callbackUrl: CALLBACK_URL,
+          callbackMethod: "POST",
+          callbackHeaders: { "x-source": "customer-portal" },
+          callbackSecret: CALLBACK_SECRET,
+        }),
+      }
+    );
+
+    const nsText = await nsRes.text();
+    let nsJson: any = {};
+    try {
+      nsJson = nsText ? JSON.parse(nsText) : {};
+    } catch {
+      nsJson = { raw: nsText };
+    }
+
+    if (!nsRes.ok || nsJson?.error) {
+      await supabase
+        .from("payment_instruments")
+        .update({ netsuite_writes_status: "failed" })
+        .eq("pi_id", pi_id);
+
+      const message =
+        nsJson?.message || nsJson?.error || `HTTP ${nsRes.status}: ${nsText}`;
+      return NextResponse.json({ error: message }, { status: 502 });
+    }
+
+    return NextResponse.json({
+      ok: true,
+      queued: true,
+      pi_id,
+      instrumentId: processingId,
+      payerEmail,
+    });
   }
 
   if (!amount || Number(amount) <= 0)
@@ -96,11 +230,11 @@ export async function POST(req: NextRequest) {
     amount: Number(tx.amount),
     currency: tx.currencyIsoCode || null,
     status: tx.status,
-    payer_email: tx.paypal?.payerEmail || null,
+    payer_email: tx.paypalAccount?.payerEmail || null,
     raw: tx,
   });
 
-  const vaultedToken = tx?.paypal?.token as string | undefined;
+  const vaultedToken = tx?.paypalAccount?.token as string | undefined;
   if (vaultedToken) {
     await supabase.from("payment_instruments").upsert(
       {
@@ -111,10 +245,11 @@ export async function POST(req: NextRequest) {
         last4: null,
         expiry: null,
         token: vaultedToken,
-        token_family: "paypal",
+        token_family: "Braintree",
         token_namespace: "braintree",
         is_default: true,
-        raw: tx?.paypal || tx,
+        payer_email: tx.paypalAccount?.payerEmail || null,
+        raw: tx?.paypalAccount || tx,
       },
       { onConflict: "customer_id,instrument_id" }
     );
