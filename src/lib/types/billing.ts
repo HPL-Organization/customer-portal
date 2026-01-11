@@ -27,6 +27,8 @@ export interface Invoice {
   lines: InvoiceLine[];
   payments: InvoicePayment[];
   netsuiteUrl?: string;
+  giveaway?: boolean | null;
+  warranty?: boolean | null;
 }
 
 export interface Deposit {

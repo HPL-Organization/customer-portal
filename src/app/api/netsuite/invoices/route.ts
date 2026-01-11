@@ -134,10 +134,7 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const headersMap = new Map<number, any>();
-    for (const h of headers || []) {
-      headersMap.set(Number(h.invoice_id), h);
-    }
+    const boolOrNull = (v: any) => (typeof v === "boolean" ? v : null);
 
     const invoicesOut = (headers || [])
       .sort(
@@ -181,9 +178,12 @@ export async function GET(req: NextRequest) {
             typeof (h as any).sales_rep === "string"
               ? (h as any).sales_rep
               : null,
+
+          giveaway: boolOrNull((h as any).giveaway),
+          warranty: boolOrNull((h as any).warranty),
         };
       });
-
+    console.log("Source Inv", invoicesOut);
     return new Response(
       JSON.stringify({
         invoices: invoicesOut,

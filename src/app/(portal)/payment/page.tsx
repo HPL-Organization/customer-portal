@@ -40,6 +40,7 @@ import {
 } from "lucide-react";
 import { useCustomerBootstrap } from "@/components/providers/CustomerBootstrap";
 import { usePaymentMethods } from "@/components/providers/PaymentMethodsProvider";
+import { AddPaypalMethodDialog } from "@/components/payment/braintree/AddPaypalMethodDialog";
 
 /* ---------- VersaPay globals ---------- */
 declare global {
@@ -98,7 +99,7 @@ function mapShape(it: any, idx: number) {
 function isProcessing(pm: any) {
   const a = String(pm?.instrument_id ?? "").toLowerCase();
   const b = String(pm?.netsuite_writes_status ?? "").toLowerCase();
-  return a === "processing" || b === "processing";
+  return a.startsWith("processing") || b === "processing";
 }
 function isFailed(pm: any) {
   const b = String(pm?.netsuite_writes_status ?? "").toLowerCase();
@@ -782,6 +783,8 @@ export default function PaymentMethodsPage() {
   const [busy, setBusy] = useState(false);
   const [busyText, setBusyText] = useState<string>("");
 
+  const [addPaypalOpen, setAddPaypalOpen] = useState(false);
+
   const hasCustomerId = Boolean(customerId);
 
   function handleCreated(pm: any | null) {
@@ -884,6 +887,35 @@ export default function PaymentMethodsPage() {
       setAddOpen(true);
     }
   }
+  async function handleAddPaypalClick() {
+    if (!hasCustomerId) return;
+
+    if (!contactId) {
+      toast.warn(
+        "Please add your billing address before adding a payment method"
+      );
+      router.push("/profile?missing=billing");
+      return;
+    }
+
+    try {
+      const res = await fetch(
+        `/api/hubspot/has-billing?contactId=${encodeURIComponent(contactId)}`,
+        { cache: "no-store" }
+      );
+      const data = await res.json();
+      if (!res.ok) {
+        //|| data?.hasBilling === false
+        toast.warn(
+          "Please add your billing address before adding a payment method"
+        );
+        router.push("/profile?missing=billing");
+        return;
+      }
+    } catch {}
+
+    setAddPaypalOpen(true);
+  }
 
   return (
     <div className="min-h-[calc(100vh-56px)] bg-[#F7F7F9]">
@@ -928,6 +960,24 @@ export default function PaymentMethodsPage() {
               }}
             >
               Add method
+            </MUIButton>
+            <MUIButton
+              variant="outlined"
+              startIcon={<WalletCards />}
+              onClick={handleAddPaypalClick}
+              disabled={!hasCustomerId}
+              sx={{
+                textTransform: "none",
+                borderRadius: "0.75rem",
+                borderColor: "#BFBFBF",
+                color: "#17152A",
+                "&:hover": {
+                  backgroundColor: "#FFFFEC",
+                  borderColor: "#BFBFBF",
+                },
+              }}
+            >
+              Add PayPal
             </MUIButton>
           </div>
         </div>
@@ -976,6 +1026,15 @@ export default function PaymentMethodsPage() {
           onCreated={handleCreated}
           customerId={Number(customerId)}
           contactId={contactId}
+        />
+      ) : null}
+
+      {hasCustomerId ? (
+        <AddPaypalMethodDialog
+          open={addPaypalOpen}
+          onClose={() => setAddPaypalOpen(false)}
+          nsCustomerId={Number(customerId)}
+          onCreated={handleCreated}
         />
       ) : null}
 

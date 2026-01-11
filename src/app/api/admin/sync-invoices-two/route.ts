@@ -57,6 +57,8 @@ type Database = {
           so_reference: string | null;
           payment_processing: boolean;
           is_backordered: boolean | null;
+          giveaway: boolean | null;
+          warranty: boolean | null;
         };
         Insert: Partial<Database["public"]["Tables"]["invoices"]["Row"]>;
         Update: Partial<Database["public"]["Tables"]["invoices"]["Row"]>;
@@ -432,6 +434,14 @@ async function upsertSnapshotToSupabase(
         typeof f.isBackordered === "boolean"
           ? f.isBackordered
           : existing?.is_backordered ?? null,
+      giveaway:
+        typeof f.giveaway === "boolean"
+          ? f.giveaway
+          : existing?.giveaway ?? null,
+      warranty:
+        typeof f.warranty === "boolean"
+          ? f.warranty
+          : existing?.warranty ?? null,
     };
   };
 
@@ -676,6 +686,8 @@ export async function POST(req: NextRequest) {
         "so_reference",
         "payment_processing",
         "is_backordered",
+        "giveaway",
+        "warranty",
       ],
       "invoice_id",
       fileInvoiceIds
@@ -777,6 +789,8 @@ export async function POST(req: NextRequest) {
       "so_reference",
       "payment_processing",
       "is_backordered",
+      "giveaway",
+      "warranty",
     ];
     const invoiceNumeric = new Set([
       "total",
@@ -927,6 +941,9 @@ export async function POST(req: NextRequest) {
           typeof f.isBackordered === "boolean"
             ? f.isBackordered
             : d.is_backordered ?? null,
+
+        giveaway: typeof f.giveaway === "boolean" ? f.giveaway : null,
+        warranty: typeof f.warranty === "boolean" ? f.warranty : null,
       };
 
       const dNorm: Record<string, any> = {
@@ -947,6 +964,8 @@ export async function POST(req: NextRequest) {
         so_reference: d.so_reference,
         payment_processing: d.payment_processing,
         is_backordered: d.is_backordered,
+        giveaway: d.giveaway ?? null,
+        warranty: d.warranty ?? null,
       };
 
       const changes = diffObject(dNorm, fNorm, invoiceFields, invoiceNumeric);

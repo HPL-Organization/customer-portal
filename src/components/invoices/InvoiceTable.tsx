@@ -17,6 +17,8 @@ export type Invoice = {
   taxTotal?: number;
   amountPaid: number;
   amountRemaining: number;
+  giveaway?: boolean | null;
+  warranty?: boolean | null;
   lines: {
     itemId?: string | number;
     itemName?: string;
@@ -431,6 +433,7 @@ function DesktopRow({
   const baseBg = index % 2 === 0 ? "bg-slate-50" : "bg-white";
   const openBg = "bg-rose-50";
   const openOutline = "outline outline-2 -outline-offset-2 outline-rose-300/60";
+  console.log("Invoices:", inv);
 
   return (
     <>
@@ -481,8 +484,28 @@ function DesktopRow({
           </div>
         </td>
         <td className="px-4 py-3">
-          <div className="font-semibold text-slate-900 tracking-tight">
-            {inv.tranId}
+          <div className="flex items-center gap-2">
+            <div className="font-semibold text-slate-900 tracking-tight">
+              {inv.tranId}
+            </div>
+
+            {inv.warranty === true && (
+              <Chip
+                size="small"
+                label="Warranty"
+                variant="outlined"
+                sx={{ borderRadius: "10px" }}
+              />
+            )}
+
+            {inv.giveaway === true && (
+              <Chip
+                size="small"
+                label="Giveaway"
+                variant="outlined"
+                sx={{ borderRadius: "10px" }}
+              />
+            )}
           </div>
         </td>
         <td className="px-4 py-3 text-slate-700 whitespace-nowrap">
@@ -627,6 +650,25 @@ function MobileCard({
 
         <div className="mb-3 text-xs text-slate-500">
           Date: {fdate(inv.trandate)}
+        </div>
+
+        <div className="mt-1 flex flex-wrap gap-1">
+          {inv.warranty === true && (
+            <Chip
+              size="small"
+              label="Warranty"
+              variant="outlined"
+              sx={{ borderRadius: "10px" }}
+            />
+          )}
+          {inv.giveaway === true && (
+            <Chip
+              size="small"
+              label="Giveaway"
+              variant="outlined"
+              sx={{ borderRadius: "10px" }}
+            />
+          )}
         </div>
 
         <div className="mb-3 grid grid-cols-3 gap-3">
