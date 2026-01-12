@@ -270,7 +270,7 @@ function PaymentMethodCard({
         }
         subheader={
           <span className="text-sm text-[#17152A]/70">
-            {pm.name || pm.tokenFamilyLabel || undefined}
+            {pm.payerEmail || pm.name || pm.tokenFamilyLabel || undefined}
           </span>
         }
       />
