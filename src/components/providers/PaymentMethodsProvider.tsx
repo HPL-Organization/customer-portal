@@ -22,6 +22,7 @@ export type PaymentMethod = {
   tokenFamilyLabel?: string;
   instrument_id?: string | null;
   netsuite_writes_status?: string | null;
+  payerEmail?: string | null;
 };
 
 type CtxShape = {
@@ -80,6 +81,7 @@ function normalize(raw: any, idx: number): PaymentMethod {
     tokenFamilyLabel,
     instrument_id: raw.instrument_id ?? null,
     netsuite_writes_status: raw.netsuite_writes_status ?? null,
+    payerEmail: raw.payerEmail ?? raw.payer_email ?? null,
   };
 }
 
