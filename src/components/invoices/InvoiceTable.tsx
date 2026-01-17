@@ -967,17 +967,17 @@ function Details({ inv, mobile = false }: { inv: Invoice; mobile?: boolean }) {
 
         <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
           {/* WIP: don't remove */}
-          {/* <div className="border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-600">
+          <div className="border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-600">
             Fulfillment
-          </div> */}
+          </div>
 
-          {/* <div className="px-3 py-3">
+          <div className="px-3 py-3">
             <FulfillmentPeek
               soId={inv.createdFromSoId}
               soTranId={inv.createdFromSoTranId}
               invoiceTranId={inv.tranId}
             />
-          </div> */}
+          </div>
         </div>
       </div>
     </>

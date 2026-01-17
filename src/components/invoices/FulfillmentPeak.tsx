@@ -12,6 +12,7 @@ type FulfillmentLine = {
   comments?: string[];
   tracking?: string;
 };
+
 type Fulfillment = {
   id?: string | number;
   orderNumber?: string;
@@ -27,9 +28,11 @@ type Fulfillment = {
 function cx(...xs: Array<string | false | null | undefined>) {
   return xs.filter(Boolean).join(" ");
 }
+
 function unique<T>(arr: T[]) {
   return Array.from(new Set(arr));
 }
+
 function fmtDate(input?: string) {
   if (!input) return "—";
   const d = new Date(input);
@@ -41,6 +44,7 @@ function fmtDate(input?: string) {
         day: "numeric",
       });
 }
+
 function tone(label: string) {
   if (label?.startsWith("Shipped"))
     return "bg-emerald-50 text-emerald-700 border-emerald-200";
@@ -54,11 +58,13 @@ function tone(label: string) {
     return "bg-rose-50 text-rose-700 border-rose-200";
   return "bg-slate-50 text-[#17152A] border-[#BFBFBF]";
 }
+
 async function copy(t: string) {
   try {
     await navigator.clipboard.writeText(t);
   } catch {}
 }
+
 function extractTrackingTokens(s?: string | null): string[] {
   if (!s) return [];
   const parts = String(s)
@@ -68,6 +74,7 @@ function extractTrackingTokens(s?: string | null): string[] {
     (p) => !/^https?:\/\//i.test(p) && !/^[\w.-]+\.[a-z]{2,}$/i.test(p)
   );
 }
+
 function getTrackingNumbers(ff: Fulfillment): string[] {
   const fromItems = (ff.items || []).flatMap((it) =>
     extractTrackingTokens(it.tracking)
@@ -75,8 +82,81 @@ function getTrackingNumbers(ff: Fulfillment): string[] {
   const root = extractTrackingTokens(ff.tracking);
   return unique([...fromItems, ...root]);
 }
+
 function getPrimaryStatus(ff: Fulfillment): string {
   return (ff.shipStatus || ff.status || "").trim();
+}
+
+function normStr(s?: string | null) {
+  return String(s || "")
+    .trim()
+    .toLowerCase();
+}
+
+function mergeComments(lines: FulfillmentLine[]) {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const ln of lines) {
+    const cs = Array.isArray(ln.comments) ? ln.comments : [];
+    for (const c of cs) {
+      const v = String(c || "").trim();
+      if (!v) continue;
+      const k = v.toLowerCase();
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(v);
+    }
+  }
+  return out;
+}
+
+function dedupeFulfillmentItems(items: FulfillmentLine[]): FulfillmentLine[] {
+  const groups = new Map<string, FulfillmentLine[]>();
+
+  for (const it of items || []) {
+    const sku = normStr(it.sku);
+    const name = normStr(it.productName);
+    const qty = Number.isFinite(Number(it.quantity))
+      ? String(Number(it.quantity))
+      : "—";
+    const trackKey = unique(extractTrackingTokens(it.tracking).map(normStr))
+      .sort()
+      .join("|");
+    const key = [sku, name, qty, trackKey].join("::");
+    const arr = groups.get(key);
+    if (arr) arr.push(it);
+    else groups.set(key, [it]);
+  }
+
+  const merged: FulfillmentLine[] = [];
+  for (const [, lines] of groups) {
+    const base = lines[0] || {};
+    const comments = mergeComments(lines);
+    const tracking =
+      lines
+        .map((x) => (x.tracking ? String(x.tracking) : ""))
+        .sort((a, b) => b.length - a.length)[0] || undefined;
+
+    merged.push({
+      sku: base.sku,
+      productName: base.productName,
+      quantity: base.quantity,
+      tracking,
+      comments: comments.length ? comments : undefined,
+    });
+  }
+
+  merged.sort((a, b) => {
+    const as = normStr(a.sku);
+    const bs = normStr(b.sku);
+    if (as !== bs) return as < bs ? -1 : 1;
+    const an = normStr(a.productName);
+    const bn = normStr(b.productName);
+    if (an === bn) return 0;
+    return an < bn ? -1 : 1;
+  });
+
+  return merged;
 }
 
 export default function FulfillmentPeek({
@@ -99,13 +179,15 @@ export default function FulfillmentPeek({
         status: (f as any).status,
         shipStatus: (f as any).shipStatus,
         shippedAt: (f as any).shippedAt,
-        items: ((f as any).items || []).map((it: any) => ({
-          sku: it.sku,
-          productName: it.productName,
-          quantity: it.quantity,
-          comments: it.comments,
-          tracking: it.tracking,
-        })),
+        items: dedupeFulfillmentItems(
+          ((f as any).items || []).map((it: any) => ({
+            sku: it.sku,
+            productName: it.productName,
+            quantity: it.quantity,
+            comments: it.comments,
+            tracking: it.tracking,
+          }))
+        ),
         tracking: (f as any).tracking || null,
         tracking_urls: (f as any).trackingUrls || [],
       }));
@@ -180,7 +262,7 @@ export default function FulfillmentPeek({
         )}
       </div>
 
-      {/* {!soId ? (
+      {!soId ? (
         <div className="rounded-xl border border-dashed border-[#BFBFBF] bg-[#FFFFEC] p-3 text-sm text-[#17152A]">
           This invoice isn't linked to a sales order yet.
         </div>
@@ -301,7 +383,7 @@ export default function FulfillmentPeek({
             </li>
           ))}
         </ul>
-      )} */}
+      )}
     </div>
   );
 }
