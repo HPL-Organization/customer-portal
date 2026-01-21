@@ -1,4 +1,5 @@
 import {
+  BarChart3,
   CreditCard,
   Home,
   ReceiptText,
@@ -17,4 +18,5 @@ export const NAV_ITEMS = [
 
 export const ADMIN_NAV_ITEMS = [
   { href: "/admin/manage-users", label: "Manage Users", icon: Users },
+  { href: "/admin/user-statistics", label: "User Statistics", icon: BarChart3 },
 ] as const;
