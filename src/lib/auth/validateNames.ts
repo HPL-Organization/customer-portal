@@ -34,7 +34,7 @@ export function validateSignupNames(
     return "First and last name must be at least 2 characters each.";
   }
 
-  const nameChars = /^[\p{L}\s'-]+$/u;
+  const nameChars = /^[\p{L}\s'\u2019-]+$/u;
   if (!nameChars.test(fn) || !nameChars.test(ln)) {
     return "Names can only contain letters (A–Z) plus spaces, hyphens, or apostrophes.";
   }
