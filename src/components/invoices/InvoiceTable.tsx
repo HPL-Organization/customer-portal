@@ -277,11 +277,13 @@ export default function InvoicesTable({
   loading,
   invoices,
   onPay,
+  onDownload: onDownloadProp,
   variant,
 }: {
   loading: boolean;
   invoices: Invoice[];
   onPay?: (inv: Invoice) => void;
+  onDownload?: (inv: Invoice) => void;
   variant: "open" | "closed";
 }) {
   const [logoMeta, setLogoMeta] = React.useState<LogoMeta>(null);
@@ -321,9 +323,10 @@ export default function InvoicesTable({
 
   const onDownload = React.useCallback(
     async (inv: Invoice) => {
-      await buildAndDownloadPdf(inv, logoMeta);
+      if (onDownloadProp) return onDownloadProp(inv);
+      return buildAndDownloadPdf(inv, logoMeta);
     },
-    [logoMeta]
+    [onDownloadProp, logoMeta]
   );
 
   return (
