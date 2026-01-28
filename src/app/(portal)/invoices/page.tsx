@@ -31,6 +31,39 @@ const supabase = createBrowserClient(
 
 type SortKey = "trandate" | "tranId" | "amountRemaining" | "total";
 
+type CustomerInfo = {
+  first_name?: string | null;
+  middle_name?: string | null;
+  last_name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  mobile?: string | null;
+  shipping_address1?: string | null;
+  shipping_address2?: string | null;
+  shipping_city?: string | null;
+  shipping_state?: string | null;
+  shipping_zip?: string | null;
+  shipping_country?: string | null;
+  billing_address1?: string | null;
+  billing_address2?: string | null;
+  billing_city?: string | null;
+  billing_state?: string | null;
+  billing_zip?: string | null;
+  billing_country?: string | null;
+};
+
+type AddressBlock = {
+  name?: string;
+  address1?: string;
+  address2?: string;
+  city?: string;
+  state?: string;
+  zip?: string;
+  country?: string;
+  email?: string;
+  phone?: string;
+};
+
 const TAB = {
   UNPAID: 0 as const,
   PROCESSING: 1 as const,
@@ -175,6 +208,68 @@ function downloadCsvFile(filename: string, csv: string) {
   URL.revokeObjectURL(url);
 }
 
+function buildAddressBlocks(info: CustomerInfo | null) {
+  if (!info) {
+    return {
+      billTo: null as AddressBlock | null,
+      shipTo: null as AddressBlock | null,
+    };
+  }
+  const name = [info.first_name, info.middle_name, info.last_name]
+    .filter((v) => v && String(v).trim())
+    .join(" ")
+    .trim();
+
+  const billTo: AddressBlock = {
+    name: name || undefined,
+    address1: info.billing_address1 ?? undefined,
+    address2: info.billing_address2 ?? undefined,
+    city: info.billing_city ?? undefined,
+    state: info.billing_state ?? undefined,
+    zip: info.billing_zip ?? undefined,
+    country: info.billing_country ?? undefined,
+    email: info.email ?? undefined,
+    phone: info.phone ?? info.mobile ?? undefined,
+  };
+
+  const shipTo: AddressBlock = {
+    name: name || undefined,
+    address1: info.shipping_address1 ?? undefined,
+    address2: info.shipping_address2 ?? undefined,
+    city: info.shipping_city ?? undefined,
+    state: info.shipping_state ?? undefined,
+    zip: info.shipping_zip ?? undefined,
+    country: info.shipping_country ?? undefined,
+  };
+
+  return { billTo, shipTo };
+}
+
+function mergeAddress(
+  primary: AddressBlock | null | undefined,
+  fallback: AddressBlock | null | undefined
+) {
+  const merged: AddressBlock = { ...(fallback ?? {}) };
+  if (primary) {
+    for (const [key, value] of Object.entries(primary)) {
+      if (value != null && String(value).trim()) {
+        merged[key as keyof AddressBlock] = value;
+      }
+    }
+  }
+  return merged;
+}
+
+function splitAddressLines(raw: string | null | undefined) {
+  if (!raw) return [];
+  const cleaned = String(raw).trim();
+  if (!cleaned) return [];
+  return cleaned
+    .split(/\r?\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
 export default function InvoicesPage() {
   const router = useRouter();
   const sp = useSearchParams();
@@ -200,6 +295,36 @@ export default function InvoicesPage() {
   const [query, setQuery] = React.useState("");
   const [sortBy, setSortBy] = React.useState<SortKey>("trandate");
   const [sortDir, setSortDir] = React.useState<"asc" | "desc">("desc");
+
+  const [customerInfo, setCustomerInfo] = React.useState<CustomerInfo | null>(
+    null
+  );
+
+  React.useEffect(() => {
+    if (!initialized) return;
+    const ac = new AbortController();
+    (async () => {
+      try {
+        const url = providerNsId
+          ? `/api/supabase/get-customer-info?nsId=${encodeURIComponent(
+              providerNsId
+            )}`
+          : "/api/supabase/get-customer-info";
+        const res = await fetch(url, { cache: "no-store", signal: ac.signal });
+        if (!res.ok) {
+          throw new Error(`Failed to load customer info (${res.status})`);
+        }
+        const json = await res.json();
+        setCustomerInfo((json?.data as CustomerInfo) ?? null);
+      } catch (e: any) {
+        if (e?.name !== "AbortError") {
+          console.warn("Failed to load customer info for invoice PDF:", e);
+          setCustomerInfo(null);
+        }
+      }
+    })();
+    return () => ac.abort();
+  }, [providerNsId, initialized]);
 
   const data = React.useMemo(
     () => ({ invoices: cachedInvoices ?? [], deposits: cachedDeposits ?? [] }),
@@ -555,6 +680,7 @@ export default function InvoicesPage() {
 
   async function downloadInvoicePdf(inv: Invoice) {
     try {
+      console.log("Here");
       const { jsPDF } = await import("jspdf");
       const doc = new jsPDF({ unit: "pt", format: "letter" });
       const marginX = 54;
@@ -577,9 +703,12 @@ export default function InvoicesPage() {
       doc.text(`Invoice #: ${invNo}`, 450, cursorY);
       cursorY += 14;
       doc.text(`Date: ${dateStr}`, 450, cursorY);
-      if (inv.createdFromSoTranId) {
+      const soRef =
+        (inv as any).soReference ?? (inv as any).so_reference ?? null;
+      const soLabel = soRef || inv.createdFromSoTranId || null;
+      if (soLabel) {
         cursorY += 14;
-        doc.text(`SO: ${inv.createdFromSoTranId}`, 450, cursorY);
+        doc.text(`SO ref: ${soLabel}`, 450, cursorY);
       }
       cursorY += 36;
       doc.setFont("helvetica", "bold");
@@ -589,8 +718,28 @@ export default function InvoicesPage() {
       doc.setFont("helvetica", "normal");
       doc.setFontSize(10);
       cursorY += 16;
-      const bill = (inv as any).billTo || {};
-      const ship = (inv as any).shipTo || {};
+      const { billTo: customerBill } = buildAddressBlocks(customerInfo);
+      const bill = mergeAddress(
+        customerBill,
+        ((inv as any).billTo || {}) as AddressBlock
+      );
+      const ship = mergeAddress(
+        null,
+        ((inv as any).shipTo || {}) as AddressBlock
+      );
+      const shipAddressText =
+        (inv as any).shipAddress ??
+        (inv as any).ship_address ??
+        (inv as any).shipToText ??
+        null;
+      console.log("invoice pdf address blocks", {
+        invoiceId: inv.invoiceId,
+        customerInfo,
+        customerBill,
+        shipAddressText,
+        bill,
+        ship,
+      });
       const billLines = [
         bill.name,
         bill.address1,
@@ -602,15 +751,19 @@ export default function InvoicesPage() {
       ]
         .filter((x) => x && String(x).trim())
         .map(String);
-      const shipLines = [
-        ship.name,
-        ship.address1,
-        ship.address2,
-        [ship.city, ship.state, ship.zip].filter(Boolean).join(", "),
-        ship.country,
-      ]
-        .filter((x) => x && String(x).trim())
-        .map(String);
+      const shipLinesFromText = splitAddressLines(shipAddressText);
+      const shipLines =
+        shipLinesFromText.length > 0
+          ? shipLinesFromText
+          : [
+              ship.name,
+              ship.address1,
+              ship.address2,
+              [ship.city, ship.state, ship.zip].filter(Boolean).join(", "),
+              ship.country,
+            ]
+              .filter((x) => x && String(x).trim())
+              .map(String);
       billLines.forEach((line, i) => doc.text(line, marginX, cursorY + 14 * i));
       shipLines.forEach((line, i) => doc.text(line, 300, cursorY + 14 * i));
       const addressBlockHeight =

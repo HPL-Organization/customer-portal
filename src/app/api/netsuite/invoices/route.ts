@@ -166,6 +166,8 @@ export async function GET(req: NextRequest) {
           createdFromSoUrl: h.created_from_so_id
             ? salesOrderUrl(h.created_from_so_id)
             : null,
+          shipAddress: h.ship_address ?? null,
+          soReference: h.so_reference ?? null,
           lines: linesByInv.get(id) || [],
           payments: pmts,
           netsuiteUrl: h.netsuite_url ?? invoiceUrl(id),
