@@ -64,6 +64,11 @@ type AddressBlock = {
   phone?: string;
 };
 
+function fitRect(w: number, h: number, maxW: number, maxH: number) {
+  const scale = Math.min(maxW / w, maxH / h, 1);
+  return { w: w * scale, h: h * scale };
+}
+
 const TAB = {
   UNPAID: 0 as const,
   PROCESSING: 1 as const,
@@ -97,6 +102,11 @@ function decorateInvoices(list: Invoice[]): Invoice[] {
       }) || [];
     return { ...inv, tranId: decoratedTranId, lines };
   });
+}
+
+function isPrintableLine(l: Invoice["lines"][number]): boolean {
+  const desc = String(l.description ?? "").toLowerCase();
+  return !desc.includes("cost of sales");
 }
 
 function csvEscape(v: any) {
@@ -655,7 +665,11 @@ export default function InvoicesPage() {
     [closedInvoices, query, sortBy, sortDir]
   );
 
-  const [logoDataUrl, setLogoDataUrl] = React.useState<string | null>(null);
+  const [logoMeta, setLogoMeta] = React.useState<{
+    url: string;
+    w: number;
+    h: number;
+  } | null>(null);
 
   React.useEffect(() => {
     let active = true;
@@ -666,11 +680,22 @@ export default function InvoicesPage() {
         const blob = await res.blob();
         const reader = new FileReader();
         reader.onloadend = () => {
-          if (active) setLogoDataUrl(String(reader.result || ""));
+          if (!active) return;
+          const dataUrl = String(reader.result || "");
+          const img = new Image();
+          img.onload = () => {
+            if (!active) return;
+            setLogoMeta({
+              url: dataUrl,
+              w: img.naturalWidth,
+              h: img.naturalHeight,
+            });
+          };
+          img.src = dataUrl;
         };
         reader.readAsDataURL(blob);
       } catch {
-        setLogoDataUrl(null);
+        setLogoMeta(null);
       }
     })();
     return () => {
@@ -685,9 +710,10 @@ export default function InvoicesPage() {
       const doc = new jsPDF({ unit: "pt", format: "letter" });
       const marginX = 54;
       let cursorY = 60;
-      if (logoDataUrl) {
+      if (logoMeta?.url && logoMeta.w > 0 && logoMeta.h > 0) {
         try {
-          doc.addImage(logoDataUrl, "PNG", marginX, cursorY - 10, 120, 40);
+          const { w, h } = fitRect(logoMeta.w, logoMeta.h, 140, 48);
+          doc.addImage(logoMeta.url, "PNG", marginX, cursorY - 10, w, h);
         } catch {}
       }
       doc.setFont("helvetica", "bold");
@@ -783,7 +809,7 @@ export default function InvoicesPage() {
       doc.setFont("helvetica", "normal");
       doc.setFontSize(10);
       cursorY += 16;
-      const rows = (inv.lines || []).map((l) => {
+      const rows = (inv.lines || []).filter(isPrintableLine).map((l) => {
         const qty = Number(l.quantity || 0);
         const rate = Number(l.rate || 0);
         const isDiscount = !(rate > 0);
