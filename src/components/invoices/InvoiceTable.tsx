@@ -17,9 +17,11 @@ export type Invoice = {
   taxTotal?: number;
   amountPaid: number;
   amountRemaining: number;
+  customerId?: string | number | null;
   giveaway?: boolean | null;
   warranty?: boolean | null;
   lines: {
+    lineNo?: number | null;
     itemId?: string | number;
     itemName?: string;
     quantity?: number;
@@ -40,6 +42,7 @@ export type Invoice = {
   }[];
   createdFromSoId: number | null;
   createdFromSoTranId: string | null;
+  isBackordered?: boolean | null;
 };
 
 function fmt(n: number | undefined) {
@@ -50,6 +53,43 @@ function fmt(n: number | undefined) {
 }
 function fdate(d?: string) {
   return d ? new Date(d).toLocaleDateString() : "—";
+}
+
+function parseDateFlexible(s: string): Date | null {
+  const raw = String(s ?? "").trim();
+  if (!raw) return null;
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    const d = new Date(`${raw}T00:00:00Z`);
+    return Number.isFinite(d.getTime()) ? d : null;
+  }
+
+  const m = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (m) {
+    const mm = Number(m[1]);
+    const dd = Number(m[2]);
+    const yyyy = Number(m[3]);
+    if (!Number.isFinite(mm) || !Number.isFinite(dd) || !Number.isFinite(yyyy))
+      return null;
+    const d = new Date(Date.UTC(yyyy, mm - 1, dd));
+    return Number.isFinite(d.getTime()) ? d : null;
+  }
+
+  return null;
+}
+
+function formatUsDate(d: Date) {
+  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(d.getUTCDate()).padStart(2, "0");
+  const yyyy = String(d.getUTCFullYear());
+  return `${mm}/${dd}/${yyyy}`;
+}
+
+function addTwoWeeksToEta(eta: string): string {
+  const base = parseDateFlexible(eta);
+  if (!base) return eta;
+  const plus14 = new Date(base.getTime() + 14 * 24 * 60 * 60 * 1000);
+  return formatUsDate(plus14);
 }
 
 type Row = {
@@ -826,6 +866,93 @@ function SummaryRow({
 }
 
 function Details({ inv, mobile = false }: { inv: Invoice; mobile?: boolean }) {
+  const showEtaColumn = inv.isBackordered === true;
+
+  const [etaByKey, setEtaByKey] = React.useState<Record<string, string | null>>(
+    {}
+  );
+  const [etaError, setEtaError] = React.useState<string | null>(null);
+  const [etaLoading, setEtaLoading] = React.useState(false);
+
+  const lines = React.useMemo(
+    () => (inv.lines ?? []).filter(isPrintableLine),
+    [inv.lines]
+  );
+
+  const linesWithEta = React.useMemo(() => {
+    if (!showEtaColumn)
+      return lines.map((l) => ({
+        ...l,
+        item_in_stock_eta: null as string | null,
+        eta_has_row: false,
+      }));
+
+    return lines.map((l) => {
+      const itemId = l.itemId != null ? Number(l.itemId) : null;
+      const lineNoRaw = (l as any).lineNo ?? (l as any).line_no;
+      const lineNo = lineNoRaw != null ? Number(lineNoRaw) : NaN;
+      const key =
+        itemId != null && Number.isFinite(itemId) && Number.isFinite(lineNo)
+          ? `${itemId}|${lineNo}`
+          : null;
+
+      const hasRow = key
+        ? Object.prototype.hasOwnProperty.call(etaByKey, key)
+        : false;
+      const eta = key && hasRow ? etaByKey[key] : null;
+      return { ...l, item_in_stock_eta: eta, eta_has_row: hasRow };
+    });
+  }, [etaByKey, lines, showEtaColumn]);
+
+  React.useEffect(() => {
+    const customerId = inv.customerId != null ? String(inv.customerId) : null;
+    const invoiceId = inv.invoiceId != null ? String(inv.invoiceId) : null;
+    if (!showEtaColumn || !customerId || !invoiceId) {
+      setEtaByKey({});
+      setEtaError(null);
+      setEtaLoading(false);
+      return;
+    }
+
+    const ac = new AbortController();
+    setEtaLoading(true);
+    setEtaError(null);
+
+    fetch(
+      `/api/supabase/get-invoice-line-etas?customerId=${encodeURIComponent(
+        customerId
+      )}&invoiceId=${encodeURIComponent(invoiceId)}`,
+      { cache: "no-store", signal: ac.signal }
+    )
+      .then(async (res) => {
+        const json = await res.json().catch(() => ({} as any));
+        console.log("Herererer", json);
+        if (!res.ok || json?.error)
+          throw new Error(json?.error || `HTTP ${res.status}`);
+
+        const rows: any[] = Array.isArray(json?.rows) ? json.rows : [];
+        const next: Record<string, string | null> = {};
+        for (const r of rows) {
+          const itemId = Number(r?.item_id);
+          const lineNo = Number(r?.line_no);
+          if (!Number.isFinite(itemId) || !Number.isFinite(lineNo)) continue;
+          next[`${itemId}|${lineNo}`] =
+            r?.item_in_stock_eta != null ? String(r.item_in_stock_eta) : null;
+        }
+        setEtaByKey(next);
+      })
+      .catch((e: any) => {
+        if (e?.name === "AbortError") return;
+        setEtaError(e?.message || "Failed to load ETAs");
+        setEtaByKey({});
+      })
+      .finally(() => {
+        if (!ac.signal.aborted) setEtaLoading(false);
+      });
+
+    return () => ac.abort();
+  }, [inv.customerId, inv.invoiceId, showEtaColumn]);
+
   return (
     <>
       <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-600">
@@ -841,8 +968,9 @@ function Details({ inv, mobile = false }: { inv: Invoice; mobile?: boolean }) {
           <div className="overflow-x-auto">
             <table className="min-w-[820px] w-full table-auto text-sm">
               <colgroup>
-                <col className="w-[38%]" />
-                <col className="w-[30%]" />
+                <col className="w-[32%]" />
+                <col className="w-[26%]" />
+                {showEtaColumn ? <col className="w-[12%]" /> : null}
                 <col className="w-[10%]" />
                 <col className="w-[11%]" />
                 <col className="w-[11%]" />
@@ -851,25 +979,31 @@ function Details({ inv, mobile = false }: { inv: Invoice; mobile?: boolean }) {
                 <tr>
                   <th className="px-3 py-2">Item</th>
                   <th className="px-3 py-2">Detail</th>
+                  {showEtaColumn ? (
+                    <th className="px-3 py-2">Item in stock ETA</th>
+                  ) : null}
                   <th className="px-3 py-2 text-right">Qty</th>
                   <th className="px-3 py-2 text-right">Rate</th>
                   <th className="px-3 py-2 text-right">Amount</th>
                 </tr>
               </thead>
               <tbody className="[&>tr]:border-t [&>tr]:border-slate-200 [&>tr:nth-child(odd)]:bg-slate-50/60">
-                {(inv.lines ?? []).filter(isPrintableLine).length === 0 ? (
+                {linesWithEta.length === 0 ? (
                   <tr>
                     <td
                       className="px-3 py-6 text-center text-sm text-slate-500"
-                      colSpan={5}
+                      colSpan={showEtaColumn ? 6 : 5}
                     >
                       No line items.
                     </td>
                   </tr>
                 ) : (
-                  (inv.lines ?? [])
-                    .filter(isPrintableLine)
-                    .map((l, idx: number) => (
+                  linesWithEta.map((l, idx: number) => {
+                    const etaDisplay =
+                      l.item_in_stock_eta != null
+                        ? addTwoWeeksToEta(String(l.item_in_stock_eta))
+                        : null;
+                    return (
                       <tr key={idx}>
                         <td className="px-3 py-2 font-medium text-slate-900 break-words">
                           {l.itemName ?? l.itemId ?? "—"}
@@ -877,6 +1011,15 @@ function Details({ inv, mobile = false }: { inv: Invoice; mobile?: boolean }) {
                         <td className="px-3 py-2 text-slate-700 break-words">
                           {getDetail(l) || "—"}
                         </td>
+                        {showEtaColumn ? (
+                          <td className="px-3 py-2 text-xs text-slate-600 font-mono whitespace-nowrap">
+                            {l.eta_has_row
+                              ? etaDisplay != null
+                                ? etaDisplay
+                                : "ETA not available"
+                              : "—"}
+                          </td>
+                        ) : null}
                         <td className="px-3 py-2 text-right text-slate-700 whitespace-nowrap">
                           {l.quantity ?? "—"}
                         </td>
@@ -887,11 +1030,18 @@ function Details({ inv, mobile = false }: { inv: Invoice; mobile?: boolean }) {
                           {fmt(l.amount)}
                         </td>
                       </tr>
-                    ))
+                    );
+                  })
                 )}
               </tbody>
             </table>
           </div>
+
+          {showEtaColumn && (etaLoading || etaError) ? (
+            <div className="mt-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
+              {etaLoading ? "Loading ETAs..." : etaError}
+            </div>
+          ) : null}
 
           <div className="flex justify-end px-3 py-3">
             {(() => {

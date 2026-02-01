@@ -1014,7 +1014,7 @@ export default function InvoicesPage() {
         </div>
       </div>
 
-      <div className="mb-5 flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
+      <div className="mb-5 flex flex-col gap-2">
         <div className="xl:hidden w-full">
           <div className="grid grid-cols-1 gap-2">
             <button
@@ -1071,7 +1071,7 @@ export default function InvoicesPage() {
         </div>
 
         {/* Desktop / Tablet: original Tabs */}
-        <div className="hidden w-full xl:block">
+        <div className="hidden w-full xl:block xl:order-2">
           <Tabs
             value={tab}
             onChange={(_, v) => setTab(v)}
@@ -1102,7 +1102,7 @@ export default function InvoicesPage() {
 
         {/* Right-side controls*/}
         {tab !== TAB.DEPOSITS && (
-          <div className="flex flex-col gap-2 xl:flex-row xl:items-center">
+          <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:order-1">
             <div className="relative">
               <motion.button
                 type="button"

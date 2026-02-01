@@ -5,6 +5,9 @@ export interface InvoiceLine {
   rate: number;
   amount: number;
   comment?: string | null;
+  description?: string | null;
+  itemDisplayName?: string | null;
+  lineNo?: number | null;
 }
 
 export interface InvoicePayment {
@@ -29,6 +32,14 @@ export interface Invoice {
   netsuiteUrl?: string;
   giveaway?: boolean | null;
   warranty?: boolean | null;
+  createdFromSoId?: number | null;
+  createdFromSoTranId?: string | null;
+  createdFromSoUrl?: string | null;
+  shipAddress?: string | null;
+  soReference?: string | null;
+  paymentProcessing?: boolean;
+  isBackordered?: boolean | null;
+  salesRep?: string | null;
 }
 
 export interface Deposit {

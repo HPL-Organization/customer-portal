@@ -109,6 +109,7 @@ export async function GET(req: NextRequest) {
       const id = Number(ln.invoice_id);
       if (!linesByInv.has(id)) linesByInv.set(id, []);
       linesByInv.get(id)!.push({
+        lineNo: ln.line_no,
         itemId: ln.item_id,
         itemName: ln.item_sku,
         itemDisplayName: ln.item_display_name ?? ln.item_sku,

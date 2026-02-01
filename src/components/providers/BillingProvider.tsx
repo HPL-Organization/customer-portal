@@ -38,6 +38,7 @@ const Ctx = createContext<BillingState | undefined>(undefined);
 
 function normLine(raw: any): InvoiceLine {
   const line: any = {
+    lineNo: raw.lineNo ?? raw.line_no ?? null,
     itemId: String(raw.itemId ?? raw.item?.id ?? ""),
     itemName: String(raw.itemName ?? raw.item?.refName ?? ""),
     quantity: Number(raw.quantity ?? 0),
