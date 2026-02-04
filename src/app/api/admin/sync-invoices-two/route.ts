@@ -55,11 +55,13 @@ type Database = {
           sales_rep: string | null;
           ship_address: string | null;
           so_reference: string | null;
-          payment_processing: boolean;
-          is_backordered: boolean | null;
-          giveaway: boolean | null;
-          warranty: boolean | null;
-        };
+        payment_processing: boolean;
+        is_backordered: boolean | null;
+        giveaway: boolean | null;
+        warranty: boolean | null;
+        created_at: string | null;
+        created_by: string | null;
+      };
         Insert: Partial<Database["public"]["Tables"]["invoices"]["Row"]>;
         Update: Partial<Database["public"]["Tables"]["invoices"]["Row"]>;
         Relationships: [];
@@ -828,6 +830,38 @@ export async function POST(req: NextRequest) {
       (id) => !dbActiveSet.has(id)
     );
     const missingInFiles = dbActiveIds.filter((id) => !fileInvOnlySet.has(id));
+    let missingInFilesForDelete = missingInFiles;
+    if (missingInFiles.length) {
+      const missingMeta = await fetchExistingInBatches<
+        Pick<
+          Database["public"]["Tables"]["invoices"]["Row"],
+          "invoice_id" | "created_at" | "created_by"
+        >
+      >(
+        supabase,
+        "invoices",
+        ["invoice_id", "created_at", "created_by"],
+        "invoice_id",
+        missingInFiles
+      );
+
+      const cutoffMs = Date.now() - 90 * 60 * 1000;
+      const recentOcIds = new Set<number>();
+      for (const r of missingMeta) {
+        const createdBy = String(r.created_by ?? "").trim().toLowerCase();
+        if (createdBy !== "order console") continue;
+        const createdAtMs = r.created_at ? Date.parse(r.created_at) : NaN;
+        if (Number.isFinite(createdAtMs) && createdAtMs >= cutoffMs) {
+          recentOcIds.add(Number(r.invoice_id));
+        }
+      }
+
+      if (recentOcIds.size) {
+        missingInFilesForDelete = missingInFiles.filter(
+          (id) => !recentOcIds.has(id)
+        );
+      }
+    }
 
     const newUnpaidInvoices: Array<{
       invoice_id: number;
@@ -861,7 +895,7 @@ export async function POST(req: NextRequest) {
       filePayments,
       dbInvMap,
       fileInvoiceIds,
-      missingInFiles
+      missingInFilesForDelete
     );
 
     let emailSentCount = 0;
@@ -1185,6 +1219,8 @@ export async function POST(req: NextRequest) {
         debug: {
           missing_in_files_count: missingInFiles.length,
           missing_in_files_sample: missingInFiles.slice(0, 10),
+          missing_in_files_recent_oc_skipped:
+            missingInFiles.length - missingInFilesForDelete.length,
         },
         email_sent: emailSentCount,
       }),
