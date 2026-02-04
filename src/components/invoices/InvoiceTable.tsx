@@ -107,7 +107,7 @@ function computePdfRows(inv: Invoice): { rows: Row[] } {
     const qty = Number(l.quantity ?? 0);
     const rate = Number(l.rate ?? 0);
     const isDiscount = !(rate > 0);
-    const amount = isDiscount ? rate : qty * rate;
+    const amount = Number(l.amount ?? 0);
     return {
       name: (l.itemName ?? String(l.itemId ?? "")) as string,
       detail: getDetail(l),

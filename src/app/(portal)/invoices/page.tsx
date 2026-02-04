@@ -813,7 +813,7 @@ export default function InvoicesPage() {
         const qty = Number(l.quantity || 0);
         const rate = Number(l.rate || 0);
         const isDiscount = !(rate > 0);
-        const lineAmount = isDiscount ? rate : qty * rate;
+        const lineAmount = Number(l.amount ?? 0);
         return {
           name: l.itemName || String(l.itemId || ""),
           qty: isDiscount ? 0 : qty,
