@@ -68,6 +68,7 @@ type CustomerInformationRow = {
   check_invoice_range: unknown | null;
   check_invoice_result: boolean | null;
   ns_deleted_at: string | null;
+  created_by: string | null;
 };
 
 type CustomerInformationInsert = {
@@ -103,6 +104,7 @@ type CustomerInformationInsert = {
   check_invoice_range?: unknown | null;
   check_invoice_result?: boolean | null;
   ns_deleted_at?: string | null;
+  created_by?: string | null;
 };
 
 type CustomerInformationUpdate = {
@@ -138,6 +140,7 @@ type CustomerInformationUpdate = {
   check_invoice_range?: unknown | null;
   check_invoice_result?: boolean | null;
   ns_deleted_at?: string | null;
+  created_by?: string | null;
 };
 
 type Database = {
@@ -167,7 +170,7 @@ const SELECT_EXISTING_CUSTOMERS =
   "info_id,customer_id,email,first_name,middle_name,last_name,phone,mobile,shipping_address1,shipping_address2,shipping_city,shipping_state,shipping_zip,shipping_country,billing_address1,billing_address2,billing_city,billing_state,billing_zip,billing_country,shipping_verified,billing_verified,terms_compliance,terms_agreed_at,user_id,hubspot_id,check_invoice,check_invoice_range,check_invoice_result,ns_deleted_at" as const;
 
 const SELECT_ALL_MINIMAL =
-  "customer_id,email,user_id,shipping_verified,billing_verified,terms_compliance,terms_agreed_at,check_invoice,check_invoice_range,check_invoice_result,ns_deleted_at" as const;
+  "customer_id,email,user_id,shipping_verified,billing_verified,terms_compliance,terms_agreed_at,check_invoice,check_invoice_range,check_invoice_result,ns_deleted_at,created_at,created_by" as const;
 
 const SELECT_TARGET_USER = "customer_id,user_id" as const;
 
@@ -194,6 +197,16 @@ function parseRetryAfterMs(val: string | number | undefined): number | null {
     return diff > 0 ? diff : 0;
   }
   return null;
+}
+
+function isRecentOrderConsole(
+  row: Pick<CustomerRow, "created_at" | "created_by">,
+  cutoffMs: number
+): boolean {
+  const createdBy = String(row.created_by ?? "").trim().toLowerCase();
+  if (createdBy !== "order console") return false;
+  const createdAtMs = row.created_at ? Date.parse(row.created_at) : NaN;
+  return Number.isFinite(createdAtMs) && createdAtMs >= cutoffMs;
 }
 
 async function netsuiteQuery(
@@ -376,6 +389,8 @@ async function fetchAllCustomersMinimal(
     | "check_invoice_range"
     | "check_invoice_result"
     | "ns_deleted_at"
+    | "created_at"
+    | "created_by"
   >[]
 > {
   const out: Pick<
@@ -391,6 +406,8 @@ async function fetchAllCustomersMinimal(
     | "check_invoice_range"
     | "check_invoice_result"
     | "ns_deleted_at"
+    | "created_at"
+    | "created_by"
   >[] = [];
 
   const pageSize = 1000;
@@ -676,6 +693,7 @@ export async function POST(req: NextRequest) {
     let moved_user_links = 0;
     let soft_deleted = 0;
     let hard_deleted = 0;
+    let hard_delete_skipped_recent_oc = 0;
     let ambiguous_skipped = 0;
 
     const preview: any[] = [];
@@ -743,13 +761,28 @@ export async function POST(req: NextRequest) {
       return !seenIds.has(id);
     });
     const nowIso = new Date().toISOString();
+    const cutoffMs = Date.now() - 90 * 60 * 1000;
 
     for (const row of missing) {
       const customerId = Number(row.customer_id);
       const userId = row.user_id ? String(row.user_id) : null;
       const emailNorm = normalizeEmail(row.email);
+      const skipHardDelete = isRecentOrderConsole(row, cutoffMs);
 
       if (!userId) {
+        if (skipHardDelete) {
+          hard_delete_skipped_recent_oc++;
+          if (dryRun && preview.length < previewLimit) {
+            preview.push({
+              type: "skip_hard_delete_recent_oc",
+              reason: "missing_from_stream_no_user_id",
+              customer_id: customerId,
+              email: row.email ?? null,
+            });
+          }
+          continue;
+        }
+
         hard_delete_rows.push({
           customer_id: customerId,
           email: row.email ?? null,
@@ -796,6 +829,20 @@ export async function POST(req: NextRequest) {
           const targetUserId = target?.user_id ? String(target.user_id) : null;
 
           if (target && (targetUserId == null || targetUserId === userId)) {
+            if (skipHardDelete) {
+              hard_delete_skipped_recent_oc++;
+              if (dryRun && preview.length < previewLimit) {
+                preview.push({
+                  type: "skip_hard_delete_recent_oc",
+                  reason: "move_user_link_and_delete_old",
+                  from_customer_id: customerId,
+                  to_customer_id: targetCustomerId,
+                  user_id: userId,
+                });
+              }
+              continue;
+            }
+
             hard_delete_rows.push({
               customer_id: customerId,
               email: row.email ?? null,
@@ -1002,6 +1049,7 @@ export async function POST(req: NextRequest) {
         moved_user_links,
         soft_deleted,
         hard_deleted,
+        hard_delete_skipped_recent_oc,
         ambiguous_skipped,
         missing_in_supabase_not_in_stream: missing.length,
         seen_ids_in_stream: seenIds.size,

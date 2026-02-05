@@ -63,6 +63,8 @@ type SalesOrdersRow = {
   partners: any | null;
   giveaway: boolean | null;
   warranty: boolean | null;
+  created_at: string | null;
+  created_by: string | null;
 };
 
 type SalesOrderLinesRow = {
@@ -438,9 +440,35 @@ export async function POST(req: NextRequest) {
 
     const fileSoIdSet = new Set(fileSoIds);
     const missingInFiles = activeSoIds.filter((id) => !fileSoIdSet.has(id));
+    let missingInFilesForDelete = missingInFiles;
+    if (missingInFiles.length) {
+      const cutoffMs = Date.now() - 90 * 60 * 1000;
+      const recentOcIds = new Set<number>();
+      for (const ids of chunk(missingInFiles, 1000)) {
+        const { data, error } = await supabase
+          .from("sales_orders")
+          .select("so_id, created_at, created_by")
+          .in("so_id", ids);
+        if (error) throw error;
+        for (const r of data || []) {
+          const createdBy = String(r.created_by ?? "").trim().toLowerCase();
+          if (createdBy !== "order console") continue;
+          const createdAtMs = r.created_at ? Date.parse(r.created_at) : NaN;
+          if (Number.isFinite(createdAtMs) && createdAtMs >= cutoffMs) {
+            recentOcIds.add(Number(r.so_id));
+          }
+        }
+      }
+
+      if (recentOcIds.size) {
+        missingInFilesForDelete = missingInFiles.filter(
+          (id) => !recentOcIds.has(id)
+        );
+      }
+    }
 
     const nowIso = new Date().toISOString();
-    for (const ids of chunk(missingInFiles, 1000)) {
+    for (const ids of chunk(missingInFilesForDelete, 1000)) {
       const { error } = await supabase
         .from("sales_orders")
         .update({ ns_deleted_at: nowIso })
@@ -516,7 +544,7 @@ export async function POST(req: NextRequest) {
           counts: {
             headers_upserted: headerRows.length,
             lines_inserted: lineRows.length,
-            soft_deleted: missingInFiles.length,
+            soft_deleted: missingInFilesForDelete.length,
           },
         },
         null,
