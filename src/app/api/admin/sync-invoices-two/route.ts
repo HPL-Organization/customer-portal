@@ -55,13 +55,13 @@ type Database = {
           sales_rep: string | null;
           ship_address: string | null;
           so_reference: string | null;
-        payment_processing: boolean;
-        is_backordered: boolean | null;
-        giveaway: boolean | null;
-        warranty: boolean | null;
-        created_at: string | null;
-        created_by: string | null;
-      };
+          payment_processing: boolean;
+          is_backordered: boolean | null;
+          giveaway: boolean | null;
+          warranty: boolean | null;
+          created_at: string | null;
+          created_by: string | null;
+        };
         Insert: Partial<Database["public"]["Tables"]["invoices"]["Row"]>;
         Update: Partial<Database["public"]["Tables"]["invoices"]["Row"]>;
         Relationships: [];
@@ -831,6 +831,8 @@ export async function POST(req: NextRequest) {
     );
     const missingInFiles = dbActiveIds.filter((id) => !fileInvOnlySet.has(id));
     let missingInFilesForDelete = missingInFiles;
+    const recentOcIds = new Set<number>();
+
     if (missingInFiles.length) {
       const missingMeta = await fetchExistingInBatches<
         Pick<
@@ -846,9 +848,10 @@ export async function POST(req: NextRequest) {
       );
 
       const cutoffMs = Date.now() - 90 * 60 * 1000;
-      const recentOcIds = new Set<number>();
       for (const r of missingMeta) {
-        const createdBy = String(r.created_by ?? "").trim().toLowerCase();
+        const createdBy = String(r.created_by ?? "")
+          .trim()
+          .toLowerCase();
         if (createdBy !== "order console") continue;
         const createdAtMs = r.created_at ? Date.parse(r.created_at) : NaN;
         if (Number.isFinite(createdAtMs) && createdAtMs >= cutoffMs) {
@@ -888,13 +891,17 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    const fileInvoiceIdsForPaymentReset = recentOcIds.size
+      ? fileInvoiceIds.filter((id) => !recentOcIds.has(id))
+      : fileInvoiceIds;
+
     const supaResult = await upsertSnapshotToSupabase(
       supabase,
       fileInvoices,
       fileLines,
       filePayments,
       dbInvMap,
-      fileInvoiceIds,
+      fileInvoiceIdsForPaymentReset,
       missingInFilesForDelete
     );
 
