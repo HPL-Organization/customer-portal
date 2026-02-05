@@ -37,6 +37,7 @@ type SalesOrdersRow = {
   trandate: string | null;
   total: number | null;
   tax_total: number | null;
+  hold_till: string | null;
   customer_id: number;
   netsuite_url: string | null;
   sales_rep: string | null;
@@ -409,6 +410,7 @@ export async function POST(req: NextRequest) {
           sales_channel_id: coerceText(r.sales_channel_id),
           affiliate_id: coerceText(r.affiliate_id),
           order_note: coerceText(r.order_note),
+          hold_till: normalizeUsDateToIso(r.hold_till),
           ship_complete: parseBool(r.ship_complete),
           billing_terms_id: coerceText(r.billing_terms_id),
           sales_team: Array.isArray(r.sales_team) ? r.sales_team : null,
@@ -451,7 +453,9 @@ export async function POST(req: NextRequest) {
           .in("so_id", ids);
         if (error) throw error;
         for (const r of data || []) {
-          const createdBy = String(r.created_by ?? "").trim().toLowerCase();
+          const createdBy = String(r.created_by ?? "")
+            .trim()
+            .toLowerCase();
           if (createdBy !== "order console") continue;
           const createdAtMs = r.created_at ? Date.parse(r.created_at) : NaN;
           if (Number.isFinite(createdAtMs) && createdAtMs >= cutoffMs) {
