@@ -136,6 +136,36 @@ function parseRetryAfterMs(val: string | number | undefined): number | null {
   return null;
 }
 
+async function fetchActiveSoIds(
+  supabase: ReturnType<typeof createClient<Database>>
+): Promise<number[]> {
+  const out: number[] = [];
+  let from = 0;
+  const page = 1000;
+
+  for (;;) {
+    const { data, error } = await supabase
+      .from("sales_orders")
+      .select("so_id")
+      .is("ns_deleted_at", null)
+      .order("so_id", { ascending: true })
+      .range(from, from + page - 1);
+
+    if (error) throw error;
+    if (!data?.length) break;
+
+    for (const r of data as any[]) {
+      const n = Number(r.so_id);
+      if (Number.isFinite(n) && n > 0) out.push(n);
+    }
+
+    if (data.length < page) break;
+    from += page;
+  }
+
+  return out;
+}
+
 async function netsuiteQuery(
   q: string,
   headers: Record<string, string>,
@@ -429,16 +459,7 @@ export async function POST(req: NextRequest) {
       if (error) throw error;
     }
 
-    const { data: activeRows, error: activeErr } = await supabase
-      .from("sales_orders")
-      .select("so_id, ns_deleted_at")
-      .is("ns_deleted_at", null);
-
-    if (activeErr) throw activeErr;
-
-    const activeSoIds = (activeRows || [])
-      .map((r) => r.so_id)
-      .filter((n): n is number => typeof n === "number");
+    const activeSoIds = await fetchActiveSoIds(supabase);
 
     const fileSoIdSet = new Set(fileSoIds);
     const missingInFiles = activeSoIds.filter((id) => !fileSoIdSet.has(id));
