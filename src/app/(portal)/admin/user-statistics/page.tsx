@@ -339,7 +339,19 @@ export default function UserStatisticsPage() {
                         direction={sortBy === "total_revenue" ? sortDir : "asc"}
                         onClick={() => handleRequestSort("total_revenue")}
                       >
-                        Total revenue
+                        <Box
+                          component="span"
+                          sx={{
+                            display: "flex",
+                            flexDirection: "column",
+                            alignItems: "flex-start",
+                          }}
+                        >
+                          <span>Total revenue</span>
+                          <Typography variant="caption" color="text.secondary">
+                            Not filtered by date range
+                          </Typography>
+                        </Box>
                       </TableSortLabel>
                     </TableCell>
                     <TableCell sortDirection={getSortDirection("created_at")}>
