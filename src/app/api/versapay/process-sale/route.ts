@@ -1,21 +1,9 @@
 // src/app/api/versapay/process-sale/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import axios from "axios";
-import { getContactById } from "@/lib/hubspot/hubspotCentral"; // uses your existing lib
+import { getServerSupabase } from "@/lib/supabase/server";
 
 const VP_API_BASE = `${process.env.VERSAPAY_BASE_URL}/api/v2`;
-
-function readProps(contact: any): Record<string, any> {
-  if (!contact) return {};
-  return contact.properties ?? contact;
-}
-
-function pick<T>(
-  v: T | undefined | null,
-  fallback: T | undefined | null = undefined
-): T | undefined {
-  return v ?? undefined ?? fallback ?? undefined;
-}
 
 function normalizeCountry(v?: string) {
   if (!v) return undefined;
@@ -31,41 +19,45 @@ function normalizeCountry(v?: string) {
   return map[key] ?? s;
 }
 
-function buildAddressesFromHubSpot(contact: any) {
-  const p = readProps(contact);
+function pickText(v?: string | null, fallback?: string) {
+  if (typeof v !== "string") return fallback;
+  const t = v.trim();
+  return t ? t : fallback;
+}
 
-  const first = pick(p.firstname);
-  const last = pick(p.lastname);
-  const email = pick(p.email);
+function buildAddressesFromSupabase(row: any) {
+  const first = pickText(row?.first_name);
+  const last = pickText(row?.last_name);
+  const email = pickText(row?.email);
+  const phone = pickText(row?.phone) || pickText(row?.mobile);
 
-  // Billing fields (HubSpot default address fields)
   const billing = {
-    contactFirstName: pick(first, "Customer"),
-    contactLastName: pick(last, "Name"),
+    contactFirstName: pickText(first, "Customer"),
+    contactLastName: pickText(last, "Name"),
     companyName: undefined as string | undefined,
-    address1: pick(p.address),
-    address2: pick(p.address_line_2),
-    city: pick(p.city),
-    stateOrProvince: pick(p.state),
-    postCode: pick(p.zip),
-    country: normalizeCountry(p.country),
-    email: pick(email),
-    phone: pick(p.phone) || pick(p.mobilephone),
+    address1: pickText(row?.billing_address1),
+    address2: pickText(row?.billing_address2),
+    city: pickText(row?.billing_city),
+    stateOrProvince: pickText(row?.billing_state),
+    postCode: pickText(row?.billing_zip),
+    country: normalizeCountry(pickText(row?.billing_country)),
+    email: pickText(email),
+    phone,
   };
 
-  // Shipping fields (HubSpot shipping_* set)
   const shipping = {
-    contactFirstName: pick(first, "Customer"),
-    contactLastName: pick(last, "Name"),
+    contactFirstName: pickText(first, "Customer"),
+    contactLastName: pickText(last, "Name"),
     companyName: undefined as string | undefined,
-    address1: pick(p.shipping_address, billing.address1),
-    address2: pick(p.shipping_address_line_2, billing.address2),
-    city: pick(p.shipping_city, billing.city),
-    stateOrProvince: pick(p.shipping_state_region, billing.stateOrProvince),
-    postCode: pick(p.shipping_postalcode, billing.postCode),
-    country: normalizeCountry(p.shipping_country_region) ?? billing.country,
-    email: pick(email),
-    phone: pick(p.phone) || pick(p.mobilephone),
+    address1: pickText(row?.shipping_address1, billing.address1),
+    address2: pickText(row?.shipping_address2, billing.address2),
+    city: pickText(row?.shipping_city, billing.city),
+    stateOrProvince: pickText(row?.shipping_state, billing.stateOrProvince),
+    postCode: pickText(row?.shipping_zip, billing.postCode),
+    country:
+      normalizeCountry(pickText(row?.shipping_country)) ?? billing.country,
+    email: pickText(email),
+    phone,
   };
 
   return { billing, shipping };
@@ -84,9 +76,7 @@ export async function POST(req: NextRequest) {
       currency = "USD",
       customerNumber,
       settlementToken,
-
-      contactId,
-      contact: _contactFromClient,
+      customerId,
     } = body;
 
     if (!sessionId || !token || typeof amount !== "number") {
@@ -96,13 +86,71 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    let contact = _contactFromClient ?? null;
-    if (!contact && contactId) {
-      contact = await getContactById(String(contactId));
+    const supabase = await getServerSupabase();
+    const {
+      data: { user },
+      error: userErr,
+    } = await supabase.auth.getUser();
+    if (userErr || !user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { billing, shipping } = contact
-      ? buildAddressesFromHubSpot(contact)
+    const customerIdNum =
+      customerId !== null && customerId !== undefined ? Number(customerId) : null;
+    const hasValidCustomerId =
+      customerIdNum !== null &&
+      !Number.isNaN(customerIdNum) &&
+      customerIdNum !== -1;
+
+    const selectFields = `
+      first_name,
+      last_name,
+      email,
+      phone,
+      mobile,
+      shipping_address1,
+      shipping_address2,
+      shipping_city,
+      shipping_state,
+      shipping_zip,
+      shipping_country,
+      billing_address1,
+      billing_address2,
+      billing_city,
+      billing_state,
+      billing_zip,
+      billing_country
+    `;
+
+    let row: any = null;
+    if (hasValidCustomerId) {
+      const { data, error } = await supabase
+        .from("customer_information")
+        .select(selectFields)
+        .eq("customer_id", customerIdNum)
+        .limit(1)
+        .maybeSingle();
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 400 });
+      }
+      row = data ?? null;
+    }
+
+    if (!row) {
+      const { data, error } = await supabase
+        .from("customer_information")
+        .select(selectFields)
+        .eq("user_id", user.id)
+        .limit(1)
+        .maybeSingle();
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 400 });
+      }
+      row = data ?? null;
+    }
+
+    const { billing, shipping } = row
+      ? buildAddressesFromSupabase(row)
       : {
           billing: {
             contactFirstName: "Test",
