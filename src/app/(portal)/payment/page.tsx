@@ -581,6 +581,7 @@ function AddMethodDialog({
         orderNumber: `PM-${Date.now()}`,
         currency: "USD",
         contactId,
+        customerId,
       }),
     });
 
@@ -859,17 +860,11 @@ export default function PaymentMethodsPage() {
   async function handleAddMethodClick() {
     if (!hasCustomerId) return;
 
-    if (!contactId) {
-      toast.warn(
-        "Please add your billing address before adding a payment method"
-      );
-      router.push("/profile?missing=billing");
-      return;
-    }
-
     try {
       const res = await fetch(
-        `/api/hubspot/has-billing?contactId=${encodeURIComponent(contactId)}`,
+        `/api/supabase/has-billing?customerId=${encodeURIComponent(
+          String(customerId)
+        )}`,
         { cache: "no-store" }
       );
       const data = await res.json();
@@ -890,17 +885,11 @@ export default function PaymentMethodsPage() {
   async function handleAddPaypalClick() {
     if (!hasCustomerId) return;
 
-    if (!contactId) {
-      toast.warn(
-        "Please add your billing address before adding a payment method"
-      );
-      router.push("/profile?missing=billing");
-      return;
-    }
-
     try {
       const res = await fetch(
-        `/api/hubspot/has-billing?contactId=${encodeURIComponent(contactId)}`,
+        `/api/supabase/has-billing?customerId=${encodeURIComponent(
+          String(customerId)
+        )}`,
         { cache: "no-store" }
       );
       const data = await res.json();
