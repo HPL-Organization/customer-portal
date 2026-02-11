@@ -1,10 +1,13 @@
-// app/api/sync-fulfillments-two/route.ts
+// app/api/admin/sync-fulfillments-two/route.ts
 import { NextRequest } from "next/server";
 import axios from "axios";
 import { getValidToken } from "@/lib/netsuite/token";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 const NS_ENV = process.env.NETSUITE_ENV?.toLowerCase() || "prod";
 const isSB = NS_ENV === "sb";
@@ -26,11 +29,18 @@ const RL_DEPLOY_ID = "customdeploy1";
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
+type ManifestPart = { id: string | number; name: string; rows: number };
 type ManifestShape = {
   generated_at: string;
+  folder_id?: number;
+  notes?: any;
   files: {
-    fulfillments: { id: string | number; name: string; rows: number };
-    fulfillment_lines: { id: string | number; name: string; rows: number };
+    fulfillments:
+      | { id: string | number; name: string; rows: number }
+      | { total_rows: number; parts: ManifestPart[] };
+    fulfillment_lines:
+      | { id: string | number; name: string; rows: number }
+      | { total_rows: number; parts: ManifestPart[] };
   };
 };
 
@@ -209,40 +219,67 @@ async function restletGetLines(
   let out = "";
   let lineStart = 0;
 
+  const delays = [500, 1000, 2000, 4000, 8000];
+  const MAX_WAIT_MS = 120000;
+
   for (;;) {
-    const r = await axios.get(url, {
-      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
-      params: {
-        script: String(RL_SCRIPT_ID),
-        deploy: String(RL_DEPLOY_ID),
-        id: String(fileId),
-        lineStart: String(lineStart),
-        maxLines: String(pageLines),
-      },
-      transformResponse: (x) => x,
-      validateStatus: () => true,
-    });
+    let attempt = 0;
 
-    const body = asJson(r.data);
-    if (r.status < 200 || r.status >= 300 || !body || !body.ok) {
-      const e = new Error(`RestletFetchFailed ${r.status}`);
-      (e as any).details =
+    for (;;) {
+      const r = await axios.get(url, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/json",
+        },
+        params: {
+          script: String(RL_SCRIPT_ID),
+          deploy: String(RL_DEPLOY_ID),
+          id: String(fileId),
+          lineStart: String(lineStart),
+          maxLines: String(pageLines),
+        },
+        transformResponse: (x) => x,
+        validateStatus: () => true,
+      });
+
+      const rawText =
         typeof r.data === "string" ? r.data : JSON.stringify(r.data);
-      throw e;
-    }
+      const body = asJson(r.data);
 
-    const text = stripBom(String(body.data || ""));
-    if (text.length) {
-      if (out.length) out += "\n";
-      out += text;
-    }
+      const isReqLimit =
+        rawText.includes("SSS_REQUEST_LIMIT_EXCEEDED") ||
+        rawText.includes("Request Limit Exceeded");
 
-    const returned = Number(body.linesReturned || 0);
-    if (body.done || returned < pageLines) break;
-    lineStart += returned;
+      const isConcurrency =
+        rawText.includes("CONCURRENCY_LIMIT_EXCEEDED") ||
+        rawText.includes("SSS_CONCURRENCY_LIMIT_EXCEEDED");
+
+      if (r.status === 429 || r.status === 503 || isReqLimit || isConcurrency) {
+        const backoff = delays[Math.min(attempt, delays.length - 1)];
+        await sleep(Math.min(Math.max(backoff, 250), MAX_WAIT_MS));
+        attempt++;
+        continue;
+      }
+
+      if (r.status < 200 || r.status >= 300 || !body || !body.ok) {
+        const e = new Error(`RestletFetchFailed ${r.status}`);
+        (e as any).details = rawText;
+        throw e;
+      }
+
+      const text = stripBom(String(body.data || ""));
+      if (text.length) {
+        if (out.length) out += "\n";
+        out += text;
+      }
+
+      const returned = Number(body.linesReturned || 0);
+      if (body.done || returned < pageLines) return out;
+
+      lineStart += returned;
+      break; // move to next page for this fileId
+    }
   }
-
-  return out;
 }
 
 function parseJsonl(text: string) {
@@ -284,6 +321,42 @@ function normalizeDateToIso(d: any): string | null {
   const dd = m[2].padStart(2, "0");
   const yyyy = m[3];
   return `${yyyy}-${mm}-${dd}`;
+}
+
+function getManifestParts(
+  obj:
+    | { id: string | number; name: string; rows: number }
+    | { total_rows: number; parts: ManifestPart[] }
+    | any
+): ManifestPart[] {
+  if (!obj) return [];
+  if (Array.isArray(obj.parts)) return obj.parts as ManifestPart[];
+  if (obj.id) {
+    return [
+      {
+        id: obj.id,
+        name: String(obj.name || "unknown.jsonl"),
+        rows: Number(obj.rows || 0),
+      },
+    ];
+  }
+  return [];
+}
+
+async function restletGetLinesForParts(
+  token: string,
+  parts: ManifestPart[],
+  pageLines = 1000
+) {
+  let out = "";
+  for (const p of parts) {
+    const txt = await restletGetLines(token, p.id, pageLines);
+    if (txt.length) {
+      if (out.length) out += "\n";
+      out += txt;
+    }
+  }
+  return out;
 }
 
 async function fetchActiveFulfillmentIds(
@@ -528,19 +601,29 @@ export async function POST(req: NextRequest) {
     const manifestText = await restletGetLines(token, manifestId, 1000);
     const manifest = JSON.parse(stripBom(manifestText)) as ManifestShape;
 
-    const fId = manifest?.files?.fulfillments?.id;
-    const lId = manifest?.files?.fulfillment_lines?.id;
+    const fulfillParts = getManifestParts(
+      (manifest as any)?.files?.fulfillments
+    );
+    const lineParts = getManifestParts(
+      (manifest as any)?.files?.fulfillment_lines
+    );
 
-    if (!fId || !lId) {
+    if (!fulfillParts.length || !lineParts.length) {
       return new Response(
-        JSON.stringify({ ok: false, error: "InvalidManifest" }),
+        JSON.stringify({
+          ok: false,
+          error: "InvalidManifest",
+          details:
+            "Manifest missing fulfillments parts and/or fulfillment_lines parts",
+        }),
         { status: 422, headers: { "Content-Type": "application/json" } }
       );
     }
 
+    // Read all parts via Restlet (keeps your existing “files -> text -> parseJsonl” flow)
     const [fulfillText, linesText] = await Promise.all([
-      restletGetLines(token, fId, 1000),
-      restletGetLines(token, lId, 1000),
+      restletGetLinesForParts(token, fulfillParts, 1000),
+      restletGetLinesForParts(token, lineParts, 1000),
     ]);
 
     // optional disk dump (mirrors your invoice route)
@@ -607,6 +690,18 @@ export async function POST(req: NextRequest) {
       JSON.stringify({
         ok: true,
         manifest_generated_at: manifest.generated_at,
+        manifest_parts: {
+          fulfillments: fulfillParts.map((p) => ({
+            id: p.id,
+            name: p.name,
+            rows: p.rows,
+          })),
+          fulfillment_lines: lineParts.map((p) => ({
+            id: p.id,
+            name: p.name,
+            rows: p.rows,
+          })),
+        },
         saved_files: {
           fulfillments: { path: fulfillPath, rows: fileFulfillments.length },
           fulfillment_lines: { path: linesPath, rows: fileLines.length },
