@@ -57,7 +57,7 @@ export default function UnpaidInvoicesModal({
                     </div>
 
                     <h3 className="mt-2 text-[18px] font-semibold leading-snug tracking-[-0.01em] text-[#17152A]">
-                      Unpaid invoices detected
+                      Action needed to bid
                     </h3>
                   </div>
 
@@ -72,7 +72,7 @@ export default function UnpaidInvoicesModal({
                 </div>
 
                 <p className="mt-3 text-sm leading-relaxed text-[#17152A]/70">
-                  You have unpaid{" "}
+                  Your account has open invoices,{" "}
                   <span className="font-semibold text-[#17152A]">
                     live event
                   </span>{" "}
@@ -82,9 +82,9 @@ export default function UnpaidInvoicesModal({
                   </span>
                   .
                   <span className="mt-1 block">
-                    You can still enter, but{" "}
+                    Pay now so your.{" "}
                     <span className="font-semibold text-[#17152A]">
-                      your bids will be ignored
+                      bids counts
                     </span>
                     .
                   </span>
@@ -96,7 +96,7 @@ export default function UnpaidInvoicesModal({
                     className="rounded-xl border border-black/10 bg-white px-4 py-2.5 text-sm font-medium text-[#17152A] shadow-sm transition hover:bg-black/[0.03] active:bg-black/[0.06]"
                     onClick={onGoToInvoices}
                   >
-                    View invoices
+                    Pay invoices
                   </button>
 
                   <button
