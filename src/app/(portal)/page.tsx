@@ -25,6 +25,7 @@ import type {
   InvoiceDateParts,
   InvoiceRange,
 } from "./admin/manage-users/actions";
+import UnpaidInvoicesModal from "@/components/UI/UnpaidInvoicesModal";
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -69,6 +70,10 @@ export default function Dashboard() {
   const [showTerms, setShowTerms] = useState(false);
   const [agreeSaving, setAgreeSaving] = useState(false);
   const [pendingEventId, setPendingEventId] = useState<string | null>(null);
+  const [showInvoiceWarning, setShowInvoiceWarning] = useState(false);
+  const [invoiceGraceDays, setInvoiceGraceDays] = useState<number | null>(null);
+  const [pendingJoinAfterInvoiceWarning, setPendingJoinAfterInvoiceWarning] =
+    useState<null | (() => Promise<void>)>(null);
 
   const {
     invoices,
@@ -319,9 +324,27 @@ export default function Dashboard() {
       return invDay < cutoff;
     });
   }
+  type InvoiceCheckResult =
+    | { ok: true; shouldWarn: false }
+    | { ok: true; shouldWarn: true; graceDays: number }
+    | { ok: false };
 
-  async function runInvoiceCheck(): Promise<boolean> {
+  function computeGraceDays(range: InvoiceRange | null): number | null {
+    if (!range?.from) return null;
+
+    const fromDate = datePartsToDate(range.from);
+    if (!fromDate) return null;
+
+    const toParts = range.to ?? range.from;
+    const toDate = datePartsToDate(toParts);
+    if (!toDate) return null;
+
+    return dayDiffInclusive(fromDate, toDate);
+  }
+
+  async function runInvoiceCheck(): Promise<InvoiceCheckResult> {
     try {
+      console.log("Running invoice check");
       const res = await fetch("/api/supabase/get-invoice-check", {
         cache: "no-store",
       });
@@ -332,7 +355,7 @@ export default function Dashboard() {
           res.status,
           await res.text().catch(() => "")
         );
-        return true;
+        return { ok: false };
       }
 
       const j = await res.json();
@@ -346,12 +369,6 @@ export default function Dashboard() {
       const existingResult: boolean | null =
         typeof existingResultRaw === "boolean" ? existingResultRaw : null;
 
-      console.log("invoice check payload", j, {
-        checkInvoice,
-        range,
-        existingResult,
-      });
-
       if (!checkInvoice) {
         if (existingResult !== null) {
           try {
@@ -364,11 +381,10 @@ export default function Dashboard() {
             console.error("Failed to reset invoice check result to null", e);
           }
         }
-        return true;
+        return { ok: true, shouldWarn: false };
       }
 
       const overdue = hasUnpaidOlderThanThreshold(unpaidInvoices, range);
-      console.log("overdue", overdue);
 
       if (overdue === null) {
         if (existingResult !== null) {
@@ -382,7 +398,7 @@ export default function Dashboard() {
             console.error("Failed to reset invoice check result to null", e);
           }
         }
-        return true;
+        return { ok: true, shouldWarn: false };
       }
 
       const computedResult = overdue;
@@ -399,17 +415,13 @@ export default function Dashboard() {
         }
       }
 
-      if (computedResult) {
-        const rangeLabel = formatRangeForMessage(range);
-        toast.warn(
-          `You have unpaid invoices older than ${rangeLabel}. Your bids won't be taken into account.`
-        );
-      }
+      if (!computedResult) return { ok: true, shouldWarn: false };
 
-      return true;
+      const graceDays = computeGraceDays(range) ?? 0;
+      return { ok: true, shouldWarn: true, graceDays };
     } catch (err) {
       console.error("Error running invoice check", err);
-      return true;
+      return { ok: false };
     }
   }
 
@@ -442,6 +454,7 @@ export default function Dashboard() {
         toast.error("User email not found.");
         return;
       }
+
       setLoadingEventId(eventId);
       setLoaderLabel("Joining live session…");
 
@@ -451,68 +464,74 @@ export default function Dashboard() {
       const latestEvent =
         liveEvents.find((le) => le.type === eventId) ||
         liveEvents.find((le) => le.id === eventId);
+
       if (!latestEvent) {
         toast.error("No live events found for this event type");
         return;
       }
 
-      await runInvoiceCheck();
+      const invoiceRes = await runInvoiceCheck();
 
-      const ok = await ensureTermsAccepted();
-      if (!ok) {
-        setPendingEventId(latestEvent.id);
-        setLoadingEventId(null);
-        return;
-      }
-
-      const isJoinable = await isEventCurrentlyLive(latestEvent);
-      if (!isJoinable) {
-        toast.error(
-          "This event is not currently available to join. Please check back within 30 minutes of the event time."
-        );
-        return;
-      }
-
-      popup = openPlaceholderPopup();
-
-      const result = await joinLiveSession(latestEvent.id, {
-        email: authEmail,
-        firstName: names.firstName,
-        lastName: names.lastName,
-        middleName: names.middleName,
-      });
-
-      if (result.success && result.joinUrl) {
-        if (popup) {
-          popup.location.href = result.joinUrl;
-          popup.focus?.();
-          navigated = true;
-        } else {
-          window.location.assign(result.joinUrl);
+      const proceedToJoin = async () => {
+        const ok = await ensureTermsAccepted();
+        if (!ok) {
+          setPendingEventId(latestEvent.id);
+          setLoadingEventId(null);
+          return;
         }
-      } else if (!result.success) {
-        if (popup) popup.close();
-        toast.error(
-          result.message ||
-            "Unable to join the live event right now. Please try again later."
-        );
+
+        const isJoinable = await isEventCurrentlyLive(latestEvent);
+        if (!isJoinable) {
+          toast.error(
+            "This event is not currently available to join. Please check back within 30 minutes of the event time."
+          );
+          return;
+        }
+
+        popup = openPlaceholderPopup();
+
+        const result = await joinLiveSession(latestEvent.id, {
+          email: authEmail,
+          firstName: names.firstName,
+          lastName: names.lastName,
+          middleName: names.middleName,
+        });
+
+        if (result.success && result.joinUrl) {
+          if (popup) {
+            popup.location.href = result.joinUrl;
+            popup.focus?.();
+            navigated = true;
+          } else {
+            window.location.assign(result.joinUrl);
+          }
+        } else {
+          if (popup) popup.close();
+          toast.error(
+            result.message ||
+              "Unable to join the live event right now. Please try again later."
+          );
+          return;
+        }
+      };
+
+      if (invoiceRes.ok && invoiceRes.shouldWarn) {
+        setInvoiceGraceDays(invoiceRes.graceDays);
+        setPendingJoinAfterInvoiceWarning(() => proceedToJoin);
+        setShowInvoiceWarning(true);
         return;
-      } else {
-        if (popup) popup.close();
-        toast.error(
-          result.message ||
-            "Unable to join the live event right now. Please try again later."
-        );
       }
+
+      await proceedToJoin();
     } catch (error) {
-      if (popup) popup.close();
+      if (popup) (popup as any)?.close?.();
       toast.error(
         `Failed to join session: ${
           error instanceof Error ? error.message : "Unknown error"
         }`
       );
     } finally {
-      if (popup && !navigated) popup.close();
+      if (popup && !navigated) (popup as any)?.close?.();
       setLoadingEventId(null);
       setLoaderLabel("Cutting your rock…");
     }
@@ -773,6 +792,27 @@ export default function Dashboard() {
           setPendingEventId(null);
         }}
         onConfirm={handleAgreeAndContinue}
+      />
+      <UnpaidInvoicesModal
+        open={showInvoiceWarning}
+        graceDays={invoiceGraceDays}
+        onClose={() => {
+          setShowInvoiceWarning(false);
+          setPendingJoinAfterInvoiceWarning(null);
+        }}
+        onGoToInvoices={() => {
+          setShowInvoiceWarning(false);
+          setPendingJoinAfterInvoiceWarning(null);
+          router.push("/invoices");
+        }}
+        onEnterEvent={async () => {
+          setShowInvoiceWarning(false);
+          const fn = pendingJoinAfterInvoiceWarning;
+          setPendingJoinAfterInvoiceWarning(null);
+          try {
+            await fn?.();
+          } catch {}
+        }}
       />
     </div>
   );
