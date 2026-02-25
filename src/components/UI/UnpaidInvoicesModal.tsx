@@ -57,7 +57,9 @@ export default function UnpaidInvoicesModal({
                     </div>
 
                     <h3 className="mt-2 text-[18px] font-semibold leading-snug tracking-[-0.01em] text-[#17152A]">
-                      Action needed to bid
+                      <span className="font-semibold">
+                        Action needed to bid
+                      </span>
                     </h3>
                   </div>
 
@@ -67,26 +69,18 @@ export default function UnpaidInvoicesModal({
                     onClick={onClose}
                     className="rounded-xl p-2 text-[#17152A]/55 transition hover:bg-black/5 hover:text-[#17152A]/80 active:bg-black/10"
                   >
-                    <span className="text-lg leading-none">×</span>
+                    <span className="text-lg leading-none">x</span>
                   </button>
                 </div>
 
                 <p className="mt-3 text-sm leading-relaxed text-[#17152A]/70">
-                  Your account has open invoices,{" "}
+                  Your account has open invoices over{" "}
                   <span className="font-semibold text-[#17152A]">
-                    live event
+                    {graceDays ?? 7} day{(graceDays ?? 7) === 1 ? "" : "s"}
                   </span>{" "}
-                  invoices older than{" "}
-                  <span className="font-semibold text-[#17152A]">
-                    {daysLabel}
-                  </span>
-                  .
-                  <span className="mt-1 block">
-                    Pay now so your.{" "}
-                    <span className="font-semibold text-[#17152A]">
-                      bids counts
-                    </span>
-                    .
+                  old. Bids entered now won't be recorded.
+                  <span className="mt-1 block font-semibold text-[#17152A]">
+                    Pay now so your bids count.
                   </span>
                 </p>
 

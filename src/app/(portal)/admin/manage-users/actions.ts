@@ -431,7 +431,9 @@ export async function upsertCustomerInvoiceSettings(params: {
 
     // Invalidate customer cache after successful update
     const customerCache = getCustomerCache();
-    await customerCache.invalidateCustomerByEmail((existing as CustomerInfoRow).email);
+    await customerCache.invalidateCustomerByEmail(
+      (existing as CustomerInfoRow).email
+    );
 
     return { success: true };
   } catch (error) {
