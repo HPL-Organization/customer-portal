@@ -36,6 +36,30 @@ export async function POST(req: Request) {
 
   (async () => {
     try {
+      const { data: existing } = await admin
+        .from("profiles")
+        .select("profile_id, user_id")
+        .eq("email", email)
+        .limit(1)
+        .maybeSingle();
+
+      if (existing?.user_id) {
+        await admin
+          .from("profiles")
+          .update({ netsuite_customer_id })
+          .eq("profile_id", existing.profile_id);
+        return;
+      }
+
+      const { data: existingByCustomerId } = await admin
+        .from("profiles")
+        .select("profile_id")
+        .eq("netsuite_customer_id", netsuite_customer_id)
+        .limit(1)
+        .maybeSingle();
+
+      if (existingByCustomerId) return;
+
       await admin
         .from("profiles")
         .upsert(
