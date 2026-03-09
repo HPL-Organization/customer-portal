@@ -54,6 +54,7 @@ export async function netsuiteGetAllProductsQL(): Promise<any[]> {
     item.description,
     item.itemtype,
     item.incomeaccount,
+    item.custitem_hpl_exclude_from_order_portal,
     pricing.unitprice AS baseprice,
     file.id AS fileid,
     file.name AS filename,
@@ -80,6 +81,7 @@ export async function netsuiteGetAllProductsQL(): Promise<any[]> {
       if (item.fileurl) {
         fullImageUrl = `https://${NETSUITE_ACCOUNT_ID}.app.netsuite.com${item.fileurl}`;
       }
+
       const mappedType = mapNsTypeToReadable(item.itemtype);
 
       return {
@@ -96,18 +98,27 @@ export async function netsuiteGetAllProductsQL(): Promise<any[]> {
         itemType: mappedType,
         rawItemType: item.itemtype || null,
         incomeAccount: item.incomeaccount || null,
+        excludeFromOrderPortal:
+          item.custitem_hpl_exclude_from_order_portal === true ||
+          item.custitem_hpl_exclude_from_order_portal === "T",
       };
     })
-    .filter((item) => item.itemType !== null && item.incomeAccount !== null);
+    .filter(
+      (item) =>
+        item.itemType !== null &&
+        item.incomeAccount !== null &&
+        !item.excludeFromOrderPortal,
+    );
 
   console.log(` Loaded ${products.length} products via SuiteQL`);
   console.log(
     " Sample results:\n",
-    JSON.stringify(products.slice(0, 5), null, 2)
+    JSON.stringify(products.slice(0, 5), null, 2),
   );
 
   return products;
 }
+
 function mapNsTypeToReadable(type: string | null): string | null {
   if (!type) return null;
   switch (type) {
