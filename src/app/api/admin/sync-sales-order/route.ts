@@ -22,12 +22,25 @@ const RL_DEPLOY_ID = "customdeploy1";
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
+type ManifestPart = {
+  id: string | number;
+  name: string;
+  rows: number;
+};
+
 type SoManifestShape = {
   generated_at: string;
-  tag: string;
+  tag?: string;
+  folder_id?: number;
   files: {
-    sales_orders: { id: string | number; name: string; rows: number };
-    sales_order_lines: { id: string | number; name: string; rows: number };
+    sales_orders: {
+      total_rows: number;
+      parts: ManifestPart[];
+    };
+    sales_order_lines: {
+      total_rows: number;
+      parts: ManifestPart[];
+    };
   };
 };
 
@@ -137,7 +150,7 @@ function parseRetryAfterMs(val: string | number | undefined): number | null {
 }
 
 async function fetchActiveSoIds(
-  supabase: ReturnType<typeof createClient<Database>>
+  supabase: ReturnType<typeof createClient<Database>>,
 ): Promise<number[]> {
   const out: number[] = [];
   let from = 0;
@@ -169,17 +182,18 @@ async function fetchActiveSoIds(
 async function netsuiteQuery(
   q: string,
   headers: Record<string, string>,
-  tag?: string
+  tag?: string,
 ) {
   let attempt = 0;
   const delays = [500, 1000, 2000, 4000, 8000];
   const MAX_WAIT_MS = 120000;
+
   for (;;) {
     try {
       return await axios.post(
         `${BASE_URL}/query/v1/suiteql`,
         { q },
-        { headers }
+        { headers },
       );
     } catch (err: any) {
       const status = err?.response?.status;
@@ -190,6 +204,7 @@ async function netsuiteQuery(
         headersMap["retry-after"] ??
         headersMap["Retry-After"] ??
         headersMap["Retry-after"];
+
       if (
         status === 429 ||
         status === 503 ||
@@ -201,6 +216,7 @@ async function netsuiteQuery(
         attempt++;
         continue;
       }
+
       const e = new Error(`SuiteQL ${tag || ""} failed`);
       (e as any).details = {
         status,
@@ -217,7 +233,7 @@ async function netsuiteQuery(
 async function getFileIdByNameInFolder(
   headers: Record<string, string>,
   name: string,
-  folderId: number
+  folderId: number,
 ): Promise<number | null> {
   const q = `
     SELECT id
@@ -255,7 +271,7 @@ function stripBom(s: string) {
 async function restletGetLines(
   token: string,
   fileId: number | string,
-  pageLines = 1000
+  pageLines = 1000,
 ) {
   const url = restletUrl(NETSUITE_ACCOUNT_ID);
   let out = "";
@@ -295,6 +311,22 @@ async function restletGetLines(
   }
 
   return out;
+}
+
+async function restletGetJsonlFromParts(
+  token: string,
+  parts: ManifestPart[],
+): Promise<string> {
+  const texts: string[] = [];
+
+  for (const part of parts || []) {
+    const fileId = Number(part.id);
+    if (!Number.isFinite(fileId) || fileId <= 0) continue;
+    const text = await restletGetLines(token, fileId, 1000);
+    if (text.trim()) texts.push(text);
+  }
+
+  return texts.join("\n");
 }
 
 function parseJsonl(text: string) {
@@ -361,7 +393,7 @@ export async function POST(req: NextRequest) {
     ) {
       return new Response(
         JSON.stringify({ ok: false, error: "Unauthorized" }),
-        { status: 401 }
+        { status: 401 },
       );
     }
 
@@ -372,7 +404,7 @@ export async function POST(req: NextRequest) {
       (await getFileIdByNameInFolder(
         headers,
         SO_MANIFEST_NAME,
-        MANIFEST_FOLDER_ID
+        MANIFEST_FOLDER_ID,
       )) ?? null;
 
     if (!manifestId) {
@@ -383,26 +415,30 @@ export async function POST(req: NextRequest) {
           details: `${SO_MANIFEST_NAME} not found in folder`,
           folderId: MANIFEST_FOLDER_ID,
         }),
-        { status: 404 }
+        { status: 404 },
       );
     }
 
     const manifestText = await restletGetLines(token, manifestId, 1000);
     const manifest = JSON.parse(stripBom(manifestText)) as SoManifestShape;
 
-    const soId = manifest?.files?.sales_orders?.id;
-    const soLinesId = manifest?.files?.sales_order_lines?.id;
+    const soParts = Array.isArray(manifest?.files?.sales_orders?.parts)
+      ? manifest.files.sales_orders.parts
+      : [];
+    const soLineParts = Array.isArray(manifest?.files?.sales_order_lines?.parts)
+      ? manifest.files.sales_order_lines.parts
+      : [];
 
-    if (!soId || !soLinesId) {
+    if (!soParts.length || !soLineParts.length) {
       return new Response(
         JSON.stringify({ ok: false, error: "InvalidManifest" }),
-        { status: 422 }
+        { status: 422 },
       );
     }
 
     const [soText, soLinesText] = await Promise.all([
-      restletGetLines(token, soId, 1000),
-      restletGetLines(token, soLinesId, 1000),
+      restletGetJsonlFromParts(token, soParts),
+      restletGetJsonlFromParts(token, soLineParts),
     ]);
 
     const salesOrdersRaw = parseJsonl(soText);
@@ -412,8 +448,8 @@ export async function POST(req: NextRequest) {
       new Set<number>(
         salesOrdersRaw
           .map((r: any) => Number(r.so_id))
-          .filter((n: number) => Number.isFinite(n) && n > 0)
-      )
+          .filter((n: number) => Number.isFinite(n) && n > 0),
+      ),
     );
 
     const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_SERVICE_KEY);
@@ -464,15 +500,18 @@ export async function POST(req: NextRequest) {
     const fileSoIdSet = new Set(fileSoIds);
     const missingInFiles = activeSoIds.filter((id) => !fileSoIdSet.has(id));
     let missingInFilesForDelete = missingInFiles;
+
     if (missingInFiles.length) {
       const cutoffMs = Date.now() - 90 * 60 * 1000;
       const recentOcIds = new Set<number>();
+
       for (const ids of chunk(missingInFiles, 1000)) {
         const { data, error } = await supabase
           .from("sales_orders")
           .select("so_id, created_at, created_by")
           .in("so_id", ids);
         if (error) throw error;
+
         for (const r of data || []) {
           const createdBy = String(r.created_by ?? "")
             .trim()
@@ -487,7 +526,7 @@ export async function POST(req: NextRequest) {
 
       if (recentOcIds.size) {
         missingInFilesForDelete = missingInFiles.filter(
-          (id) => !recentOcIds.has(id)
+          (id) => !recentOcIds.has(id),
         );
       }
     }
@@ -506,7 +545,7 @@ export async function POST(req: NextRequest) {
       .map((r: any) => {
         const so_id = Number(r.so_id);
         const line_no = Number(
-          r.line_no ?? r.linesequencenumber ?? r.lineNo ?? 0
+          r.line_no ?? r.linesequencenumber ?? r.lineNo ?? 0,
         );
         if (!Number.isFinite(so_id) || !Number.isFinite(line_no)) return null;
 
@@ -516,7 +555,7 @@ export async function POST(req: NextRequest) {
           item_id: toNumOrNull(r.item_id),
           item_sku: coerceText(r.item_sku),
           item_display_name: coerceText(
-            r.item_display_name ?? r.displayname ?? r.sku
+            r.item_display_name ?? r.displayname ?? r.sku,
           ),
           quantity: toNumOrNull(r.quantity),
           rate: toNumOrNull(r.rate),
@@ -556,13 +595,13 @@ export async function POST(req: NextRequest) {
           manifest_generated_at: manifest.generated_at,
           files: {
             sales_orders: {
-              file_id: soId,
-              rows_reported: manifest.files.sales_orders.rows,
+              parts: soParts.length,
+              rows_reported: manifest.files.sales_orders.total_rows,
               rows_parsed: salesOrdersRaw.length,
             },
             sales_order_lines: {
-              file_id: soLinesId,
-              rows_reported: manifest.files.sales_order_lines.rows,
+              parts: soLineParts.length,
+              rows_reported: manifest.files.sales_order_lines.total_rows,
               rows_parsed: salesOrderLinesRaw.length,
             },
           },
@@ -573,9 +612,9 @@ export async function POST(req: NextRequest) {
           },
         },
         null,
-        2
+        2,
       ),
-      { status: 200, headers: { "Content-Type": "application/json" } }
+      { status: 200, headers: { "Content-Type": "application/json" } },
     );
   } catch (err: any) {
     const msg = String(err?.message || "FetchFailed");
@@ -591,10 +630,10 @@ export async function POST(req: NextRequest) {
           typeof err?.details === "string"
             ? err.details
             : err?.details
-            ? JSON.stringify(err.details)
-            : undefined,
+              ? JSON.stringify(err.details)
+              : undefined,
       }),
-      { status }
+      { status },
     );
   }
 }
