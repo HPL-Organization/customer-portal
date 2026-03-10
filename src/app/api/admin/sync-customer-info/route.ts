@@ -24,12 +24,12 @@ const CUSTOMER_FILE_NAME = "customers.jsonl";
 const RL_SCRIPT_ID = String(
   process.env.NS_CUSTOMER_FILE_RL_SCRIPT_ID ||
     process.env.NS_FILE_RL_SCRIPT_ID ||
-    2935
+    2935,
 );
 const RL_DEPLOY_ID = String(
   process.env.NS_CUSTOMER_FILE_RL_DEPLOY_ID ||
     process.env.NS_FILE_RL_DEPLOY_ID ||
-    "customdeploy1"
+    "customdeploy1",
 );
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -42,6 +42,7 @@ type CustomerInformationRow = {
   first_name: string | null;
   middle_name: string | null;
   last_name: string | null;
+  company_name: string | null;
   phone: string | null;
   mobile: string | null;
   shipping_address1: string | null;
@@ -78,6 +79,7 @@ type CustomerInformationInsert = {
   first_name?: string | null;
   middle_name?: string | null;
   last_name?: string | null;
+  company_name?: string | null;
   phone?: string | null;
   mobile?: string | null;
   shipping_address1?: string | null;
@@ -114,6 +116,7 @@ type CustomerInformationUpdate = {
   first_name?: string | null;
   middle_name?: string | null;
   last_name?: string | null;
+  company_name?: string | null;
   phone?: string | null;
   mobile?: string | null;
   shipping_address1?: string | null;
@@ -167,7 +170,7 @@ type CustomerInsert = Omit<
 >;
 
 const SELECT_EXISTING_CUSTOMERS =
-  "info_id,customer_id,email,first_name,middle_name,last_name,phone,mobile,shipping_address1,shipping_address2,shipping_city,shipping_state,shipping_zip,shipping_country,billing_address1,billing_address2,billing_city,billing_state,billing_zip,billing_country,shipping_verified,billing_verified,terms_compliance,terms_agreed_at,user_id,hubspot_id,check_invoice,check_invoice_range,check_invoice_result,ns_deleted_at" as const;
+  "info_id,customer_id,email,first_name,middle_name,last_name,company_name,phone,mobile,shipping_address1,shipping_address2,shipping_city,shipping_state,shipping_zip,shipping_country,billing_address1,billing_address2,billing_city,billing_state,billing_zip,billing_country,shipping_verified,billing_verified,terms_compliance,terms_agreed_at,user_id,hubspot_id,check_invoice,check_invoice_range,check_invoice_result,ns_deleted_at" as const;
 
 const SELECT_ALL_MINIMAL =
   "customer_id,email,user_id,shipping_verified,billing_verified,terms_compliance,terms_agreed_at,check_invoice,check_invoice_range,check_invoice_result,ns_deleted_at,created_at,created_by" as const;
@@ -201,9 +204,11 @@ function parseRetryAfterMs(val: string | number | undefined): number | null {
 
 function isRecentOrderConsole(
   row: Pick<CustomerRow, "created_at" | "created_by">,
-  cutoffMs: number
+  cutoffMs: number,
 ): boolean {
-  const createdBy = String(row.created_by ?? "").trim().toLowerCase();
+  const createdBy = String(row.created_by ?? "")
+    .trim()
+    .toLowerCase();
   if (createdBy !== "order console") return false;
   const createdAtMs = row.created_at ? Date.parse(row.created_at) : NaN;
   return Number.isFinite(createdAtMs) && createdAtMs >= cutoffMs;
@@ -212,7 +217,7 @@ function isRecentOrderConsole(
 async function netsuiteQuery(
   q: string,
   headers: Record<string, string>,
-  tag?: string
+  tag?: string,
 ) {
   let attempt = 0;
   const delays = [500, 1000, 2000, 4000, 8000];
@@ -222,7 +227,7 @@ async function netsuiteQuery(
       return await axios.post(
         `${BASE_URL}/query/v1/suiteql`,
         { q },
-        { headers }
+        { headers },
       );
     } catch (err: any) {
       const status = err?.response?.status;
@@ -260,7 +265,7 @@ async function netsuiteQuery(
 async function getFileIdByNameInFolder(
   headers: Record<string, string>,
   name: string,
-  folderId: number
+  folderId: number,
 ): Promise<number | null> {
   const q = `
     SELECT id
@@ -301,7 +306,7 @@ async function* restletStreamJsonlPages(
     | { id: number | string }
     | { name: string; folderId?: number }
     | { manifest: true; folderId?: number },
-  pageLines = 2000
+  pageLines = 2000,
 ) {
   const url = restletUrl(NETSUITE_ACCOUNT_ID);
   let lineStart = 0;
@@ -357,7 +362,7 @@ async function* restletStreamJsonlPages(
 
 async function fetchExistingCustomers(
   supabase: SupabaseClient<Database>,
-  ids: number[]
+  ids: number[],
 ): Promise<CustomerRow[]> {
   const out: CustomerRow[] = [];
   const batch = 1000;
@@ -374,7 +379,7 @@ async function fetchExistingCustomers(
 }
 
 async function fetchAllCustomersMinimal(
-  supabase: SupabaseClient<Database>
+  supabase: SupabaseClient<Database>,
 ): Promise<
   Pick<
     CustomerRow,
@@ -436,6 +441,7 @@ type Incoming = {
   first_name?: string | null;
   middle_name?: string | null;
   last_name?: string | null;
+  company_name?: string | null;
   phone?: string | null;
   mobilephone?: string | null;
   addresses?: Array<{
@@ -452,7 +458,7 @@ type Incoming = {
 
 function pickAddress(
   incoming: Incoming,
-  type: "billing" | "shipping"
+  type: "billing" | "shipping",
 ): {
   address1: string | null;
   address2: string | null;
@@ -507,6 +513,7 @@ function buildRow(inc: Incoming, existing?: CustomerRow): CustomerInsert {
     first_name: coerceStr(inc.first_name),
     middle_name: coerceStr(inc.middle_name),
     last_name: coerceStr(inc.last_name),
+    company_name: coerceStr(inc.company_name),
     phone: coerceStr(inc.phone),
     mobile: coerceStr(inc.mobilephone),
     shipping_address1: coerceStr(ship.address1),
@@ -537,8 +544,8 @@ function buildRow(inc: Incoming, existing?: CustomerRow): CustomerInsert {
       inc.hubspot_id != null
         ? coerceBigint(inc.hubspot_id)
         : existing
-        ? (existing as any).hubspot_id
-        : null,
+          ? (existing as any).hubspot_id
+          : null,
   };
 }
 
@@ -550,7 +557,7 @@ function chunk<T>(arr: T[], size: number) {
 
 async function safeUpsertBatch(
   supabase: SupabaseClient<Database>,
-  batch: CustomerInsert[]
+  batch: CustomerInsert[],
 ) {
   const { error } = await supabase
     .from("customer_information")
@@ -632,7 +639,7 @@ export async function POST(req: NextRequest) {
         JSON.stringify({ ok: false, error: "Unauthorized" }),
         {
           status: 401,
-        }
+        },
       );
     }
 
@@ -641,7 +648,7 @@ export async function POST(req: NextRequest) {
     const previewLimitRaw = sp.get("preview");
     const previewLimit = Math.min(
       200,
-      Math.max(0, Number(previewLimitRaw ?? "25") || 25)
+      Math.max(0, Number(previewLimitRaw ?? "25") || 25),
     );
 
     const token = await getValidToken();
@@ -652,7 +659,7 @@ export async function POST(req: NextRequest) {
       (await getFileIdByNameInFolder(
         headers,
         CUSTOMER_MANIFEST_NAME,
-        EXPORT_FOLDER_ID
+        EXPORT_FOLDER_ID,
       )) ?? null;
 
     if (manifestId) {
@@ -731,12 +738,12 @@ export async function POST(req: NextRequest) {
         existingMap.set(Number(row.customer_id), row);
 
       const upserts: CustomerInsert[] = (page as Incoming[]).map((inc) =>
-        buildRow(inc, existingMap.get(Number(inc.customer_id)))
+        buildRow(inc, existingMap.get(Number(inc.customer_id))),
       );
 
       for (const b of chunk(upserts, 1000)) {
         const existed = b.filter((x) =>
-          existingMap.has(Number(x.customer_id || 0))
+          existingMap.has(Number(x.customer_id || 0)),
         ).length;
         updated += existed;
         inserted += b.length - existed;
@@ -1065,10 +1072,10 @@ export async function POST(req: NextRequest) {
 
     console.log(
       `[sync-customer-info] ${dryRun ? "DRY RUN" : "LIVE"} counts=`,
-      result.counts
+      result.counts,
     );
     console.log(
-      `[sync-customer-info] deletions hard=${hard_delete_rows.length} soft=${soft_delete_rows.length} ambiguous=${ambiguous_rows.length} risky_hpl_soft=${risky_soft_deletes_hpl.length}`
+      `[sync-customer-info] deletions hard=${hard_delete_rows.length} soft=${soft_delete_rows.length} ambiguous=${ambiguous_rows.length} risky_hpl_soft=${risky_soft_deletes_hpl.length}`,
     );
 
     if (dryRun) {
@@ -1077,7 +1084,7 @@ export async function POST(req: NextRequest) {
       logArrayMaybe("[sync-customer-info] ambiguous_rows=", ambiguous_rows);
       logArrayMaybe(
         "[sync-customer-info] risky_soft_deletes_hpl=",
-        risky_soft_deletes_hpl
+        risky_soft_deletes_hpl,
       );
     }
 
@@ -1098,10 +1105,10 @@ export async function POST(req: NextRequest) {
           typeof err?.details === "string"
             ? err.details
             : err?.details
-            ? JSON.stringify(err.details)
-            : undefined,
+              ? JSON.stringify(err.details)
+              : undefined,
       }),
-      { status }
+      { status },
     );
   }
 }
