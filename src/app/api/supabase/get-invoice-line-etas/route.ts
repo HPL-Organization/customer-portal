@@ -1,7 +1,7 @@
 // app/api/supabase/get-invoice-line-etas/route.ts
 /**
  * Returns per-line item-in-stock ETA for a backordered invoice.
- * Uses invoice header is_backordered + created_from_so_id, then matches ETAs by item_id and adds 14 days.
+ * Uses invoice header is_backordered + created_from_so_id, then matches ETAs by item_id.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
@@ -147,16 +147,14 @@ export async function GET(req: NextRequest) {
   const etaByItem = new Map<number, { d: Date; formatted: string }>();
   for (const r of rows) {
     if (!r?.eta_date) continue;
-    const base = parseDateFlexible(r.eta_date);
-    if (!base) continue;
-
-    const inStock = new Date(base.getTime() + 14 * 24 * 60 * 60 * 1000);
+    const eta = parseDateFlexible(r.eta_date);
+    if (!eta) continue;
     const itemId = Number(r.item_id);
     if (!Number.isFinite(itemId)) continue;
 
     const prev = etaByItem.get(itemId);
-    if (!prev || inStock.getTime() < prev.d.getTime()) {
-      etaByItem.set(itemId, { d: inStock, formatted: formatUsDate(inStock) });
+    if (!prev || eta.getTime() < prev.d.getTime()) {
+      etaByItem.set(itemId, { d: eta, formatted: formatUsDate(eta) });
     }
   }
 
