@@ -43,7 +43,15 @@ async function runSuiteQL(query: string, accessToken: string): Promise<any[]> {
 /**
  * Main method to fetch products from NetSuite.
  */
-export async function netsuiteGetAllProductsQL(): Promise<any[]> {
+export type NetsuiteGetAllProductsQLOptions = {
+  includeExcludedFromOrderPortal?: boolean;
+};
+
+export async function netsuiteGetAllProductsQL(
+  options: NetsuiteGetAllProductsQLOptions = {},
+): Promise<any[]> {
+  const includeExcludedFromOrderPortal =
+    options.includeExcludedFromOrderPortal === true;
   const accessToken = await getValidToken();
 
   const suiteQL = `
@@ -74,8 +82,7 @@ export async function netsuiteGetAllProductsQL(): Promise<any[]> {
 
   const rows = await runSuiteQL(suiteQL, accessToken);
 
-  const products = rows
-    .map((item) => {
+  const mappedProducts = rows.map((item) => {
       let fullImageUrl: null | string = null;
 
       if (item.fileurl) {
@@ -102,13 +109,14 @@ export async function netsuiteGetAllProductsQL(): Promise<any[]> {
           item.custitem_hpl_exclude_from_order_portal === true ||
           item.custitem_hpl_exclude_from_order_portal === "T",
       };
-    })
-    .filter(
-      (item) =>
-        item.itemType !== null &&
-        item.incomeAccount !== null &&
-        !item.excludeFromOrderPortal,
-    );
+    });
+
+  const products = mappedProducts.filter(
+    (item) =>
+      item.itemType !== null &&
+      item.incomeAccount !== null &&
+      (includeExcludedFromOrderPortal || !item.excludeFromOrderPortal),
+  );
 
   console.log(` Loaded ${products.length} products via SuiteQL`);
   console.log(

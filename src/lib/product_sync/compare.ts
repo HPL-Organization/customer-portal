@@ -106,6 +106,18 @@ async function updateSupabaseProduct(ns: any, supabaseId: string) {
   );
 }
 
+async function deleteSupabaseProduct(supabaseId: string, netsuiteId: string) {
+  const { error } = await supabase.from("ns_products").delete().eq("id", supabaseId);
+
+  if (error) {
+    throw new Error(`Error deleting Supabase product: ${error.message}`);
+  }
+
+  console.log(
+    ` Deleted Supabase product ${supabaseId} for excluded NetSuite ID ${netsuiteId}`
+  );
+}
+
 export type CompareOptions = {
   dryRun?: boolean;
 };
@@ -113,7 +125,18 @@ export type CompareOptions = {
 export async function compareProducts(options: CompareOptions = {}) {
   const dryRun = options.dryRun === true;
   // Fetch NetSuite products
-  const nsProducts = await netsuiteGetAllProductsQL();
+  const nsProductsWithExcluded = await netsuiteGetAllProductsQL({
+    includeExcludedFromOrderPortal: true,
+  });
+  const nsProducts = nsProductsWithExcluded.filter(
+    (product) => !product.excludeFromOrderPortal
+  );
+  const excludedNsProducts = nsProductsWithExcluded.filter(
+    (product) => product.excludeFromOrderPortal
+  );
+  const excludedNsProductIds = new Set(
+    excludedNsProducts.map((product) => product.id.toString())
+  );
 
   // Fetch HubSpot products keyed by ns_item_id
   const hsProductsByNsId = await getAllHubspotProducts();
@@ -328,6 +351,13 @@ export async function compareProducts(options: CompareOptions = {}) {
     }
   }
 
+  const toDeleteSupabase: any[] = [];
+  for (const [nsId, sb] of Object.entries(sbProductsByNsId)) {
+    if (excludedNsProductIds.has(nsId)) {
+      toDeleteSupabase.push(sb);
+    }
+  }
+
   console.log("\n PRODUCTS THAT NEED TO BE UPDATED (HubSpot):");
   toUpdate.forEach((p) => {
     console.log(
@@ -345,6 +375,13 @@ export async function compareProducts(options: CompareOptions = {}) {
   console.log("\n PRODUCTS THAT NEED TO BE DELETED:");
   toDelete.forEach((p) =>
     console.log(`- HubSpot ID ${p.id}, name: ${p.properties.name}`)
+  );
+
+  console.log(
+    "\n SUPABASE PRODUCTS THAT NEED TO BE DELETED (excluded from order portal):"
+  );
+  toDeleteSupabase.forEach((p) =>
+    console.log(`- Supabase ID ${p.id}, NS ID ${p.netsuite_id}, sku: ${p.sku}`)
   );
 
   console.log(
@@ -443,6 +480,13 @@ export async function compareProducts(options: CompareOptions = {}) {
       await updateSupabaseProduct(update.ns, currentSbId);
       supabaseSkus.set(newSku, currentSbId);
     }
+
+    for (const sb of toDeleteSupabase) {
+      await deleteSupabaseProduct(sb.id, sb.netsuite_id?.toString() ?? "");
+      if (sb.sku) {
+        supabaseSkus.delete(sb.sku);
+      }
+    }
   }
 
   console.log("\n TEST sync complete.");
@@ -454,6 +498,7 @@ export async function compareProducts(options: CompareOptions = {}) {
     toCreate: toCreate.length,
     toUpdate: toUpdate.length,
     toDelete: toDelete.length,
+    toDeleteSupabase: toDeleteSupabase.length,
     inSync: inSync.length,
     toCreateSupabase: toCreateSupabase.length,
     toUpdateSupabase: toUpdateSupabase.length,
