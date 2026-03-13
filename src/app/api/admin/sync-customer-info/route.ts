@@ -45,6 +45,7 @@ type CustomerInformationRow = {
   company_name: string | null;
   phone: string | null;
   mobile: string | null;
+  shipping_carrier: string | null;
   shipping_address1: string | null;
   shipping_address2: string | null;
   shipping_city: string | null;
@@ -82,6 +83,7 @@ type CustomerInformationInsert = {
   company_name?: string | null;
   phone?: string | null;
   mobile?: string | null;
+  shipping_carrier?: string | null;
   shipping_address1?: string | null;
   shipping_address2?: string | null;
   shipping_city?: string | null;
@@ -119,6 +121,7 @@ type CustomerInformationUpdate = {
   company_name?: string | null;
   phone?: string | null;
   mobile?: string | null;
+  shipping_carrier?: string | null;
   shipping_address1?: string | null;
   shipping_address2?: string | null;
   shipping_city?: string | null;
@@ -170,8 +173,7 @@ type CustomerInsert = Omit<
 >;
 
 const SELECT_EXISTING_CUSTOMERS =
-  "info_id,customer_id,email,first_name,middle_name,last_name,company_name,phone,mobile,shipping_address1,shipping_address2,shipping_city,shipping_state,shipping_zip,shipping_country,billing_address1,billing_address2,billing_city,billing_state,billing_zip,billing_country,shipping_verified,billing_verified,terms_compliance,terms_agreed_at,user_id,hubspot_id,check_invoice,check_invoice_range,check_invoice_result,ns_deleted_at" as const;
-
+  "info_id,customer_id,email,first_name,middle_name,last_name,company_name,phone,mobile,shipping_carrier,shipping_address1,shipping_address2,shipping_city,shipping_state,shipping_zip,shipping_country,billing_address1,billing_address2,billing_city,billing_state,billing_zip,billing_country,shipping_verified,billing_verified,terms_compliance,terms_agreed_at,user_id,hubspot_id,check_invoice,check_invoice_range,check_invoice_result,ns_deleted_at" as const;
 const SELECT_ALL_MINIMAL =
   "customer_id,email,user_id,shipping_verified,billing_verified,terms_compliance,terms_agreed_at,check_invoice,check_invoice_range,check_invoice_result,ns_deleted_at,created_at,created_by" as const;
 
@@ -444,6 +446,7 @@ type Incoming = {
   company_name?: string | null;
   phone?: string | null;
   mobilephone?: string | null;
+  shippingcarrier?: string | null;
   addresses?: Array<{
     default_billing?: boolean | string;
     default_shipping?: boolean | string;
@@ -516,6 +519,7 @@ function buildRow(inc: Incoming, existing?: CustomerRow): CustomerInsert {
     company_name: coerceStr(inc.company_name),
     phone: coerceStr(inc.phone),
     mobile: coerceStr(inc.mobilephone),
+    shipping_carrier: coerceStr(inc.shippingcarrier),
     shipping_address1: coerceStr(ship.address1),
     shipping_address2: coerceStr(ship.address2),
     shipping_city: coerceStr(ship.city),
