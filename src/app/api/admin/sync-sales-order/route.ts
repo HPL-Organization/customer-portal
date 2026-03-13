@@ -55,6 +55,7 @@ type SalesOrdersRow = {
   netsuite_url: string | null;
   sales_rep: string | null;
   ship_address: string | null;
+  ship_carrier: string | null;
   so_reference: string | null;
   hubspot_so_id: string | null;
   sales_channel_id: string | null;
@@ -471,6 +472,7 @@ export async function POST(req: NextRequest) {
           netsuite_url: null,
           sales_rep: coerceText(r.sales_rep),
           ship_address: coerceText(r.ship_address),
+          ship_carrier: coerceText(r.ship_carrier),
           so_reference: coerceText(r.so_reference),
           hubspot_so_id: coerceText(r.hubspot_so_id),
           sales_channel_id: coerceText(r.sales_channel_id),
