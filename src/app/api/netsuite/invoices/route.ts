@@ -173,6 +173,13 @@ export async function GET(req: NextRequest) {
           payments: pmts,
           netsuiteUrl: h.netsuite_url ?? invoiceUrl(id),
           payment_processing: (h as any).payment_processing === true,
+          paypal_invoice_id: (h as any).paypal_invoice_id ?? null,
+          paypal_payment_status: (h as any).paypal_payment_status ?? null,
+          paypal_invoice_status: (h as any).paypal_invoice_status ?? null,
+          paypal_invoice_url: (h as any).paypal_invoice_url ?? null,
+          paypal_sent_at: (h as any).paypal_sent_at ?? null,
+          paypal_paid_at: (h as any).paypal_paid_at ?? null,
+          paypal_error: (h as any).paypal_error ?? null,
           isBackordered:
             typeof (h as any).is_backordered === "boolean"
               ? (h as any).is_backordered

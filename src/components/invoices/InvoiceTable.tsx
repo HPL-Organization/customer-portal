@@ -43,6 +43,8 @@ export type Invoice = {
   createdFromSoId: number | null;
   createdFromSoTranId: string | null;
   isBackordered?: boolean | null;
+  paymentProcessing?: boolean;
+  paypalPaymentStatus?: string | null;
 };
 
 function fmt(n: number | undefined) {
@@ -445,7 +447,11 @@ function DesktopTable({
                 key={String(inv.invoiceId)}
                 index={i}
                 inv={inv}
-                canPay={variant === "open" && inv.amountRemaining > 0}
+                canPay={
+                  variant === "open" &&
+                  inv.amountRemaining > 0 &&
+                  inv.paymentProcessing !== true
+                }
                 onPay={onPay}
                 onDownload={onDownload}
               />
@@ -472,6 +478,21 @@ function DesktopRow({
 }) {
   const [open, setOpen] = React.useState<boolean>(false);
   const hasBalance = inv.amountRemaining > 0;
+  const isProcessing = inv.paymentProcessing === true;
+  const paypalStatus = String(inv.paypalPaymentStatus ?? "").toLowerCase();
+  const statusLabel = isProcessing
+    ? paypalStatus === "sent" || paypalStatus === "pending"
+      ? "Waiting for PayPal payment"
+      : "Processing"
+    : hasBalance
+    ? "Unpaid"
+    : "Paid";
+  const statusColor = isProcessing
+    ? "info"
+    : hasBalance
+    ? "warning"
+    : "success";
+  const statusVariant = isProcessing ? "outlined" : hasBalance ? "outlined" : "filled";
   const panelId = `invoice-details-${inv.invoiceId}`;
   const baseBg = index % 2 === 0 ? "bg-slate-50" : "bg-white";
   const openBg = "bg-rose-50";
@@ -568,9 +589,9 @@ function DesktopRow({
         <td className="px-4 py-3 align-middle">
           <Chip
             size="small"
-            label={hasBalance ? "Unpaid" : "Paid"}
-            color={hasBalance ? "warning" : "success"}
-            variant={hasBalance ? "outlined" : "filled"}
+            label={statusLabel}
+            color={statusColor}
+            variant={statusVariant}
             sx={{ borderRadius: "10px" }}
           />
         </td>
@@ -642,7 +663,11 @@ function MobileList({
           key={String(inv.invoiceId)}
           index={i}
           inv={inv}
-          canPay={variant === "open" && inv.amountRemaining > 0}
+          canPay={
+            variant === "open" &&
+            inv.amountRemaining > 0 &&
+            inv.paymentProcessing !== true
+          }
           onPay={onPay}
           onDownload={onDownload}
         />
@@ -666,6 +691,21 @@ function MobileCard({
 }) {
   const [open, setOpen] = React.useState<boolean>(false);
   const hasBalance = inv.amountRemaining > 0;
+  const isProcessing = inv.paymentProcessing === true;
+  const paypalStatus = String(inv.paypalPaymentStatus ?? "").toLowerCase();
+  const statusLabel = isProcessing
+    ? paypalStatus === "sent" || paypalStatus === "pending"
+      ? "Waiting for PayPal payment"
+      : "Processing"
+    : hasBalance
+    ? "Unpaid"
+    : "Paid";
+  const statusColor = isProcessing
+    ? "info"
+    : hasBalance
+    ? "warning"
+    : "success";
+  const statusVariant = isProcessing ? "outlined" : hasBalance ? "outlined" : "filled";
   const panelId = `m-invoice-details-${inv.invoiceId}`;
   const rowBg =
     index % 2 === 0 ? "from-white to-slate-50" : "from-slate-50 to-white";
@@ -684,9 +724,9 @@ function MobileCard({
           </div>
           <Chip
             size="small"
-            label={hasBalance ? "Unpaid" : "Paid"}
-            color={hasBalance ? "warning" : "success"}
-            variant={hasBalance ? "outlined" : "filled"}
+            label={statusLabel}
+            color={statusColor}
+            variant={statusVariant}
             sx={{ borderRadius: "10px" }}
           />
         </div>

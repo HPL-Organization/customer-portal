@@ -14,6 +14,10 @@ import {
   Backdrop,
   LinearProgress,
   Box,
+  Divider,
+  FormControlLabel,
+  Radio,
+  RadioGroup,
 } from "@mui/material";
 import type { Invoice } from "@/lib/types/billing";
 
@@ -40,21 +44,28 @@ export default function PayDrawer({
   invoice,
   customerId,
   onClose,
-  onSubmit,
+  onSubmitSaved,
+  onSubmitPaypalOneTime,
 }: {
   open: boolean;
   invoice: Invoice | null;
   customerId?: string | number | null;
   onClose: () => void;
-  onSubmit: (
+  onSubmitSaved: (
     invoice: Invoice,
     amount: number,
     methodId: string
+  ) => Promise<void>;
+  onSubmitPaypalOneTime: (
+    invoice: Invoice,
+    amount: number
   ) => Promise<void>;
 }) {
   const [amount, setAmount] = React.useState<number>(0);
   const [method, setMethod] = React.useState<string>("");
   const [submitting, setSubmitting] = React.useState(false);
+  const [mode, setMode] = React.useState<"saved" | "paypal_one_time">("saved");
+  const [paypalError, setPaypalError] = React.useState<string | null>(null);
 
   // instruments state
   const [loadingPM, setLoadingPM] = React.useState(false);
@@ -97,6 +108,10 @@ export default function PayDrawer({
     if (!invoice) return;
     setAmount(Number(Number(invoice.amountRemaining || 0).toFixed(2)));
   }, [invoice]);
+
+  React.useEffect(() => {
+    setPaypalError(null);
+  }, [mode, open, invoice?.invoiceId]);
 
   const loadPaymentMethods = React.useCallback(async () => {
     if (!open || !customerId) return;
@@ -162,9 +177,14 @@ export default function PayDrawer({
   }, [loadPaymentMethods]);
 
   const disabled = !invoice || submitting || saving;
+  const paypalStatus = String(invoice?.paypalPaymentStatus ?? "").toLowerCase();
+  const paypalAlreadySent =
+    paypalStatus === "sent" || paypalStatus === "pending";
+  const paypalAlreadyPaid = paypalStatus === "paid";
+  const paypalDisabled = disabled || paypalAlreadySent || paypalAlreadyPaid;
 
   const submit = async () => {
-    if (!invoice || !method) return;
+    if (!invoice || !method || mode !== "saved") return;
 
     setSubmitting(true);
     setSaving(true);
@@ -176,7 +196,26 @@ export default function PayDrawer({
     setLoaderIdx(0);
 
     try {
-      await onSubmit(invoice, Math.max(0, Number(amount) || 0), method);
+      await onSubmitSaved(invoice, Math.max(0, Number(amount) || 0), method);
+    } finally {
+      setSaving(false);
+      setSubmitting(false);
+    }
+  };
+
+  const submitPaypalOneTime = async () => {
+    if (!invoice || mode !== "paypal_one_time") return;
+
+    setSubmitting(true);
+    setSaving(true);
+    setLoaderMsgs([
+      "Sending PayPal invoice…",
+      "Waiting for PayPal payment…",
+    ]);
+    setLoaderIdx(0);
+
+    try {
+      await onSubmitPaypalOneTime(invoice, Math.max(0, Number(amount) || 0));
     } finally {
       setSaving(false);
       setSubmitting(false);
@@ -248,38 +287,91 @@ export default function PayDrawer({
               sx={{ mb: 2 }}
             />
 
-            <div>
-              <TextField
-                label="Payment Method"
-                select
-                value={method}
-                onChange={(e) => setMethod(e.target.value)}
-                fullWidth
-                disabled={
-                  disabled || loadingPM || !!pmError || !instruments.length
-                }
-              >
-                {instruments.map((m) => (
-                  <MenuItem key={m.id} value={String(m.id)}>
-                    {methodLabel(m)}
-                  </MenuItem>
-                ))}
-              </TextField>
+            <RadioGroup
+              row
+              value={mode}
+              onChange={(e) =>
+                setMode(e.target.value as "saved" | "paypal_one_time")
+              }
+            >
+              <FormControlLabel
+                value="saved"
+                control={<Radio />}
+                label="Saved method"
+                disabled={disabled}
+              />
+              <FormControlLabel
+                value="paypal_one_time"
+                control={<Radio />}
+                label="PayPal (one-time)"
+                disabled={disabled}
+              />
+            </RadioGroup>
 
-              <div className="mt-1 flex items-center gap-2">
-                {loadingPM && (
-                  <>
-                    <CircularProgress size={16} />
-                    <FormHelperText>Loading payment methods…</FormHelperText>
-                  </>
-                )}
-                {pmError && <FormHelperText error>{pmError}</FormHelperText>}
-                {!loadingPM && !pmError && !instruments.length && (
+            <div>
+              {mode === "saved" ? (
+                <>
+                  <TextField
+                    label="Payment Method"
+                    select
+                    value={method}
+                    onChange={(e) => setMethod(e.target.value)}
+                    fullWidth
+                    disabled={
+                      disabled || loadingPM || !!pmError || !instruments.length
+                    }
+                  >
+                    {instruments.map((m) => (
+                      <MenuItem key={m.id} value={String(m.id)}>
+                        {methodLabel(m)}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+
+                  <div className="mt-1 flex items-center gap-2">
+                    {loadingPM && (
+                      <>
+                        <CircularProgress size={16} />
+                        <FormHelperText>Loading payment methods…</FormHelperText>
+                      </>
+                    )}
+                    {pmError && <FormHelperText error>{pmError}</FormHelperText>}
+                    {!loadingPM && !pmError && !instruments.length && (
+                      <FormHelperText>
+                        No saved payment methods for this customer.
+                      </FormHelperText>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <Divider sx={{ my: 1.5 }} />
                   <FormHelperText>
-                    No saved payment methods for this customer.
+                    We’ll email a PayPal invoice for this amount. Payment posts
+                    after PayPal confirms it.
                   </FormHelperText>
-                )}
-              </div>
+                  {paypalError ? (
+                    <FormHelperText error sx={{ mt: 0.5 }}>
+                      {paypalError}
+                    </FormHelperText>
+                  ) : null}
+                  {paypalAlreadySent && !paypalAlreadyPaid ? (
+                    <FormHelperText sx={{ mt: 0.5 }}>
+                      Waiting for PayPal payment.
+                    </FormHelperText>
+                  ) : null}
+                  {paypalAlreadyPaid ? (
+                    <FormHelperText sx={{ mt: 0.5 }}>
+                      PayPal payment received. Recording payment.
+                    </FormHelperText>
+                  ) : null}
+                  {!customerId ? (
+                    <FormHelperText error sx={{ mt: 0.5 }}>
+                      Missing customer id; cannot send PayPal invoice.
+                    </FormHelperText>
+                  ) : null}
+                </>
+              )}
             </div>
           </div>
         )}
@@ -289,20 +381,30 @@ export default function PayDrawer({
         <MUIButton onClick={onClose} disabled={disabled}>
           Cancel
         </MUIButton>
-        <MUIButton
-          variant="contained"
-          onClick={submit}
-          disabled={
-            disabled ||
-            loadingPM ||
-            !!pmError ||
-            !instruments.length ||
-            !method ||
-            !(Number(amount) > 0)
-          }
-        >
-          Pay {invoice ? fmt(Math.max(0, Number(amount) || 0)) : ""}
-        </MUIButton>
+        {mode === "saved" ? (
+          <MUIButton
+            variant="contained"
+            onClick={submit}
+            disabled={
+              disabled ||
+              loadingPM ||
+              !!pmError ||
+              !instruments.length ||
+              !method ||
+              !(Number(amount) > 0)
+            }
+          >
+            Pay {invoice ? fmt(Math.max(0, Number(amount) || 0)) : ""}
+          </MUIButton>
+        ) : (
+          <MUIButton
+            variant="contained"
+            onClick={submitPaypalOneTime}
+            disabled={paypalDisabled || !customerId || !(Number(amount) > 0)}
+          >
+            Send PayPal Invoice
+          </MUIButton>
+        )}
       </DialogActions>
 
       {/* Full-screen loader Backdrop  */}

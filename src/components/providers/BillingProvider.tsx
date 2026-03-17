@@ -128,6 +128,48 @@ function normalizeInvoice(raw: any): Invoice {
         ? String(raw.so_reference)
         : null,
     paymentProcessing: Boolean((raw.payment_processing ?? false) === true),
+    paypalInvoiceId:
+      raw.paypalInvoiceId != null
+        ? String(raw.paypalInvoiceId)
+        : raw.paypal_invoice_id != null
+        ? String(raw.paypal_invoice_id)
+        : null,
+    paypalPaymentStatus:
+      raw.paypalPaymentStatus != null
+        ? String(raw.paypalPaymentStatus)
+        : raw.paypal_payment_status != null
+        ? String(raw.paypal_payment_status)
+        : null,
+    paypalInvoiceStatus:
+      raw.paypalInvoiceStatus != null
+        ? String(raw.paypalInvoiceStatus)
+        : raw.paypal_invoice_status != null
+        ? String(raw.paypal_invoice_status)
+        : null,
+    paypalInvoiceUrl:
+      raw.paypalInvoiceUrl != null
+        ? String(raw.paypalInvoiceUrl)
+        : raw.paypal_invoice_url != null
+        ? String(raw.paypal_invoice_url)
+        : null,
+    paypalSentAt:
+      raw.paypalSentAt != null
+        ? String(raw.paypalSentAt)
+        : raw.paypal_sent_at != null
+        ? String(raw.paypal_sent_at)
+        : null,
+    paypalPaidAt:
+      raw.paypalPaidAt != null
+        ? String(raw.paypalPaidAt)
+        : raw.paypal_paid_at != null
+        ? String(raw.paypal_paid_at)
+        : null,
+    paypalError:
+      raw.paypalError != null
+        ? String(raw.paypalError)
+        : raw.paypal_error != null
+        ? String(raw.paypal_error)
+        : null,
     isBackordered:
       typeof raw.isBackordered === "boolean"
         ? raw.isBackordered

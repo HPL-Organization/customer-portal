@@ -605,6 +605,61 @@ export default function InvoicesPage() {
     }
   };
 
+  const submitPaypalOneTimePayment = async (
+    invoice: Invoice,
+    amount: number
+  ) => {
+    try {
+      const numericInvoiceId = Number(invoice.invoiceId);
+      if (!numericInvoiceId || !(Number(amount) > 0)) {
+        throw new Error("Invalid amount or invoice.");
+      }
+
+      const res = await fetch("/api/paypal/one-time", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nsCustomerId: providerNsId,
+          invoiceId: numericInvoiceId,
+          amount: Number(amount),
+          payerEmail: customerInfo?.email ?? null,
+        }),
+      });
+
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json?.ok === false) {
+        throw new Error(json?.error || "PayPal payment failed");
+      }
+
+      try {
+        await supabase
+          .from("invoices")
+          .update({
+            payment_processing: true,
+            paypal_payment_status: "sent",
+            paypal_sent_at: new Date().toISOString(),
+          })
+          .eq("invoice_id", numericInvoiceId);
+      } catch (e) {
+        console.warn("Could not set payment_processing flag:", e);
+      }
+
+      toast.success(
+        `PayPal invoice sent for ${fmt(Number(amount))} — awaiting payment`
+      );
+      setPayOpen(false);
+      setPayInvoice(null);
+      lastPaidIdRef.current = invoice.invoiceId;
+
+      await refresh();
+
+      setTab(TAB.PROCESSING);
+    } catch (e: any) {
+      console.error(e);
+      toast.error(e?.message || "Payment failed");
+    }
+  };
+
   const handleCloseDrawer = () => {
     setPayOpen(false);
     setPayInvoice(null);
@@ -1202,7 +1257,8 @@ export default function InvoicesPage() {
         open={payOpen}
         invoice={payInvoice}
         onClose={handleCloseDrawer}
-        onSubmit={submitPayment}
+        onSubmitSaved={submitPayment}
+        onSubmitPaypalOneTime={submitPaypalOneTimePayment}
       />
 
       <Portal>

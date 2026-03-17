@@ -38,6 +38,13 @@ export interface Invoice {
   shipAddress?: string | null;
   soReference?: string | null;
   paymentProcessing?: boolean;
+  paypalInvoiceId?: string | null;
+  paypalPaymentStatus?: string | null;
+  paypalInvoiceStatus?: string | null;
+  paypalInvoiceUrl?: string | null;
+  paypalSentAt?: string | null;
+  paypalPaidAt?: string | null;
+  paypalError?: string | null;
   isBackordered?: boolean | null;
   salesRep?: string | null;
 }

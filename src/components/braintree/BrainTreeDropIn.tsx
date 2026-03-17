@@ -8,8 +8,14 @@ type Props = {
   amount?: number;
   invoiceId?: number;
   vault?: boolean;
+  onNonce?: (p: {
+    nonce: string;
+    payerEmail: string | null;
+    raw: any;
+  }) => void | Promise<void>;
   onSuccess?: (r: any) => void;
   onError?: (m: string) => void;
+  checkoutEndpoint?: string;
 };
 
 export default function BraintreeDropIn({
@@ -18,14 +24,17 @@ export default function BraintreeDropIn({
   amount,
   invoiceId,
   vault,
+  onNonce,
   onSuccess,
   onError,
+  checkoutEndpoint,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const instanceRef = useRef<DropinInstance | null>(null);
-  const creatingRef = useRef(false);
   const autoTriggeredRef = useRef(false);
   const [ready, setReady] = useState(false);
+  const requestingRef = useRef(false);
+  const runIdRef = useRef(0);
   const log = (...a: any[]) => console.log("[BT]", ...a);
 
   const fmt2 = (n?: number | null) => Number(n ?? 1).toFixed(2);
@@ -56,12 +65,9 @@ export default function BraintreeDropIn({
   }
 
   useEffect(() => {
-    let cancelled = false;
+    const runId = ++runIdRef.current;
 
     (async () => {
-      if (creatingRef.current) return;
-      creatingRef.current = true;
-
       await teardown();
 
       const host = document.createElement("div");
@@ -85,13 +91,19 @@ export default function BraintreeDropIn({
           throw new Error(msg);
         }
 
+        if (runId !== runIdRef.current) return;
+
         await waitForVisible(host, 2500);
+
+        if (runId !== runIdRef.current) return;
 
         const cfg: any = {
           authorization: j.clientToken,
           container: host,
           card: false,
-          vaultManager: true,
+          // Vault manager UI is only relevant for vault flows; enabling it in
+          // checkout has caused flaky popup behavior in some environments.
+          vaultManager: mode === "vault",
           paypal:
             mode === "vault"
               ? { flow: "vault" }
@@ -110,7 +122,7 @@ export default function BraintreeDropIn({
           isReq: !!inst.isPaymentMethodRequestable,
         });
 
-        if (cancelled) {
+        if (runId !== runIdRef.current) {
           try {
             await inst.teardown();
           } catch {}
@@ -124,7 +136,7 @@ export default function BraintreeDropIn({
             autoTriggeredRef.current = true;
             try {
               const pm = await inst.requestPaymentMethod();
-              await handleNonce(pm.nonce);
+              await handlePaymentMethod(pm);
             } catch (e: any) {
               // user closed popup or error; keep UI ready for manual click
               log("auto trigger abort", e?.message || e);
@@ -156,25 +168,42 @@ export default function BraintreeDropIn({
         };
         log("init error", dbg);
         await teardown();
-        onError?.(e?.message || "All payment options failed to load.");
-      } finally {
-        creatingRef.current = false;
+        if (runId === runIdRef.current) {
+          onError?.(e?.message || "All payment options failed to load.");
+        }
       }
     })();
 
     return () => {
-      cancelled = true;
+      // Invalidate this run so any in-flight async work bails out.
+      runIdRef.current = runId + 1;
       teardown();
     };
   }, [nsCustomerId, mode, amount]);
 
-  async function handleNonce(nonce: string) {
+  async function handlePaymentMethod(payload: any) {
+    const nonce = typeof payload?.nonce === "string" ? payload.nonce : null;
+    if (!nonce) throw new Error("Missing payment method nonce");
+
+    const emailRaw =
+      payload?.details?.email ||
+      payload?.details?.payerEmail ||
+      payload?.details?.payerEmailAddress ||
+      null;
+    const payerEmailFromDetails =
+      typeof emailRaw === "string" && emailRaw.trim() ? emailRaw.trim() : null;
+
+    if (onNonce) {
+      await onNonce({ nonce, payerEmail: payerEmailFromDetails, raw: payload });
+      return;
+    }
+
     const body: any = { nsCustomerId, vault: Boolean(vault), nonce };
     if (mode === "checkout") {
       body.amount = fmt2(amount);
       body.invoiceId = invoiceId ?? null;
     }
-    const res = await fetch("/api/braintree/checkout", {
+    const res = await fetch(checkoutEndpoint || "/api/braintree/checkout", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -185,13 +214,28 @@ export default function BraintreeDropIn({
   }
 
   async function submit() {
+    if (requestingRef.current) return;
     try {
+      requestingRef.current = true;
       const inst = instanceRef.current as DropinInstance;
-      const pm = await inst.requestPaymentMethod();
-      await handleNonce(pm.nonce);
+      log("submit click", { mode, amount: fmt2(amount) });
+
+      const timeoutMs = 20000;
+      const pm = await Promise.race([
+        inst.requestPaymentMethod(),
+        new Promise((_, reject) =>
+          setTimeout(
+            () => reject(new Error("PayPal timed out or was closed.")),
+            timeoutMs
+          )
+        ),
+      ]);
+      await handlePaymentMethod(pm);
     } catch (e: any) {
       console.log("[BT] submit error", e?.message);
       onError?.(e?.message || "Payment failed");
+    } finally {
+      requestingRef.current = false;
     }
   }
 
@@ -199,7 +243,14 @@ export default function BraintreeDropIn({
     <div>
       <div ref={containerRef} style={{ minHeight: 96 }} />
       <button
-        onClick={submit}
+        type="button"
+        onClick={(e) => {
+          // Prevent any parent form submits from tearing down the drop-in
+          // (which would close the PayPal popup immediately).
+          e.preventDefault();
+          e.stopPropagation();
+          void submit();
+        }}
         className="mt-3 px-4 py-2 rounded bg-black text-white disabled:opacity-50"
         disabled={!instanceRef.current || !ready}
       >

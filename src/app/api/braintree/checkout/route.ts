@@ -235,7 +235,8 @@ export async function POST(req: NextRequest) {
   });
 
   const vaultedToken = tx?.paypalAccount?.token as string | undefined;
-  if (vaultedToken) {
+
+  if (vault && vaultedToken) {
     await supabase.from("payment_instruments").upsert(
       {
         customer_id: Number(nsCustomerId),
