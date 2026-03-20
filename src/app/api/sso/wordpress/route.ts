@@ -9,6 +9,8 @@ const DEFAULT_WP_SSO_CALLBACK =
   "https://matta238.sg-host.com/wp-admin/admin-ajax.php?action=hpl_sso_callback";
 const WP_SSO_CALLBACK =
   process.env.WP_SSO_CALLBACK?.trim() || DEFAULT_WP_SSO_CALLBACK;
+const PORTAL_BASE_URL =
+  process.env.NEXT_PUBLIC_SITE_URL?.trim() || "https://portal.hplapidary.com";
 
 export const dynamic = "force-dynamic";
 
@@ -34,10 +36,11 @@ export async function GET(req: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Not logged in : send them to portal login, then come back here
+  // Using the public portal URL here so SSO testing does not depend on the incoming host.(I am aware its not consistent in other routes)
   if (!user) {
-    const returnTo = encodeURIComponent(req.url);
-    return NextResponse.redirect(new URL(`/login?next=${returnTo}`, req.url));
+    const selfUrl = `${PORTAL_BASE_URL}/api/sso/wordpress`;
+    const returnTo = encodeURIComponent(selfUrl);
+    return NextResponse.redirect(`${PORTAL_BASE_URL}/login?next=${returnTo}`);
   }
 
   if (!user.email) {
