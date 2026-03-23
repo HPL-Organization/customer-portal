@@ -56,6 +56,7 @@ type Database = {
           ship_address: string | null;
           so_reference: string | null;
           payment_processing: boolean;
+          payment_processing_started_at: string | null;
           is_backordered: boolean | null;
           giveaway: boolean | null;
           warranty: boolean | null;
@@ -102,10 +103,10 @@ type Database = {
         Relationships: [];
       };
     };
-    Views: {};
-    Functions: {};
-    Enums: {};
-    CompositeTypes: {};
+    Views: Record<string, never>;
+    Functions: Record<string, never>;
+    Enums: Record<string, never>;
+    CompositeTypes: Record<string, never>;
   };
 };
 
@@ -400,6 +401,21 @@ function toNumOrNull(v: any): number | null {
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
 }
+
+function shouldProtectPaymentState(
+  row: Pick<
+    Database["public"]["Tables"]["invoices"]["Row"],
+    "payment_processing" | "payment_processing_started_at"
+  > | null | undefined,
+  manifestGeneratedAtMs: number
+) {
+  if (!row?.payment_processing || !row.payment_processing_started_at) {
+    return false;
+  }
+  const startedAtMs = Date.parse(row.payment_processing_started_at);
+  return Number.isFinite(startedAtMs) && startedAtMs > manifestGeneratedAtMs;
+}
+
 async function upsertSnapshotToSupabase(
   supabase: SupabaseClient<Database>,
   fileInvoices: any[],
@@ -407,31 +423,55 @@ async function upsertSnapshotToSupabase(
   filePayments: any[],
   dbInvMap: Map<number, Database["public"]["Tables"]["invoices"]["Row"]>,
   fileInvoiceIds: number[],
-  missingInFiles: number[]
+  missingInFiles: number[],
+  manifestGeneratedAt: string
 ) {
   const nowIso = new Date().toISOString();
+  const manifestGeneratedAtMs = Date.parse(manifestGeneratedAt);
+  const protectedInvoiceIds = new Set<number>();
+  for (const [invoiceId, row] of dbInvMap.entries()) {
+    if (shouldProtectPaymentState(row, manifestGeneratedAtMs)) {
+      protectedInvoiceIds.add(invoiceId);
+    }
+  }
 
   const toInvoiceRow = (
     f: any
   ): Database["public"]["Tables"]["invoices"]["Insert"] => {
     const existing = dbInvMap.get(Number(f.invoice_id));
+    const protectPaymentState = shouldProtectPaymentState(
+      existing,
+      manifestGeneratedAtMs
+    );
     return {
       invoice_id: Number(f.invoice_id),
       tran_id: coerceNull(f.tran_id),
       trandate: normalizeUsDateToIso(coerceNull(f.trandate)),
       total: toNumOrNull(f.total),
       tax_total: toNumOrNull(f.tax_total),
-      amount_paid: toNumOrNull(f.amount_paid),
-      amount_remaining: toNumOrNull(f.amount_remaining),
+      amount_paid: protectPaymentState
+        ? existing?.amount_paid ?? null
+        : toNumOrNull(f.amount_paid),
+      amount_remaining: protectPaymentState
+        ? existing?.amount_remaining ?? null
+        : toNumOrNull(f.amount_remaining),
       customer_id: toNumOrNull(f.customer_id),
       created_from_so_id: toNumOrNull(f.created_from_so_id),
       created_from_so_tranid: coerceNull(f.created_from_so_tranid),
       netsuite_url: coerceNull(existing?.netsuite_url),
+      synced_at: protectPaymentState
+        ? existing?.synced_at ?? null
+        : manifestGeneratedAt,
       ns_deleted_at: null,
       sales_rep: coerceNull(f.sales_rep),
       ship_address: coerceNull(f.ship_address),
       so_reference: coerceNull(f.so_reference),
-      payment_processing: existing?.payment_processing ?? false,
+      payment_processing: protectPaymentState
+        ? existing?.payment_processing ?? false
+        : false,
+      payment_processing_started_at: protectPaymentState
+        ? existing?.payment_processing_started_at ?? null
+        : null,
       is_backordered:
         typeof f.isBackordered === "boolean"
           ? f.isBackordered
@@ -496,11 +536,14 @@ async function upsertSnapshotToSupabase(
       .delete()
       .in("invoice_id", ids);
     if (d1) throw d1;
-    const { error: d2 } = await supabase
-      .from("invoice_payments")
-      .delete()
-      .in("invoice_id", ids);
-    if (d2) throw d2;
+    const paymentIds = ids.filter((id) => !protectedInvoiceIds.has(id));
+    if (paymentIds.length) {
+      const { error: d2 } = await supabase
+        .from("invoice_payments")
+        .delete()
+        .in("invoice_id", paymentIds);
+      if (d2) throw d2;
+    }
   }
 
   if (fileLines.length) {
@@ -516,7 +559,9 @@ async function upsertSnapshotToSupabase(
 
   if (filePayments.length) {
     const payRows: Database["public"]["Tables"]["invoice_payments"]["Insert"][] =
-      filePayments.map(toPaymentRow);
+      filePayments
+        .filter((r) => !protectedInvoiceIds.has(Number(r.invoice_id)))
+        .map(toPaymentRow);
     for (const batch of chunk(payRows, 1000)) {
       const { error } = await supabase
         .from("invoice_payments")
@@ -525,11 +570,15 @@ async function upsertSnapshotToSupabase(
     }
   }
 
-  for (const ids of chunk(fileInvoiceIds, 1000)) {
+  const invoiceIdsEligibleForPaymentClear = fileInvoiceIds.filter(
+    (id) => !protectedInvoiceIds.has(id)
+  );
+  for (const ids of chunk(invoiceIdsEligibleForPaymentClear, 1000)) {
     const { error } = await supabase
       .from("invoices")
       .update({
         payment_processing: false,
+        payment_processing_started_at: null,
       } as Database["public"]["Tables"]["invoices"]["Update"])
       .in("invoice_id", ids)
       .is("payment_processing", true);
@@ -554,8 +603,11 @@ async function upsertSnapshotToSupabase(
     upserted_invoices: invoiceRows.length,
     replaced_lines_for_invoices: fileInvoiceIds.length,
     inserted_lines: fileLines.length,
-    inserted_payments: filePayments.length,
+    inserted_payments: filePayments.filter(
+      (r) => !protectedInvoiceIds.has(Number(r.invoice_id))
+    ).length,
     soft_deleted_invoices: missingInFiles.length,
+    protected_payment_state_invoices: protectedInvoiceIds.size,
   };
 }
 
@@ -594,6 +646,7 @@ export async function POST(req: NextRequest) {
 
     const manifestText = await restletGetLines(token, manifestId, 1000);
     const manifest = JSON.parse(stripBom(manifestText)) as ManifestShape;
+    console.log("[sync-invoices-two] manifest.generated_at", manifest.generated_at);
 
     const invId = manifest?.files?.invoices?.id;
     const lnId = manifest?.files?.invoice_lines?.id;
@@ -687,6 +740,7 @@ export async function POST(req: NextRequest) {
         "ship_address",
         "so_reference",
         "payment_processing",
+        "payment_processing_started_at",
         "is_backordered",
         "giveaway",
         "warranty",
@@ -902,7 +956,12 @@ export async function POST(req: NextRequest) {
       filePayments,
       dbInvMap,
       fileInvoiceIdsForPaymentReset,
-      missingInFilesForDelete
+      missingInFilesForDelete,
+      manifest.generated_at
+    );
+    console.log(
+      "[sync-invoices-two] payment-state protected invoices",
+      supaResult.protected_payment_state_invoices
     );
 
     let emailSentCount = 0;
@@ -1224,10 +1283,13 @@ export async function POST(req: NextRequest) {
         counts: compareFull.compare.summary,
         upsert: supaResult,
         debug: {
+          manifest_generated_at: manifest.generated_at,
           missing_in_files_count: missingInFiles.length,
           missing_in_files_sample: missingInFiles.slice(0, 10),
           missing_in_files_recent_oc_skipped:
             missingInFiles.length - missingInFilesForDelete.length,
+          payment_state_protected_invoices:
+            supaResult.protected_payment_state_invoices,
         },
         email_sent: emailSentCount,
       }),
