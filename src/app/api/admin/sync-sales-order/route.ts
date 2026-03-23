@@ -48,6 +48,7 @@ type SalesOrdersRow = {
   so_id: number | null;
   tran_id: string | null;
   trandate: string | null;
+  status: string | null;
   total: number | null;
   tax_total: number | null;
   hold_till: string | null;
@@ -466,6 +467,7 @@ export async function POST(req: NextRequest) {
           so_id,
           tran_id: coerceText(r.tran_id),
           trandate: normalizeUsDateToIso(r.trandate),
+          status: coerceText(r.status),
           total: toNumOrNull(r.total),
           tax_total: toNumOrNull(r.tax_total),
           customer_id,
