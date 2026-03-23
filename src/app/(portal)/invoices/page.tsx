@@ -488,7 +488,7 @@ export default function InvoicesPage() {
     if (!autoPayActive || isOpeningRef.current) return;
     isOpeningRef.current = true;
 
-    let next = openInvoices[0];
+    const next = openInvoices[0];
 
     if (next && next.invoiceId === lastPaidIdRef.current && !payOpen) {
       lastPaidIdRef.current = null;
@@ -581,7 +581,10 @@ export default function InvoicesPage() {
       try {
         await supabase
           .from("invoices")
-          .update({ payment_processing: true })
+          .update({
+            payment_processing: true,
+            payment_processing_started_at: new Date().toISOString(),
+          })
           .eq("invoice_id", numericInvoiceId);
       } catch (e) {
         console.warn("Could not set payment_processing flag:", e);

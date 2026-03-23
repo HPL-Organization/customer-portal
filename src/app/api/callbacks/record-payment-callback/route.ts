@@ -76,7 +76,10 @@ export async function POST(req: NextRequest) {
 
   const { error } = await supa
     .from("invoices")
-    .update({ payment_processing: false })
+    .update({
+      payment_processing: false,
+      payment_processing_started_at: null,
+    })
     .eq("invoice_id", invoiceId);
 
   if (error) {
