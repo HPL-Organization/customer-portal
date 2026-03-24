@@ -25,12 +25,26 @@ const RL_DEPLOY_ID = "customdeploy1";
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
+const EMAIL_DEBUG = false;
+
+type ManifestPart = {
+  id: string | number;
+  name: string;
+  rows: number;
+};
+
+type ManifestFileEntry =
+  | { id: string | number; name: string; rows: number }
+  | { total_rows: number; parts: ManifestPart[] };
+
 type ManifestShape = {
   generated_at: string;
+  tag?: string;
+  folder_id?: number;
   files: {
-    invoices: { id: string | number; name: string; rows: number };
-    invoice_lines: { id: string | number; name: string; rows: number };
-    invoice_payments: { id: string | number; name: string; rows: number };
+    invoices: ManifestFileEntry;
+    invoice_lines: ManifestFileEntry;
+    invoice_payments: ManifestFileEntry;
   };
 };
 
@@ -137,7 +151,7 @@ function parseRetryAfterMs(val: string | number | undefined): number | null {
 
 async function getCustomerInfo(
   customerId: number,
-  headers: Record<string, string>
+  headers: Record<string, string>,
 ): Promise<{ firstName: string; email: string } | null> {
   try {
     const q = `
@@ -164,7 +178,7 @@ async function getCustomerInfo(
 async function netsuiteQuery(
   q: string,
   headers: Record<string, string>,
-  tag?: string
+  tag?: string,
 ) {
   let attempt = 0;
   const delays = [500, 1000, 2000, 4000, 8000];
@@ -174,7 +188,7 @@ async function netsuiteQuery(
       return await axios.post(
         `${BASE_URL}/query/v1/suiteql`,
         { q },
-        { headers }
+        { headers },
       );
     } catch (err: any) {
       const status = err?.response?.status;
@@ -212,7 +226,7 @@ async function netsuiteQuery(
 async function getFileIdByNameInFolder(
   headers: Record<string, string>,
   name: string,
-  folderId: number
+  folderId: number,
 ): Promise<number | null> {
   const q = `
     SELECT id
@@ -250,7 +264,7 @@ function stripBom(s: string) {
 async function restletGetLines(
   token: string,
   fileId: number | string,
-  pageLines = 1000
+  pageLines = 1000,
 ) {
   const url = restletUrl(NETSUITE_ACCOUNT_ID);
   let out = "";
@@ -292,6 +306,50 @@ async function restletGetLines(
   return out;
 }
 
+function chunk<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+async function runInBatches(
+  ids: number[],
+  size: number,
+  fn: (batch: number[]) => Promise<void>,
+) {
+  for (let i = 0; i < ids.length; i += size) {
+    await fn(ids.slice(i, i + size));
+  }
+}
+
+function isMultipartEntry(
+  entry: ManifestFileEntry | undefined | null,
+): entry is { total_rows: number; parts: ManifestPart[] } {
+  return !!entry && Array.isArray((entry as any).parts);
+}
+
+async function readManifestEntryJsonl(
+  token: string,
+  entry: ManifestFileEntry,
+  pageLines = 1000,
+): Promise<string> {
+  if (isMultipartEntry(entry)) {
+    const parts = entry.parts || [];
+    const texts: string[] = [];
+    for (const part of parts) {
+      const fileId = Number(part.id);
+      if (!Number.isFinite(fileId) || fileId <= 0) continue;
+      const text = await restletGetLines(token, fileId, pageLines);
+      if (text.trim()) texts.push(text);
+    }
+    return texts.join("\n");
+  }
+
+  const fileId = Number((entry as any).id);
+  if (!Number.isFinite(fileId) || fileId <= 0) return "";
+  return await restletGetLines(token, fileId, pageLines);
+}
+
 function parseJsonl(text: string) {
   const lines = text.split(/\r?\n/);
   const out: any[] = [];
@@ -323,7 +381,7 @@ function diffObject(
   before: Record<string, any>,
   after: Record<string, any>,
   fields: string[],
-  numericFields: Set<string>
+  numericFields: Set<string>,
 ) {
   const changes: Record<string, { before: any; after: any }> = {};
   for (const f of fields) {
@@ -340,7 +398,7 @@ async function fetchExistingInBatches<T>(
   table: "invoices" | "invoice_lines" | "invoice_payments",
   cols: string[],
   keyCol: "invoice_id",
-  ids: number[]
+  ids: number[],
 ): Promise<T[]> {
   const out: T[] = [];
   const batch = 1000;
@@ -368,7 +426,7 @@ function normalizeUsDateToIso(d: any): string | null {
 }
 
 async function fetchActiveInvoiceIds(
-  supabase: SupabaseClient<Database>
+  supabase: SupabaseClient<Database>,
 ): Promise<number[]> {
   const out: number[] = [];
   let from = 0;
@@ -403,11 +461,14 @@ function toNumOrNull(v: any): number | null {
 }
 
 function shouldProtectPaymentState(
-  row: Pick<
-    Database["public"]["Tables"]["invoices"]["Row"],
-    "payment_processing" | "payment_processing_started_at"
-  > | null | undefined,
-  manifestGeneratedAtMs: number
+  row:
+    | Pick<
+        Database["public"]["Tables"]["invoices"]["Row"],
+        "payment_processing" | "payment_processing_started_at"
+      >
+    | null
+    | undefined,
+  manifestGeneratedAtMs: number,
 ) {
   if (!row?.payment_processing || !row.payment_processing_started_at) {
     return false;
@@ -424,11 +485,12 @@ async function upsertSnapshotToSupabase(
   dbInvMap: Map<number, Database["public"]["Tables"]["invoices"]["Row"]>,
   fileInvoiceIds: number[],
   missingInFiles: number[],
-  manifestGeneratedAt: string
+  manifestGeneratedAt: string,
 ) {
   const nowIso = new Date().toISOString();
   const manifestGeneratedAtMs = Date.parse(manifestGeneratedAt);
   const protectedInvoiceIds = new Set<number>();
+
   for (const [invoiceId, row] of dbInvMap.entries()) {
     if (shouldProtectPaymentState(row, manifestGeneratedAtMs)) {
       protectedInvoiceIds.add(invoiceId);
@@ -436,13 +498,14 @@ async function upsertSnapshotToSupabase(
   }
 
   const toInvoiceRow = (
-    f: any
+    f: any,
   ): Database["public"]["Tables"]["invoices"]["Insert"] => {
     const existing = dbInvMap.get(Number(f.invoice_id));
     const protectPaymentState = shouldProtectPaymentState(
       existing,
-      manifestGeneratedAtMs
+      manifestGeneratedAtMs,
     );
+
     return {
       invoice_id: Number(f.invoice_id),
       tran_id: coerceNull(f.tran_id),
@@ -450,45 +513,45 @@ async function upsertSnapshotToSupabase(
       total: toNumOrNull(f.total),
       tax_total: toNumOrNull(f.tax_total),
       amount_paid: protectPaymentState
-        ? existing?.amount_paid ?? null
+        ? (existing?.amount_paid ?? null)
         : toNumOrNull(f.amount_paid),
       amount_remaining: protectPaymentState
-        ? existing?.amount_remaining ?? null
+        ? (existing?.amount_remaining ?? null)
         : toNumOrNull(f.amount_remaining),
       customer_id: toNumOrNull(f.customer_id),
       created_from_so_id: toNumOrNull(f.created_from_so_id),
       created_from_so_tranid: coerceNull(f.created_from_so_tranid),
       netsuite_url: coerceNull(existing?.netsuite_url),
       synced_at: protectPaymentState
-        ? existing?.synced_at ?? null
+        ? (existing?.synced_at ?? null)
         : manifestGeneratedAt,
       ns_deleted_at: null,
       sales_rep: coerceNull(f.sales_rep),
       ship_address: coerceNull(f.ship_address),
       so_reference: coerceNull(f.so_reference),
       payment_processing: protectPaymentState
-        ? existing?.payment_processing ?? false
+        ? (existing?.payment_processing ?? false)
         : false,
       payment_processing_started_at: protectPaymentState
-        ? existing?.payment_processing_started_at ?? null
+        ? (existing?.payment_processing_started_at ?? null)
         : null,
       is_backordered:
         typeof f.isBackordered === "boolean"
           ? f.isBackordered
-          : existing?.is_backordered ?? null,
+          : (existing?.is_backordered ?? null),
       giveaway:
         typeof f.giveaway === "boolean"
           ? f.giveaway
-          : existing?.giveaway ?? null,
+          : (existing?.giveaway ?? null),
       warranty:
         typeof f.warranty === "boolean"
           ? f.warranty
-          : existing?.warranty ?? null,
+          : (existing?.warranty ?? null),
     };
   };
 
   const toLineRow = (
-    r: any
+    r: any,
   ): Database["public"]["Tables"]["invoice_lines"]["Insert"] => ({
     invoice_id: Number(r.invoice_id),
     line_no: Number(r.line_no),
@@ -503,7 +566,7 @@ async function upsertSnapshotToSupabase(
   });
 
   const toPaymentRow = (
-    r: any
+    r: any,
   ): Database["public"]["Tables"]["invoice_payments"]["Insert"] => ({
     invoice_id: Number(r.invoice_id),
     payment_id: Number(r.payment_id),
@@ -514,41 +577,46 @@ async function upsertSnapshotToSupabase(
     payment_option: coerceNull(r.payment_option),
   });
 
-  const chunk = <T>(arr: T[], size: number) => {
-    const out: T[][] = [];
-    for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-    return out;
-  };
-
   const invoiceRows: Database["public"]["Tables"]["invoices"]["Insert"][] =
     fileInvoices.map(toInvoiceRow);
 
-  for (const batch of chunk(invoiceRows, 1000)) {
-    const { error } = await supabase
-      .from("invoices")
-      .upsert(batch, { onConflict: "invoice_id" });
-    if (error) throw error;
+  if (invoiceRows.length) {
+    for (const batch of chunk(invoiceRows, 500)) {
+      const { error } = await supabase
+        .from("invoices")
+        .upsert(batch, { onConflict: "invoice_id" });
+      if (error) throw error;
+    }
   }
 
-  for (const ids of chunk(fileInvoiceIds, 1000)) {
-    const { error: d1 } = await supabase
-      .from("invoice_lines")
-      .delete()
-      .in("invoice_id", ids);
-    if (d1) throw d1;
-    const paymentIds = ids.filter((id) => !protectedInvoiceIds.has(id));
-    if (paymentIds.length) {
-      const { error: d2 } = await supabase
-        .from("invoice_payments")
+  if (fileInvoiceIds.length) {
+    await runInBatches(fileInvoiceIds, 500, async (batch) => {
+      const { error } = await supabase
+        .from("invoice_lines")
         .delete()
-        .in("invoice_id", paymentIds);
-      if (d2) throw d2;
+        .in("invoice_id", batch);
+      if (error) throw error;
+    });
+
+    const paymentIdsEligibleForDelete = fileInvoiceIds.filter(
+      (id) => !protectedInvoiceIds.has(id),
+    );
+
+    if (paymentIdsEligibleForDelete.length) {
+      await runInBatches(paymentIdsEligibleForDelete, 500, async (batch) => {
+        const { error } = await supabase
+          .from("invoice_payments")
+          .delete()
+          .in("invoice_id", batch);
+        if (error) throw error;
+      });
     }
   }
 
   if (fileLines.length) {
     const lineRows: Database["public"]["Tables"]["invoice_lines"]["Insert"][] =
       fileLines.map(toLineRow);
+
     for (const batch of chunk(lineRows, 1000)) {
       const { error } = await supabase
         .from("invoice_lines")
@@ -562,6 +630,7 @@ async function upsertSnapshotToSupabase(
       filePayments
         .filter((r) => !protectedInvoiceIds.has(Number(r.invoice_id)))
         .map(toPaymentRow);
+
     for (const batch of chunk(payRows, 1000)) {
       const { error } = await supabase
         .from("invoice_payments")
@@ -571,32 +640,40 @@ async function upsertSnapshotToSupabase(
   }
 
   const invoiceIdsEligibleForPaymentClear = fileInvoiceIds.filter(
-    (id) => !protectedInvoiceIds.has(id)
+    (id) => !protectedInvoiceIds.has(id),
   );
-  for (const ids of chunk(invoiceIdsEligibleForPaymentClear, 1000)) {
-    const { error } = await supabase
-      .from("invoices")
-      .update({
-        payment_processing: false,
-        payment_processing_started_at: null,
-      } as Database["public"]["Tables"]["invoices"]["Update"])
-      .in("invoice_id", ids)
-      .is("payment_processing", true);
-    if (error) throw error;
+
+  if (invoiceIdsEligibleForPaymentClear.length) {
+    await runInBatches(
+      invoiceIdsEligibleForPaymentClear,
+      500,
+      async (batch) => {
+        const { error } = await supabase
+          .from("invoices")
+          .update({
+            payment_processing: false,
+            payment_processing_started_at: null,
+          } as Database["public"]["Tables"]["invoices"]["Update"])
+          .in("invoice_id", batch)
+          .is("payment_processing", true);
+
+        if (error) throw error;
+      },
+    );
   }
 
   if (missingInFiles.length) {
-    for (const ids of chunk(missingInFiles, 1000)) {
+    await runInBatches(missingInFiles, 500, async (batch) => {
       const { error } = await supabase
         .from("invoices")
         .update({
           ns_deleted_at: nowIso,
         } as Database["public"]["Tables"]["invoices"]["Update"])
-        .in("invoice_id", ids)
+        .in("invoice_id", batch)
         .is("ns_deleted_at", null);
 
       if (error) throw error;
-    }
+    });
   }
 
   return {
@@ -604,7 +681,7 @@ async function upsertSnapshotToSupabase(
     replaced_lines_for_invoices: fileInvoiceIds.length,
     inserted_lines: fileLines.length,
     inserted_payments: filePayments.filter(
-      (r) => !protectedInvoiceIds.has(Number(r.invoice_id))
+      (r) => !protectedInvoiceIds.has(Number(r.invoice_id)),
     ).length,
     soft_deleted_invoices: missingInFiles.length,
     protected_payment_state_invoices: protectedInvoiceIds.size,
@@ -619,7 +696,7 @@ export async function POST(req: NextRequest) {
     ) {
       return new Response(
         JSON.stringify({ ok: false, error: "Unauthorized" }),
-        { status: 401 }
+        { status: 401 },
       );
     }
 
@@ -630,8 +707,9 @@ export async function POST(req: NextRequest) {
       (await getFileIdByNameInFolder(
         headers,
         MANIFEST_NAME,
-        MANIFEST_FOLDER_ID
+        MANIFEST_FOLDER_ID,
       )) ?? null;
+
     if (!manifestId) {
       return new Response(
         JSON.stringify({
@@ -640,28 +718,42 @@ export async function POST(req: NextRequest) {
           details: "manifest_latest.json not found in folder",
           folderId: MANIFEST_FOLDER_ID,
         }),
-        { status: 404 }
+        { status: 404 },
       );
     }
 
     const manifestText = await restletGetLines(token, manifestId, 1000);
     const manifest = JSON.parse(stripBom(manifestText)) as ManifestShape;
-    console.log("[sync-invoices-two] manifest.generated_at", manifest.generated_at);
+    console.log(
+      "[sync-invoices-two] manifest.generated_at",
+      manifest.generated_at,
+    );
 
-    const invId = manifest?.files?.invoices?.id;
-    const lnId = manifest?.files?.invoice_lines?.id;
-    const payId = manifest?.files?.invoice_payments?.id;
-    if (!invId || !lnId || !payId) {
+    const invEntry = manifest?.files?.invoices;
+    const lnEntry = manifest?.files?.invoice_lines;
+    const payEntry = manifest?.files?.invoice_payments;
+
+    const invValid = isMultipartEntry(invEntry)
+      ? invEntry.parts?.length
+      : !!(invEntry as any)?.id;
+    const lnValid = isMultipartEntry(lnEntry)
+      ? lnEntry.parts?.length
+      : !!(lnEntry as any)?.id;
+    const payValid = isMultipartEntry(payEntry)
+      ? payEntry.parts?.length
+      : !!(payEntry as any)?.id;
+
+    if (!invValid || !lnValid || !payValid) {
       return new Response(
         JSON.stringify({ ok: false, error: "InvalidManifest" }),
-        { status: 422 }
+        { status: 422 },
       );
     }
 
     const [invText, lnText, payText] = await Promise.all([
-      restletGetLines(token, invId, 1000),
-      restletGetLines(token, lnId, 1000),
-      restletGetLines(token, payId, 1000),
+      readManifestEntryJsonl(token, invEntry, 1000),
+      readManifestEntryJsonl(token, lnEntry, 1000),
+      readManifestEntryJsonl(token, payEntry, 1000),
     ]);
 
     const outDir = path.resolve(process.cwd(), "exports");
@@ -685,24 +777,24 @@ export async function POST(req: NextRequest) {
       new Set<number>(
         fileInvoices
           .map((r: any) => Number(r.invoice_id))
-          .filter((n: number) => Number.isFinite(n) && n > 0)
-      )
+          .filter((n: number) => Number.isFinite(n) && n > 0),
+      ),
     ).sort((a, b) => a - b);
 
     const fileInvoiceIdsFromLines = Array.from(
       new Set<number>(
         fileLines
           .map((r: any) => Number(r.invoice_id))
-          .filter((n: number) => Number.isFinite(n) && n > 0)
-      )
+          .filter((n: number) => Number.isFinite(n) && n > 0),
+      ),
     );
 
     const fileInvoiceIdsFromPays = Array.from(
       new Set<number>(
         filePayments
           .map((r: any) => Number(r.invoice_id))
-          .filter((n: number) => Number.isFinite(n) && n > 0)
-      )
+          .filter((n: number) => Number.isFinite(n) && n > 0),
+      ),
     );
 
     const fileInvoiceIds = Array.from(
@@ -710,7 +802,7 @@ export async function POST(req: NextRequest) {
         ...fileInvoiceIdsFromInvoices,
         ...fileInvoiceIdsFromLines,
         ...fileInvoiceIdsFromPays,
-      ])
+      ]),
     ).sort((a, b) => a - b);
 
     const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_SERVICE_KEY);
@@ -746,7 +838,7 @@ export async function POST(req: NextRequest) {
         "warranty",
       ],
       "invoice_id",
-      fileInvoiceIds
+      fileInvoiceIds,
     );
 
     const existingLines = await fetchExistingInBatches<
@@ -767,7 +859,7 @@ export async function POST(req: NextRequest) {
         "comment",
       ],
       "invoice_id",
-      fileInvoiceIds
+      fileInvoiceIds,
     );
 
     const existingPayments = await fetchExistingInBatches<
@@ -785,7 +877,7 @@ export async function POST(req: NextRequest) {
         "payment_option",
       ],
       "invoice_id",
-      fileInvoiceIds
+      fileInvoiceIds,
     );
 
     const fileInvMap = new Map<number, any>();
@@ -881,7 +973,7 @@ export async function POST(req: NextRequest) {
     const fileInvOnlySet = new Set<number>(fileInvoiceIdsFromInvoices);
     const dbActiveSet = new Set<number>(dbActiveIds);
     const newInvoices = fileInvoiceIdsFromInvoices.filter(
-      (id) => !dbActiveSet.has(id)
+      (id) => !dbActiveSet.has(id),
     );
     const missingInFiles = dbActiveIds.filter((id) => !fileInvOnlySet.has(id));
     let missingInFilesForDelete = missingInFiles;
@@ -898,7 +990,7 @@ export async function POST(req: NextRequest) {
         "invoices",
         ["invoice_id", "created_at", "created_by"],
         "invoice_id",
-        missingInFiles
+        missingInFiles,
       );
 
       const cutoffMs = Date.now() - 90 * 60 * 1000;
@@ -915,7 +1007,7 @@ export async function POST(req: NextRequest) {
 
       if (recentOcIds.size) {
         missingInFilesForDelete = missingInFiles.filter(
-          (id) => !recentOcIds.has(id)
+          (id) => !recentOcIds.has(id),
         );
       }
     }
@@ -957,55 +1049,77 @@ export async function POST(req: NextRequest) {
       dbInvMap,
       fileInvoiceIdsForPaymentReset,
       missingInFilesForDelete,
-      manifest.generated_at
+      manifest.generated_at,
     );
+
     console.log(
       "[sync-invoices-two] payment-state protected invoices",
-      supaResult.protected_payment_state_invoices
+      supaResult.protected_payment_state_invoices,
     );
 
     let emailSentCount = 0;
+    let emailWouldSendCount = 0;
+
     if (newUnpaidInvoices.length) {
       const custIds = Array.from(
         new Set(
           newUnpaidInvoices
             .map((x) => x.customer_id)
-            .filter((x): x is number => typeof x === "number")
-        )
+            .filter((x): x is number => typeof x === "number"),
+        ),
       );
 
       const customerInfoMap = new Map<
         number,
         { firstName: string; email: string }
       >();
+
       for (let i = 0; i < custIds.length; i += 50) {
         const batch = custIds.slice(i, i + 50);
         const results = await Promise.all(
-          batch.map((cid) => getCustomerInfo(cid, headers))
+          batch.map((cid) => getCustomerInfo(cid, headers)),
         );
+
         for (let j = 0; j < batch.length; j++) {
           const info = results[j];
           if (info) customerInfoMap.set(batch[j], info);
         }
+
         await sleep(120);
       }
 
-      for (const inv of newUnpaidInvoices) {
+      const sendableInvoices = newUnpaidInvoices.filter((inv) => {
         const info = inv.customer_id
           ? customerInfoMap.get(inv.customer_id)
           : null;
-        if (!info) continue;
-        try {
-          await sendUnpaidInvoiceNotification(
-            { firstName: info.firstName, email: info.email },
-            {
-              invoiceId: inv.tran_id || `INV-${inv.invoice_id}`,
-              total: inv.total,
-              amountRemaining: inv.amount_remaining,
-            }
-          );
-          emailSentCount++;
-        } catch {}
+        return !!info;
+      });
+
+      emailWouldSendCount = sendableInvoices.length;
+
+      if (EMAIL_DEBUG) {
+        console.log(
+          `[sync-invoices-two] EMAIL_DEBUG enabled: would send ${emailWouldSendCount} unpaid invoice email(s)`,
+        );
+      } else {
+        for (const inv of sendableInvoices) {
+          const info = inv.customer_id
+            ? customerInfoMap.get(inv.customer_id)
+            : null;
+          if (!info) continue;
+
+          try {
+            await sendUnpaidInvoiceNotification(
+              { firstName: info.firstName, email: info.email },
+              {
+                invoiceId: inv.tran_id || `INV-${inv.invoice_id}`,
+                total: inv.total,
+                amountRemaining: inv.amount_remaining,
+              },
+            );
+            emailSentCount++;
+          } catch {}
+        }
       }
     }
 
@@ -1040,8 +1154,7 @@ export async function POST(req: NextRequest) {
         is_backordered:
           typeof f.isBackordered === "boolean"
             ? f.isBackordered
-            : d.is_backordered ?? null,
-
+            : (d.is_backordered ?? null),
         giveaway: typeof f.giveaway === "boolean" ? f.giveaway : null,
         warranty: typeof f.warranty === "boolean" ? f.warranty : null,
       };
@@ -1069,8 +1182,9 @@ export async function POST(req: NextRequest) {
       };
 
       const changes = diffObject(dNorm, fNorm, invoiceFields, invoiceNumeric);
-      if (Object.keys(changes).length)
+      if (Object.keys(changes).length) {
         changedInvoices.push({ invoice_id: id, changes });
+      }
     }
 
     const fileLineKeys = new Set(Array.from(fileLineMap.keys()));
@@ -1086,13 +1200,16 @@ export async function POST(req: NextRequest) {
 
     for (const k of fileLineKeys) if (!dbLineKeys.has(k)) addedLines.push(k);
     for (const k of dbLineKeys) if (!fileLineKeys.has(k)) removedLines.push(k);
+
     for (const k of fileLineKeys) {
       if (!dbLineKeys.has(k)) continue;
       const f = fileLineMap.get(k);
       const d = dbLineMap.get(k);
       if (!f || !d) continue;
+
       const inv = Number(f.invoice_id ?? d.invoice_id);
       const ln = Number(f.line_no ?? d.line_no);
+
       const fNorm: Record<string, any> = {
         item_id: f.item_id ?? null,
         item_sku: f.item_sku ?? null,
@@ -1103,6 +1220,7 @@ export async function POST(req: NextRequest) {
         description: f.description ?? null,
         comment: f.comment ?? null,
       };
+
       const dNorm: Record<string, any> = {
         item_id: d.item_id,
         item_sku: d.item_sku,
@@ -1113,6 +1231,7 @@ export async function POST(req: NextRequest) {
         description: d.description,
         comment: d.comment,
       };
+
       const changes = diffObject(dNorm, fNorm, lineFields, lineNumeric);
       if (Object.keys(changes).length) {
         changedLines.push({ key: k, invoice_id: inv, line_no: ln, changes });
@@ -1132,13 +1251,16 @@ export async function POST(req: NextRequest) {
 
     for (const k of filePayKeys) if (!dbPayKeys.has(k)) addedPayments.push(k);
     for (const k of dbPayKeys) if (!filePayKeys.has(k)) removedPayments.push(k);
+
     for (const k of filePayKeys) {
       if (!dbPayKeys.has(k)) continue;
       const f = filePayMap.get(k);
       const d = dbPayMap.get(k);
       if (!f || !d) continue;
+
       const inv = Number(f.invoice_id ?? d.invoice_id);
       const pid = Number(f.payment_id ?? d.payment_id);
+
       const fNorm: Record<string, any> = {
         tran_id: f.tran_id ?? null,
         payment_date: f.payment_date ?? null,
@@ -1146,6 +1268,7 @@ export async function POST(req: NextRequest) {
         status: f.status ?? null,
         payment_option: f.payment_option ?? null,
       };
+
       const dNorm: Record<string, any> = {
         tran_id: d.tran_id,
         payment_date: d.payment_date,
@@ -1153,6 +1276,7 @@ export async function POST(req: NextRequest) {
         status: d.status,
         payment_option: d.payment_option,
       };
+
       const changes = diffObject(dNorm, fNorm, paymentFields, paymentNumeric);
       if (Object.keys(changes).length) {
         changedPayments.push({
@@ -1170,18 +1294,20 @@ export async function POST(req: NextRequest) {
       sum_lines: number;
       delta: number;
     }> = [];
+
     const fileLinesByInv = new Map<number, any[]>();
     for (const r of fileLines) {
       const inv = Number(r.invoice_id);
       if (!fileLinesByInv.has(inv)) fileLinesByInv.set(inv, []);
       fileLinesByInv.get(inv)!.push(r);
     }
+
     for (const invId of fileInvoiceIds) {
       const finv = fileInvMap.get(invId);
       if (!finv) continue;
       const sum = (fileLinesByInv.get(invId) || []).reduce(
         (acc, r) => acc + Number(r.amount || 0),
-        0
+        0,
       );
       const total = Number(finv.total || 0);
       const delta = Math.abs(total - sum);
@@ -1202,12 +1328,13 @@ export async function POST(req: NextRequest) {
       amount_remaining: number;
       delta: number;
     }> = [];
+
     for (const invId of fileInvoiceIds) {
       const finv = fileInvMap.get(invId);
       if (!finv) continue;
       const total = Number(finv.total || 0);
       const ap = Number(
-        finv.amount_paid ?? total - Number(finv.amount_remaining || 0)
+        finv.amount_paid ?? total - Number(finv.amount_remaining || 0),
       );
       const ar = Number(finv.amount_remaining || 0);
       const delta = Math.abs(total - (ap + ar));
@@ -1290,16 +1417,19 @@ export async function POST(req: NextRequest) {
             missingInFiles.length - missingInFilesForDelete.length,
           payment_state_protected_invoices:
             supaResult.protected_payment_state_invoices,
+          email_debug: EMAIL_DEBUG,
+          email_would_send: emailWouldSendCount,
         },
         email_sent: emailSentCount,
       }),
-      { status: 200, headers: { "Content-Type": "application/json" } }
+      { status: 200, headers: { "Content-Type": "application/json" } },
     );
   } catch (err: any) {
     const msg = String(err?.message || "FetchFailed");
     const status = msg.startsWith("RestletFetchFailed ")
       ? Number(msg.split(" ")[1] || 500) || 500
       : 500;
+
     return new Response(
       JSON.stringify({
         ok: false,
@@ -1308,10 +1438,10 @@ export async function POST(req: NextRequest) {
           typeof err?.details === "string"
             ? err.details
             : err?.details
-            ? JSON.stringify(err.details)
-            : undefined,
+              ? JSON.stringify(err.details)
+              : undefined,
       }),
-      { status }
+      { status },
     );
   }
 }

@@ -90,6 +90,7 @@ type SalesOrderLinesRow = {
   item_sku: string | null;
   item_display_name: string | null;
   quantity: number | null;
+  quantity_committed: number | null;
   rate: number | null;
   amount: number | null;
   description: string | null;
@@ -97,6 +98,28 @@ type SalesOrderLinesRow = {
   is_closed: boolean;
   fulfillment_status: string | null;
   ns_line_id: number | null;
+};
+
+type AutoPaymentQueueStockChangeRow = {
+  id: number;
+  so_id: number;
+  ns_line_id: number;
+  line_no: number | null;
+  item_id: number | null;
+  item_sku: string | null;
+  item_display_name: string | null;
+  quantity: number | null;
+  rate: number | null;
+  line_amount: number | null;
+  previous_quantity_committed: number | null;
+  new_quantity_committed: number;
+  committed_delta: number | null;
+  charge_amount: number | null;
+  detected_at: string;
+  processed_at: string | null;
+  status: string;
+  notes: string | null;
+  created_at: string;
 };
 
 type Database = {
@@ -114,6 +137,12 @@ type Database = {
         Update: Partial<SalesOrderLinesRow>;
         Relationships: [];
       };
+      autopayment_queue_stock_change: {
+        Row: AutoPaymentQueueStockChangeRow;
+        Insert: Partial<AutoPaymentQueueStockChangeRow>;
+        Update: Partial<AutoPaymentQueueStockChangeRow>;
+        Relationships: [];
+      };
     };
     Views: {};
     Functions: {};
@@ -125,6 +154,8 @@ type Database = {
 type SalesOrderInsert = Database["public"]["Tables"]["sales_orders"]["Insert"];
 type SalesOrderLineInsert =
   Database["public"]["Tables"]["sales_order_lines"]["Insert"];
+type AutoPaymentQueueStockChangeInsert =
+  Database["public"]["Tables"]["autopayment_queue_stock_change"]["Insert"];
 
 function authHeaders(token: string): Record<string, string> {
   return {
@@ -387,6 +418,81 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
+function buildLineKey(soId: number, nsLineId: number | null, lineNo: number) {
+  return `${soId}::${nsLineId != null ? nsLineId : `lineNo:${lineNo}`}`;
+}
+
+async function fetchExistingLinesForSoIds(
+  supabase: ReturnType<typeof createClient<Database>>,
+  soIds: number[],
+) {
+  const out = new Map<
+    string,
+    {
+      so_id: number;
+      ns_line_id: number | null;
+      line_no: number;
+      quantity_committed: number | null;
+    }
+  >();
+
+  for (const ids of chunk(soIds, 1000)) {
+    const { data, error } = await supabase
+      .from("sales_order_lines")
+      .select("so_id, ns_line_id, line_no, quantity_committed")
+      .in("so_id", ids);
+
+    if (error) throw error;
+
+    for (const r of data || []) {
+      const soId = Number(r.so_id);
+      const lineNo = Number(r.line_no);
+      const nsLineId = r.ns_line_id != null ? Number(r.ns_line_id) : null;
+      if (!Number.isFinite(soId) || !Number.isFinite(lineNo)) continue;
+      out.set(buildLineKey(soId, nsLineId, lineNo), {
+        so_id: soId,
+        ns_line_id: nsLineId,
+        line_no: lineNo,
+        quantity_committed: toNumOrNull((r as any).quantity_committed),
+      });
+    }
+  }
+
+  return out;
+}
+
+async function fetchExistingPendingQueueKeys(
+  supabase: ReturnType<typeof createClient<Database>>,
+  soIds: number[],
+) {
+  const out = new Set<string>();
+
+  for (const ids of chunk(soIds, 1000)) {
+    const { data, error } = await supabase
+      .from("autopayment_queue_stock_change")
+      .select("so_id, ns_line_id, new_quantity_committed, status")
+      .eq("status", "pending")
+      .in("so_id", ids);
+
+    if (error) throw error;
+
+    for (const r of data || []) {
+      const soId = Number(r.so_id);
+      const nsLineId = Number(r.ns_line_id);
+      const newQty = Number((r as any).new_quantity_committed);
+      if (
+        !Number.isFinite(soId) ||
+        !Number.isFinite(nsLineId) ||
+        !Number.isFinite(newQty)
+      )
+        continue;
+      out.add(`${soId}::${nsLineId}::${newQty}`);
+    }
+  }
+
+  return out;
+}
+
 export async function POST(req: NextRequest) {
   try {
     if (
@@ -545,6 +651,18 @@ export async function POST(req: NextRequest) {
       if (error) throw error;
     }
 
+    const existingLinesByKey = fileSoIds.length
+      ? await fetchExistingLinesForSoIds(supabase, fileSoIds)
+      : new Map<
+          string,
+          {
+            so_id: number;
+            ns_line_id: number | null;
+            line_no: number;
+            quantity_committed: number | null;
+          }
+        >();
+
     const lineRows: SalesOrderLineInsert[] = salesOrderLinesRaw
       .map((r: any) => {
         const so_id = Number(r.so_id);
@@ -562,6 +680,7 @@ export async function POST(req: NextRequest) {
             r.item_display_name ?? r.displayname ?? r.sku,
           ),
           quantity: toNumOrNull(r.quantity),
+          quantity_committed: toNumOrNull(r.quantity_committed),
           rate: toNumOrNull(r.rate),
           amount: toNumOrNull(r.amount),
           description: coerceText(r.description),
@@ -572,6 +691,61 @@ export async function POST(req: NextRequest) {
         } as SalesOrderLineInsert;
       })
       .filter((x): x is SalesOrderLineInsert => !!x);
+
+    const existingPendingQueueKeys = fileSoIds.length
+      ? await fetchExistingPendingQueueKeys(supabase, fileSoIds)
+      : new Set<string>();
+
+    const queueRows: AutoPaymentQueueStockChangeInsert[] = [];
+
+    for (const row of lineRows) {
+      const soId = Number(row.so_id);
+      const lineNo = Number(row.line_no);
+      const nsLineId = row.ns_line_id != null ? Number(row.ns_line_id) : null;
+      const newCommitted = toNumOrNull((row as any).quantity_committed) ?? 0;
+
+      if (!Number.isFinite(soId) || !Number.isFinite(lineNo)) continue;
+      if (nsLineId == null || !Number.isFinite(nsLineId)) continue;
+      if (Boolean(row.is_closed)) continue;
+
+      const existing = existingLinesByKey.get(
+        buildLineKey(soId, nsLineId, lineNo),
+      );
+      if (!existing) continue;
+      if (existing.quantity_committed == null) continue;
+
+      const previousCommitted = Number(existing.quantity_committed);
+      if (!(newCommitted > previousCommitted)) continue;
+
+      const committedDelta = newCommitted - previousCommitted;
+      if (!(committedDelta > 0)) continue;
+
+      const pendingKey = `${soId}::${nsLineId}::${newCommitted}`;
+      if (existingPendingQueueKeys.has(pendingKey)) continue;
+
+      const rate = toNumOrNull(row.rate);
+      const chargeAmount =
+        rate != null ? Number((committedDelta * rate).toFixed(4)) : null;
+
+      queueRows.push({
+        so_id: soId,
+        ns_line_id: nsLineId,
+        line_no: lineNo,
+        item_id: toNumOrNull(row.item_id),
+        item_sku: coerceText(row.item_sku),
+        item_display_name: coerceText(row.item_display_name),
+        quantity: toNumOrNull(row.quantity),
+        rate,
+        line_amount: toNumOrNull(row.amount),
+        previous_quantity_committed: previousCommitted,
+        new_quantity_committed: newCommitted,
+        committed_delta: Number(committedDelta.toFixed(4)),
+        charge_amount: chargeAmount,
+        status: "pending",
+      });
+
+      existingPendingQueueKeys.add(pendingKey);
+    }
 
     if (fileSoIds.length) {
       for (const ids of chunk(fileSoIds, 1000)) {
@@ -587,6 +761,15 @@ export async function POST(req: NextRequest) {
       for (const batch of chunk(lineRows, 1000)) {
         const { error } = await supabase
           .from("sales_order_lines")
+          .insert(batch);
+        if (error) throw error;
+      }
+    }
+
+    if (queueRows.length) {
+      for (const batch of chunk(queueRows, 1000)) {
+        const { error } = await supabase
+          .from("autopayment_queue_stock_change")
           .insert(batch);
         if (error) throw error;
       }
@@ -612,6 +795,7 @@ export async function POST(req: NextRequest) {
           counts: {
             headers_upserted: headerRows.length,
             lines_inserted: lineRows.length,
+            stock_change_queued: queueRows.length,
             soft_deleted: missingInFilesForDelete.length,
           },
         },
