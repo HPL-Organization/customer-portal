@@ -897,7 +897,6 @@
 {"invoice_id":84035,"payment_id":271163,"tran_id":"PYMT-4565","payment_date":"10/31/2025","amount":281.2,"status":"Payment : Deposited","payment_option":"VISA *6517"}
 {"invoice_id":84355,"payment_id":84967,"tran_id":"PYMT-829","payment_date":"9/15/2025","amount":238.83,"status":"Payment : Deposited","payment_option":"VISA *0135"}
 {"invoice_id":84363,"payment_id":84965,"tran_id":"PYMT-828","payment_date":"9/15/2025","amount":103,"status":"Payment : Deposited","payment_option":"VISA *0135"}
-{"invoice_id":84383,"payment_id":122765,"tran_id":"PYMT-1407","payment_date":"9/27/2025","amount":258.11,"status":"Payment : Deposited","payment_option":"MASTERCARD *8117"}
 {"invoice_id":84385,"payment_id":186306,"tran_id":"PYMT-2592","payment_date":"10/8/2025","amount":1383,"status":"Payment : Deposited","payment_option":"DISCOVER *4026"}
 {"invoice_id":84389,"payment_id":300661,"tran_id":"PYMT-5409","payment_date":"11/8/2025","amount":225,"status":"Payment : Deposited","payment_option":"MASTERCARD *7812"}
 {"invoice_id":84402,"payment_id":190360,"tran_id":"PYMT-2711","payment_date":"10/9/2025","amount":1245.81,"status":"Payment : Deposited","payment_option":"~ VISA *9108 ~"}
@@ -1002,6 +1001,7 @@
 {"invoice_id":84140,"payment_id":83639,"tran_id":"PYMT-820","payment_date":"9/15/2025","amount":270,"status":"Payment : Deposited","payment_option":"Shopify"}
 {"invoice_id":84251,"payment_id":87903,"tran_id":"PYMT-870","payment_date":"9/16/2025","amount":158,"status":"Payment : Deposited","payment_option":null}
 {"invoice_id":84381,"payment_id":288108,"tran_id":"PYMT-4952","payment_date":"11/4/2025","amount":1243.3,"status":"Payment : Deposited","payment_option":null}
+{"invoice_id":84383,"payment_id":122765,"tran_id":"PYMT-1407","payment_date":"9/27/2025","amount":258.11,"status":"Payment : Deposited","payment_option":"~ MASTERCARD *8117 ~"}
 {"invoice_id":84396,"payment_id":88111,"tran_id":"PYMT-873","payment_date":"9/6/2025","amount":731.51,"status":"Payment : Deposited","payment_option":null}
 {"invoice_id":84472,"payment_id":107398,"tran_id":"PYMT-1139","payment_date":"9/22/2025","amount":852.3,"status":"Payment : Deposited","payment_option":"VISA *4510"}
 {"invoice_id":84489,"payment_id":377410,"tran_id":"PYMT-6875","payment_date":"11/21/2025","amount":500,"status":"Payment : Deposited","payment_option":null}
@@ -3048,6 +3048,7 @@
 {"invoice_id":230757,"payment_id":122877,"tran_id":"PYMT-1409","payment_date":"9/26/2025","amount":1997,"status":"Payment : Deposited","payment_option":"Shopify"}
 {"invoice_id":231065,"payment_id":231066,"tran_id":"PYMT-3238","payment_date":"10/18/2025","amount":31.94,"status":"Payment : Deposited","payment_option":"Shopify"}
 {"invoice_id":231364,"payment_id":231365,"tran_id":"PYMT-3243","payment_date":"10/18/2025","amount":38.32,"status":"Payment : Deposited","payment_option":"Shopify"}
+{"invoice_id":233123,"payment_id":233022,"tran_id":"PYMT-3256","payment_date":"10/21/2025","amount":25000,"status":"Payment : Deposited","payment_option":"~ MASTERCARD *8117 ~"}
 {"invoice_id":233130,"payment_id":227887,"tran_id":"PYMT-3173","payment_date":"10/17/2025","amount":750,"status":"Payment : Deposited","payment_option":"Shopify"}
 {"invoice_id":233640,"payment_id":235548,"tran_id":"PYMT-3300","payment_date":"10/22/2025","amount":499.97,"status":"Payment : Deposited","payment_option":"~ VISA *6364 ~"}
 {"invoice_id":233843,"payment_id":233744,"tran_id":"PYMT-3264","payment_date":"10/19/2025","amount":140.81,"status":"Payment : Deposited","payment_option":"Shopify"}
@@ -3247,7 +3248,6 @@
 {"invoice_id":230450,"payment_id":230653,"tran_id":"PYMT-3229","payment_date":"10/20/2025","amount":146,"status":"Payment : Deposited","payment_option":"VISA *4228"}
 {"invoice_id":230758,"payment_id":144674,"tran_id":"PYMT-1615","payment_date":"9/30/2025","amount":112.94,"status":"Payment : Deposited","payment_option":"Shopify"}
 {"invoice_id":231162,"payment_id":231063,"tran_id":"PYMT-3236","payment_date":"10/18/2025","amount":225,"status":"Payment : Deposited","payment_option":"Shopify"}
-{"invoice_id":233123,"payment_id":233022,"tran_id":"PYMT-3256","payment_date":"10/21/2025","amount":25000,"status":"Payment : Deposited","payment_option":"MASTERCARD *8117"}
 {"invoice_id":233639,"payment_id":247646,"tran_id":"PYMT-3471","payment_date":"10/25/2025","amount":76.3,"status":"Payment : Deposited","payment_option":"~ VISA *8836 ~"}
 {"invoice_id":233846,"payment_id":233847,"tran_id":"PYMT-3265","payment_date":"10/19/2025","amount":170,"status":"Payment : Deposited","payment_option":"Shopify"}
 {"invoice_id":234046,"payment_id":233947,"tran_id":"PYMT-3269","payment_date":"10/19/2025","amount":947,"status":"Payment : Deposited","payment_option":"Shopify"}
@@ -6410,7 +6410,6 @@
 {"invoice_id":427347,"payment_id":429357,"tran_id":"PYMT-7877","payment_date":"12/4/2025","amount":219,"status":"Payment : Not Deposited","payment_option":"VISA *6517"}
 {"invoice_id":427350,"payment_id":503482,"tran_id":"PYMT-9103","payment_date":"12/17/2025","amount":120,"status":"Payment : Not Deposited","payment_option":"VISA *1144"}
 {"invoice_id":431313,"payment_id":364645,"tran_id":"PYMT-6671","payment_date":"11/22/2025","amount":135,"status":"Payment : Not Deposited","payment_option":"VISA *5074"}
-{"invoice_id":433689,"payment_id":394901,"tran_id":"PYMT-7199","payment_date":"11/28/2025","amount":396.03,"status":"Payment : Not Deposited","payment_option":"MASTERCARD *8117"}
 {"invoice_id":434108,"payment_id":401824,"tran_id":"PYMT-7369","payment_date":"11/29/2025","amount":116.7,"status":"Payment : Not Deposited","payment_option":"VISA *6915"}
 {"invoice_id":435035,"payment_id":435719,"tran_id":"PYMT-8043","payment_date":"12/4/2025","amount":42,"status":"Payment : Not Deposited","payment_option":"VISA *4129"}
 {"invoice_id":435036,"payment_id":438954,"tran_id":"PYMT-8103","payment_date":"12/5/2025","amount":311,"status":"Payment : Not Deposited","payment_option":"MASTERCARD *5219"}
@@ -6569,6 +6568,7 @@
 {"invoice_id":454118,"payment_id":380079,"tran_id":"PYMT-6937","payment_date":"11/25/2025","amount":134.3,"status":"Payment : Not Deposited","payment_option":"VISA *8328"}
 {"invoice_id":454119,"payment_id":390756,"tran_id":"PYMT-7129","payment_date":"11/27/2025","amount":34.37,"status":"Payment : Not Deposited","payment_option":"VISA *8328"}
 {"invoice_id":454830,"payment_id":454930,"tran_id":"PYMT-8409","payment_date":"12/8/2025","amount":342.67,"status":"Payment : Not Deposited","payment_option":"MASTERCARD *6764"}
+{"invoice_id":455230,"payment_id":454934,"tran_id":"PYMT-8412","payment_date":"12/8/2025","amount":35.32,"status":"Payment : Not Deposited","payment_option":"~ MASTERCARD *8117 ~"}
 {"invoice_id":455339,"payment_id":471351,"tran_id":"PYMT-8692","payment_date":"12/11/2025","amount":189.35,"status":"Payment : Not Deposited","payment_option":"VISA *7230"}
 {"invoice_id":455436,"payment_id":456640,"tran_id":"PYMT-8435","payment_date":"12/8/2025","amount":80,"status":"Payment : Not Deposited","payment_option":"VISA *1064"}
 {"invoice_id":455442,"payment_id":455539,"tran_id":"PYMT-8421","payment_date":"12/8/2025","amount":87,"status":"Payment : Not Deposited","payment_option":"~ VISA *4776 ~"}
@@ -6674,6 +6674,7 @@
 {"invoice_id":431339,"payment_id":431340,"tran_id":"PYMT-7941","payment_date":"12/4/2025","amount":948.6,"status":"Payment : Not Deposited","payment_option":"VISA *7523"}
 {"invoice_id":432249,"payment_id":431990,"tran_id":"PYMT-7965","payment_date":"12/4/2025","amount":267.3,"status":"Payment : Not Deposited","payment_option":"VISA *5531"}
 {"invoice_id":433687,"payment_id":394895,"tran_id":"PYMT-7196","payment_date":"11/28/2025","amount":411.51,"status":"Payment : Not Deposited","payment_option":"MASTERCARD *5163"}
+{"invoice_id":433689,"payment_id":394901,"tran_id":"PYMT-7199","payment_date":"11/28/2025","amount":396.03,"status":"Payment : Not Deposited","payment_option":"~ MASTERCARD *8117 ~"}
 {"invoice_id":434409,"payment_id":434125,"tran_id":"PYMT-8024","payment_date":"12/4/2025","amount":127.77,"status":"Payment : Not Deposited","payment_option":"MASTERCARD *9442"}
 {"invoice_id":435024,"payment_id":438958,"tran_id":"PYMT-8108","payment_date":"12/5/2025","amount":59,"status":"Payment : Not Deposited","payment_option":"AMEX *5658"}
 {"invoice_id":435028,"payment_id":440574,"tran_id":"PYMT-8143","payment_date":"12/5/2025","amount":93,"status":"Payment : Not Deposited","payment_option":"VISA *1144"}
@@ -6867,7 +6868,6 @@
 {"invoice_id":426053,"payment_id":426054,"tran_id":"PYMT-7834","payment_date":"11/29/2025","amount":4942.8,"status":"Payment : Deposited","payment_option":"Shopify"}
 {"invoice_id":426458,"payment_id":426339,"tran_id":"PYMT-7849","payment_date":"11/29/2025","amount":118.8,"status":"Payment : Deposited","payment_option":"Shopify"}
 {"invoice_id":426635,"payment_id":426840,"tran_id":"PYMT-7856","payment_date":"11/29/2025","amount":130.5,"status":"Payment : Deposited","payment_option":"Shopify"}
-{"invoice_id":430486,"payment_id":122665,"tran_id":"PYMT-1408","payment_date":"9/27/2025","amount":462.94,"status":"Payment : Deposited","payment_option":"MASTERCARD *8117"}
 {"invoice_id":430917,"payment_id":430918,"tran_id":"PYMT-7925","payment_date":"11/30/2025","amount":85.5,"status":"Payment : Deposited","payment_option":"Shopify"}
 {"invoice_id":431307,"payment_id":427234,"tran_id":"PYMT-7863","payment_date":"11/29/2025","amount":32.87,"status":"Payment : Deposited","payment_option":"Shopify"}
 {"invoice_id":431315,"payment_id":431316,"tran_id":"PYMT-7928","payment_date":"11/30/2025","amount":127.77,"status":"Payment : Deposited","payment_option":"Shopify"}
@@ -6963,7 +6963,6 @@
 {"invoice_id":448823,"payment_id":449228,"tran_id":"PYMT-8355","payment_date":"12/6/2025","amount":30,"status":"Payment : Not Deposited","payment_option":"MASTERCARD *2476"}
 {"invoice_id":448825,"payment_id":449227,"tran_id":"PYMT-8354","payment_date":"12/6/2025","amount":56.47,"status":"Payment : Not Deposited","payment_option":"VISA *5885"}
 {"invoice_id":454326,"payment_id":438953,"tran_id":"PYMT-8102","payment_date":"12/5/2025","amount":283.5,"status":"Payment : Not Deposited","payment_option":"~ MASTERCARD *3463 ~"}
-{"invoice_id":455230,"payment_id":454934,"tran_id":"PYMT-8412","payment_date":"12/8/2025","amount":35.32,"status":"Payment : Not Deposited","payment_option":"MASTERCARD *8117"}
 {"invoice_id":455337,"payment_id":455938,"tran_id":"PYMT-8430","payment_date":"12/8/2025","amount":44.97,"status":"Payment : Not Deposited","payment_option":"MASTERCARD *7628"}
 {"invoice_id":455346,"payment_id":487538,"tran_id":"PYMT-8881","payment_date":"12/15/2025","amount":88,"status":"Payment : Not Deposited","payment_option":"~ VISA *1163 ~"}
 {"invoice_id":455435,"payment_id":456742,"tran_id":"PYMT-8436","payment_date":"12/8/2025","amount":61,"status":"Payment : Not Deposited","payment_option":"~ MASTERCARD *9928 ~"}
@@ -7259,6 +7258,7 @@
 {"invoice_id":426851,"payment_id":426852,"tran_id":"PYMT-7860","payment_date":"11/29/2025","amount":153,"status":"Payment : Deposited","payment_option":"Shopify"}
 {"invoice_id":429885,"payment_id":429886,"tran_id":"PYMT-7894","payment_date":"11/30/2025","amount":108,"status":"Payment : Deposited","payment_option":"Shopify"}
 {"invoice_id":429902,"payment_id":430795,"tran_id":"PYMT-7910","payment_date":"12/4/2025","amount":11.97,"status":"Payment : Deposited","payment_option":null}
+{"invoice_id":430486,"payment_id":122665,"tran_id":"PYMT-1408","payment_date":"9/27/2025","amount":462.94,"status":"Payment : Deposited","payment_option":"~ MASTERCARD *8117 ~"}
 {"invoice_id":431729,"payment_id":431327,"tran_id":"PYMT-7934","payment_date":"11/30/2025","amount":133.17,"status":"Payment : Deposited","payment_option":"Shopify"}
 {"invoice_id":432650,"payment_id":422618,"tran_id":"PYMT-7743","payment_date":"11/29/2025","amount":60.31,"status":"Payment : Deposited","payment_option":"Shopify"}
 {"invoice_id":433479,"payment_id":433480,"tran_id":"PYMT-7993","payment_date":"11/30/2025","amount":198,"status":"Payment : Deposited","payment_option":"Shopify"}
@@ -12852,6 +12852,7 @@
 {"invoice_id":839138,"payment_id":839584,"tran_id":"PYMT-14505","payment_date":"2/23/2026","amount":1697,"status":"Payment : Not Deposited","payment_option":"VISA *6374"}
 {"invoice_id":840589,"payment_id":843383,"tran_id":"PYMT-14590","payment_date":"2/24/2026","amount":108,"status":"Payment : Not Deposited","payment_option":"VISA *7113"}
 {"invoice_id":842785,"payment_id":844204,"tran_id":"PYMT-14605","payment_date":"2/24/2026","amount":100,"status":"Payment : Not Deposited","payment_option":"VISA *3829"}
+{"invoice_id":844940,"payment_id":844945,"tran_id":"PYMT-14618","payment_date":"2/24/2026","amount":630,"status":"Payment : Not Deposited","payment_option":"~ VISA *6726 ~"}
 {"invoice_id":844942,"payment_id":844943,"tran_id":"PYMT-14615","payment_date":"2/24/2026","amount":381.97,"status":"Payment : Not Deposited","payment_option":"MASTERCARD *0428"}
 {"invoice_id":845982,"payment_id":786904,"tran_id":"PYMT-13614","payment_date":"2/12/2026","amount":6620.4,"status":"Payment : Not Deposited","payment_option":null}
 {"invoice_id":845984,"payment_id":777094,"tran_id":"PYMT-13488","payment_date":"2/10/2026","amount":50,"status":"Payment : Not Deposited","payment_option":"AMEX *4002"}
@@ -13103,7 +13104,6 @@
 {"invoice_id":834797,"payment_id":855650,"tran_id":"PYMT-14811","payment_date":"2/26/2026","amount":162,"status":"Payment : Not Deposited","payment_option":"VISA *9075"}
 {"invoice_id":834801,"payment_id":835871,"tran_id":"PYMT-14448","payment_date":"2/22/2026","amount":99.41,"status":"Payment : Not Deposited","payment_option":"VISA *5310"}
 {"invoice_id":835286,"payment_id":840088,"tran_id":"PYMT-14534","payment_date":"2/23/2026","amount":217,"status":"Payment : Not Deposited","payment_option":"VISA *4787"}
-{"invoice_id":836273,"payment_id":873731,"tran_id":"PYMT-15112","payment_date":"3/2/2026","amount":15314.7,"status":"Payment : Not Deposited","payment_option":"VISA *6726"}
 {"invoice_id":839074,"payment_id":841685,"tran_id":"PYMT-14573","payment_date":"2/23/2026","amount":60,"status":"Payment : Not Deposited","payment_option":"MASTERCARD *6016"}
 {"invoice_id":839076,"payment_id":839878,"tran_id":"PYMT-14526","payment_date":"2/23/2026","amount":64,"status":"Payment : Not Deposited","payment_option":"PayPal *qqec"}
 {"invoice_id":839079,"payment_id":856253,"tran_id":"PYMT-14820","payment_date":"2/26/2026","amount":66,"status":"Payment : Not Deposited","payment_option":"VISA *7501"}
@@ -13199,6 +13199,7 @@
 {"invoice_id":835276,"payment_id":835579,"tran_id":"PYMT-14444","payment_date":"2/22/2026","amount":86,"status":"Payment : Not Deposited","payment_option":"PayPal *pft8"}
 {"invoice_id":835287,"payment_id":859966,"tran_id":"PYMT-14888","payment_date":"2/27/2026","amount":240,"status":"Payment : Not Deposited","payment_option":"VISA *0492"}
 {"invoice_id":835288,"payment_id":867786,"tran_id":"PYMT-15027","payment_date":"2/28/2026","amount":281,"status":"Payment : Not Deposited","payment_option":"AMEX *1008"}
+{"invoice_id":836273,"payment_id":873731,"tran_id":"PYMT-15112","payment_date":"3/2/2026","amount":15314.7,"status":"Payment : Not Deposited","payment_option":"~ VISA *6726 ~"}
 {"invoice_id":838478,"payment_id":849707,"tran_id":"PYMT-14697","payment_date":"2/25/2026","amount":54,"status":"Payment : Not Deposited","payment_option":"VISA *9353"}
 {"invoice_id":839082,"payment_id":840282,"tran_id":"PYMT-14536","payment_date":"2/23/2026","amount":78,"status":"Payment : Not Deposited","payment_option":"MASTERCARD *4187"}
 {"invoice_id":839089,"payment_id":869839,"tran_id":"PYMT-15047","payment_date":"3/1/2026","amount":94,"status":"Payment : Not Deposited","payment_option":"MASTERCARD *5429"}
@@ -13209,7 +13210,6 @@
 {"invoice_id":839134,"payment_id":950533,"tran_id":"PYMT-16321","payment_date":"3/17/2026","amount":510,"status":"Payment : Not Deposited","payment_option":"VISA *4303"}
 {"invoice_id":839135,"payment_id":849504,"tran_id":"PYMT-14689","payment_date":"2/25/2026","amount":689,"status":"Payment : Not Deposited","payment_option":"VISA *6250"}
 {"invoice_id":840084,"payment_id":840085,"tran_id":"PYMT-14532","payment_date":"2/23/2026","amount":2097,"status":"Payment : Not Deposited","payment_option":"VISA *9045"}
-{"invoice_id":844940,"payment_id":844945,"tran_id":"PYMT-14618","payment_date":"2/24/2026","amount":630,"status":"Payment : Not Deposited","payment_option":"VISA *6726"}
 {"invoice_id":845256,"payment_id":845257,"tran_id":"PYMT-14620","payment_date":"2/24/2026","amount":19.19,"status":"Payment : Not Deposited","payment_option":"MASTERCARD *1001"}
 {"invoice_id":846902,"payment_id":847427,"tran_id":"PYMT-14672","payment_date":"2/24/2026","amount":54.5,"status":"Payment : Not Deposited","payment_option":"MASTERCARD *2476"}
 {"invoice_id":846911,"payment_id":848302,"tran_id":"PYMT-14675","payment_date":"2/25/2026","amount":275.5,"status":"Payment : Not Deposited","payment_option":"VISA *5885"}
