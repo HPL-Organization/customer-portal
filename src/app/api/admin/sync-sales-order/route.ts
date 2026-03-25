@@ -41,6 +41,10 @@ type SoManifestShape = {
       total_rows: number;
       parts: ManifestPart[];
     };
+    sales_order_invoice_line_links?: {
+      total_rows: number;
+      parts: ManifestPart[];
+    };
   };
 };
 
@@ -100,6 +104,14 @@ type SalesOrderLinesRow = {
   ns_line_id: number | null;
 };
 
+type SalesOrderInvoiceLineLinkRow = {
+  so_id: number;
+  so_ns_line_id: number;
+  invoice_id: number;
+  invoice_ns_line_id: number;
+  created_at: string;
+};
+
 type AutoPaymentQueueStockChangeRow = {
   id: number;
   so_id: number;
@@ -137,6 +149,12 @@ type Database = {
         Update: Partial<SalesOrderLinesRow>;
         Relationships: [];
       };
+      sales_order_invoice_line_links: {
+        Row: SalesOrderInvoiceLineLinkRow;
+        Insert: Partial<SalesOrderInvoiceLineLinkRow>;
+        Update: Partial<SalesOrderInvoiceLineLinkRow>;
+        Relationships: [];
+      };
       autopayment_queue_stock_change: {
         Row: AutoPaymentQueueStockChangeRow;
         Insert: Partial<AutoPaymentQueueStockChangeRow>;
@@ -154,6 +172,8 @@ type Database = {
 type SalesOrderInsert = Database["public"]["Tables"]["sales_orders"]["Insert"];
 type SalesOrderLineInsert =
   Database["public"]["Tables"]["sales_order_lines"]["Insert"];
+type SalesOrderInvoiceLineLinkInsert =
+  Database["public"]["Tables"]["sales_order_invoice_line_links"]["Insert"];
 type AutoPaymentQueueStockChangeInsert =
   Database["public"]["Tables"]["autopayment_queue_stock_change"]["Insert"];
 
@@ -422,6 +442,15 @@ function buildLineKey(soId: number, nsLineId: number | null, lineNo: number) {
   return `${soId}::${nsLineId != null ? nsLineId : `lineNo:${lineNo}`}`;
 }
 
+function buildSoInvoiceLinkKey(
+  soId: number,
+  soNsLineId: number,
+  invoiceId: number,
+  invoiceNsLineId: number,
+) {
+  return `${soId}::${soNsLineId}::${invoiceId}::${invoiceNsLineId}`;
+}
+
 async function fetchExistingLinesForSoIds(
   supabase: ReturnType<typeof createClient<Database>>,
   soIds: number[],
@@ -536,6 +565,11 @@ export async function POST(req: NextRequest) {
     const soLineParts = Array.isArray(manifest?.files?.sales_order_lines?.parts)
       ? manifest.files.sales_order_lines.parts
       : [];
+    const soInvoiceLinkParts = Array.isArray(
+      manifest?.files?.sales_order_invoice_line_links?.parts,
+    )
+      ? manifest.files.sales_order_invoice_line_links!.parts
+      : [];
 
     if (!soParts.length || !soLineParts.length) {
       return new Response(
@@ -544,13 +578,17 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const [soText, soLinesText] = await Promise.all([
+    const [soText, soLinesText, soInvoiceLinksText] = await Promise.all([
       restletGetJsonlFromParts(token, soParts),
       restletGetJsonlFromParts(token, soLineParts),
+      soInvoiceLinkParts.length
+        ? restletGetJsonlFromParts(token, soInvoiceLinkParts)
+        : Promise.resolve(""),
     ]);
 
     const salesOrdersRaw = parseJsonl(soText);
     const salesOrderLinesRaw = parseJsonl(soLinesText);
+    const salesOrderInvoiceLineLinksRaw = parseJsonl(soInvoiceLinksText);
 
     const fileSoIds = Array.from(
       new Set<number>(
@@ -692,6 +730,45 @@ export async function POST(req: NextRequest) {
       })
       .filter((x): x is SalesOrderLineInsert => !!x);
 
+    const soInvoiceLinkRowsMap = new Map<
+      string,
+      SalesOrderInvoiceLineLinkInsert
+    >();
+
+    for (const r of salesOrderInvoiceLineLinksRaw) {
+      const so_id = toNumOrNull(r.so_id);
+      const so_ns_line_id = toNumOrNull(r.so_ns_line_id);
+      const invoice_id = toNumOrNull(r.invoice_id);
+      const invoice_ns_line_id = toNumOrNull(r.invoice_ns_line_id);
+
+      if (
+        so_id == null ||
+        so_ns_line_id == null ||
+        invoice_id == null ||
+        invoice_ns_line_id == null
+      ) {
+        continue;
+      }
+
+      const key = buildSoInvoiceLinkKey(
+        so_id,
+        so_ns_line_id,
+        invoice_id,
+        invoice_ns_line_id,
+      );
+
+      if (!soInvoiceLinkRowsMap.has(key)) {
+        soInvoiceLinkRowsMap.set(key, {
+          so_id,
+          so_ns_line_id,
+          invoice_id,
+          invoice_ns_line_id,
+        });
+      }
+    }
+
+    const soInvoiceLinkRows = Array.from(soInvoiceLinkRowsMap.values());
+
     const existingPendingQueueKeys = fileSoIds.length
       ? await fetchExistingPendingQueueKeys(supabase, fileSoIds)
       : new Set<string>();
@@ -766,6 +843,25 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    if (fileSoIds.length) {
+      for (const ids of chunk(fileSoIds, 1000)) {
+        const { error } = await supabase
+          .from("sales_order_invoice_line_links")
+          .delete()
+          .in("so_id", ids);
+        if (error) throw error;
+      }
+    }
+
+    if (soInvoiceLinkRows.length) {
+      for (const batch of chunk(soInvoiceLinkRows, 1000)) {
+        const { error } = await supabase
+          .from("sales_order_invoice_line_links")
+          .insert(batch);
+        if (error) throw error;
+      }
+    }
+
     if (queueRows.length) {
       for (const batch of chunk(queueRows, 1000)) {
         const { error } = await supabase
@@ -791,10 +887,18 @@ export async function POST(req: NextRequest) {
               rows_reported: manifest.files.sales_order_lines.total_rows,
               rows_parsed: salesOrderLinesRaw.length,
             },
+            sales_order_invoice_line_links: {
+              parts: soInvoiceLinkParts.length,
+              rows_reported:
+                manifest.files.sales_order_invoice_line_links?.total_rows ?? 0,
+              rows_parsed: salesOrderInvoiceLineLinksRaw.length,
+              rows_inserted: soInvoiceLinkRows.length,
+            },
           },
           counts: {
             headers_upserted: headerRows.length,
             lines_inserted: lineRows.length,
+            so_invoice_links_inserted: soInvoiceLinkRows.length,
             stock_change_queued: queueRows.length,
             soft_deleted: missingInFilesForDelete.length,
           },
