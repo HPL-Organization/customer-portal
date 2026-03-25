@@ -85,6 +85,7 @@ type Database = {
         Row: {
           invoice_id: number;
           line_no: number;
+          ns_line_id: number | null;
           item_id: number | null;
           item_sku: string | null;
           item_display_name: string | null;
@@ -93,6 +94,8 @@ type Database = {
           amount: number | null;
           description: string | null;
           comment: string | null;
+          created_from_so_id: number | null;
+          created_from_so_line_id: number | null;
         };
         Insert: Partial<Database["public"]["Tables"]["invoice_lines"]["Row"]>;
         Update: Partial<Database["public"]["Tables"]["invoice_lines"]["Row"]>;
@@ -555,6 +558,7 @@ async function upsertSnapshotToSupabase(
   ): Database["public"]["Tables"]["invoice_lines"]["Insert"] => ({
     invoice_id: Number(r.invoice_id),
     line_no: Number(r.line_no),
+    ns_line_id: toNumOrNull(r.ns_line_id),
     item_id: toNumOrNull(r.item_id),
     item_sku: coerceNull(r.item_sku),
     item_display_name: coerceNull(r.item_display_name),
@@ -563,6 +567,8 @@ async function upsertSnapshotToSupabase(
     amount: toNumOrNull(r.amount),
     description: coerceNull(r.description),
     comment: coerceNull(r.comment),
+    created_from_so_id: toNumOrNull(r.created_from_so_id),
+    created_from_so_line_id: toNumOrNull(r.created_from_so_line_id),
   });
 
   const toPaymentRow = (
@@ -849,6 +855,7 @@ export async function POST(req: NextRequest) {
       [
         "invoice_id",
         "line_no",
+        "ns_line_id",
         "item_id",
         "item_sku",
         "item_display_name",
@@ -857,6 +864,8 @@ export async function POST(req: NextRequest) {
         "amount",
         "description",
         "comment",
+        "created_from_so_id",
+        "created_from_so_line_id",
       ],
       "invoice_id",
       fileInvoiceIds,
@@ -950,6 +959,7 @@ export async function POST(req: NextRequest) {
     ]);
 
     const lineFields = [
+      "ns_line_id",
       "item_id",
       "item_sku",
       "item_display_name",
@@ -958,8 +968,18 @@ export async function POST(req: NextRequest) {
       "amount",
       "description",
       "comment",
+      "created_from_so_id",
+      "created_from_so_line_id",
     ];
-    const lineNumeric = new Set(["item_id", "quantity", "rate", "amount"]);
+    const lineNumeric = new Set([
+      "ns_line_id",
+      "item_id",
+      "quantity",
+      "rate",
+      "amount",
+      "created_from_so_id",
+      "created_from_so_line_id",
+    ]);
 
     const paymentFields = [
       "tran_id",
@@ -1211,6 +1231,7 @@ export async function POST(req: NextRequest) {
       const ln = Number(f.line_no ?? d.line_no);
 
       const fNorm: Record<string, any> = {
+        ns_line_id: f.ns_line_id ?? null,
         item_id: f.item_id ?? null,
         item_sku: f.item_sku ?? null,
         item_display_name: f.item_display_name ?? null,
@@ -1219,9 +1240,12 @@ export async function POST(req: NextRequest) {
         amount: f.amount ?? null,
         description: f.description ?? null,
         comment: f.comment ?? null,
+        created_from_so_id: f.created_from_so_id ?? null,
+        created_from_so_line_id: f.created_from_so_line_id ?? null,
       };
 
       const dNorm: Record<string, any> = {
+        ns_line_id: d.ns_line_id,
         item_id: d.item_id,
         item_sku: d.item_sku,
         item_display_name: d.item_display_name,
@@ -1230,6 +1254,8 @@ export async function POST(req: NextRequest) {
         amount: d.amount,
         description: d.description,
         comment: d.comment,
+        created_from_so_id: d.created_from_so_id,
+        created_from_so_line_id: d.created_from_so_line_id,
       };
 
       const changes = diffObject(dNorm, fNorm, lineFields, lineNumeric);
