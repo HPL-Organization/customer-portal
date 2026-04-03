@@ -868,7 +868,7 @@ export default function InvoicesPage() {
         ) || 0;
       const tax = Number((inv as any).taxTotal || 0);
       const total = subtotal + tax;
-      const paid = total - Number(inv.amountRemaining || total);
+      const paid = Number(inv.amountPaid || 0);
       const rightX = 500;
       const labelX = 400;
       doc.setFont("helvetica", "bold");
