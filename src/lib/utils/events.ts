@@ -198,7 +198,7 @@ export function processEvents(
     label: string;
     description: string;
   }>,
-  liveEventsData: LiveEvent[]
+  liveEventsData: LiveEvent[],
 ): Array<
   VipEvent & {
     _live?: {
@@ -212,13 +212,13 @@ export function processEvents(
   return eventTypes
     .map((eventType) => {
       const matches = liveEventsData.filter(
-        (le) => le.type === eventType.internalName
+        (le) => le.type === eventType.internalName,
       );
       let chosen = matches.find((e) => {
         const now = Date.now();
         const hasTZS = /Z|[+-]\d{2}:\d{2}$/.test(e.startTime || "");
         const s = new Date(
-          hasTZS ? e.startTime : (e.startTime || "") + "Z"
+          hasTZS ? e.startTime : (e.startTime || "") + "Z",
         ).getTime();
         const eHasTZ = e.endTime ? /Z|[+-]\d{2}:\d{2}$/.test(e.endTime) : true;
         const end = e.endTime
@@ -231,7 +231,7 @@ export function processEvents(
         const withMs = (x: LiveEvent) => {
           const hasTz = /Z|[+-]\d{2}:\d{2}$/.test(x.startTime || "");
           return new Date(
-            hasTz ? x.startTime : (x.startTime || "") + "Z"
+            hasTz ? x.startTime : (x.startTime || "") + "Z",
           ).getTime();
         };
         const future = matches
@@ -250,7 +250,7 @@ export function processEvents(
       if (chosen) {
         const hasTZS = /Z|[+-]\d{2}:\d{2}$/.test(chosen.startTime || "");
         const s = new Date(
-          hasTZS ? chosen.startTime : (chosen.startTime || "") + "Z"
+          hasTZS ? chosen.startTime : (chosen.startTime || "") + "Z",
         ).getTime();
         const eHasTZ = chosen.endTime
           ? /Z|[+-]\d{2}:\d{2}$/.test(chosen.endTime)
@@ -266,12 +266,14 @@ export function processEvents(
             mins < 60
               ? `started ${mins}m ago`
               : hours >= 24
-              ? (() => {
-                  const d = Math.floor(hours / 24);
-                  const rh = hours % 24;
-                  return rh ? `started ${d}d ${rh}h ago` : `started ${d}d ago`;
-                })()
-              : `started ${hours}h ago`;
+                ? (() => {
+                    const d = Math.floor(hours / 24);
+                    const rh = hours % 24;
+                    return rh
+                      ? `started ${d}d ${rh}h ago`
+                      : `started ${d}d ago`;
+                  })()
+                : `started ${hours}h ago`;
           sortKey = 0;
         } else if (now < s) {
           const mins = Math.max(0, Math.round((s - now) / 60000));
@@ -338,14 +340,14 @@ export function processEvents(
         ? new Date(
             /Z|[+-]\d{2}:\d{2}$/.test(a.startsAt)
               ? a.startsAt
-              : a.startsAt + "Z"
+              : a.startsAt + "Z",
           ).getTime()
         : 0;
       const bt = b.startsAt
         ? new Date(
             /Z|[+-]\d{2}:\d{2}$/.test(b.startsAt)
               ? b.startsAt
-              : b.startsAt + "Z"
+              : b.startsAt + "Z",
           ).getTime()
         : 0;
       if (ak === 1) return at - bt;
