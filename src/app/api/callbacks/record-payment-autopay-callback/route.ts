@@ -7,7 +7,7 @@ type CallbackPayload = {
   type: "record_payment";
   status: "done" | "failed";
   result?: { paymentId?: number | string; mode?: string };
-  error?: any;
+  error?: unknown;
   meta?: {
     invoiceInternalId?: number | string;
     amount?: number;
@@ -74,18 +74,51 @@ export async function POST(req: NextRequest) {
     process.env.SUPABASE_SERVICE_ROLE_KEY as string,
   );
 
-  const { error } = await supa
-    .from("invoices")
-    .update({
-      payment_processing: false,
-      payment_processing_started_at: null,
-    })
-    .eq("invoice_id", invoiceId);
+  const autopayUpdate =
+    payload.status === "done"
+      ? {
+          status: "paid",
+          callback_received_at: new Date().toISOString(),
+          last_callback_status: payload.status,
+          payment_id:
+            payload.result?.paymentId != null
+              ? String(payload.result.paymentId)
+              : null,
+          last_error: null,
+          callback_payload: payload,
+        }
+      : {
+          status: "failed",
+          callback_received_at: new Date().toISOString(),
+          last_callback_status: payload.status,
+          last_error:
+            typeof payload.error === "string"
+              ? payload.error
+              : JSON.stringify(payload.error ?? null),
+          callback_payload: payload,
+        };
 
-  if (error) {
+  const { data: updatedRows, error: autopayError } = await supa
+    .from("autopayment_queue_stock_change")
+    .update(autopayUpdate)
+    .eq("netsuite_job_id", payload.job_id)
+    .select("id");
+
+  if (autopayError) {
     return NextResponse.json(
-      { ok: false, error: error.message },
+      { ok: false, error: autopayError.message, job: payload.job_id },
       { status: 500 },
+    );
+  }
+
+  if (!updatedRows?.length) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "No autopay queue rows matched callback job_id",
+        job: payload.job_id,
+      },
+      { status: 404 },
     );
   }
 
@@ -94,5 +127,6 @@ export async function POST(req: NextRequest) {
     invoiceId,
     job: payload.job_id,
     status: payload.status,
+    updatedRows: updatedRows.length,
   });
 }

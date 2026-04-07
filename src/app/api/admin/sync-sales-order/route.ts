@@ -2,6 +2,11 @@ import { NextRequest } from "next/server";
 import axios from "axios";
 import { getValidToken } from "@/lib/netsuite/token";
 import { createClient } from "@supabase/supabase-js";
+import {
+  analyzeAutoPayQueueRowsForCommittedIncrease,
+  buildAutoPayQueueRowsForCommittedIncrease,
+  buildSalesOrderLineKey,
+} from "@/lib/autopay/build-queue-rows-from-committed-changes";
 
 const NS_ENV = process.env.NETSUITE_ENV?.toLowerCase() || "prod";
 const isSB = NS_ENV === "sb";
@@ -21,6 +26,17 @@ const RL_DEPLOY_ID = "customdeploy1";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+
+function toFiniteNumber(value: string | null): number | null {
+  if (value == null) return null;
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+}
+
+function truthyParam(value: string | null): boolean {
+  if (!value) return false;
+  return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
+}
 
 type ManifestPart = {
   id: string | number;
@@ -42,6 +58,10 @@ type SoManifestShape = {
       parts: ManifestPart[];
     };
     sales_order_invoice_line_links?: {
+      total_rows: number;
+      parts: ManifestPart[];
+    };
+    sales_order_customer_deposits?: {
       total_rows: number;
       parts: ManifestPart[];
     };
@@ -112,6 +132,19 @@ type SalesOrderInvoiceLineLinkRow = {
   created_at: string;
 };
 
+type SalesOrderCustomerDepositRow = {
+  deposit_id: number;
+  tran_id: string | null;
+  trandate: string | null;
+  customer_id: number | null;
+  so_id: number;
+  amount: number | null;
+  status: string | null;
+  memo: string | null;
+  synced_at: string;
+  ns_deleted_at: string | null;
+};
+
 type AutoPaymentQueueStockChangeRow = {
   id: number;
   so_id: number;
@@ -155,6 +188,12 @@ type Database = {
         Update: Partial<SalesOrderInvoiceLineLinkRow>;
         Relationships: [];
       };
+      sales_order_customer_deposits: {
+        Row: SalesOrderCustomerDepositRow;
+        Insert: Partial<SalesOrderCustomerDepositRow>;
+        Update: Partial<SalesOrderCustomerDepositRow>;
+        Relationships: [];
+      };
       autopayment_queue_stock_change: {
         Row: AutoPaymentQueueStockChangeRow;
         Insert: Partial<AutoPaymentQueueStockChangeRow>;
@@ -174,6 +213,8 @@ type SalesOrderLineInsert =
   Database["public"]["Tables"]["sales_order_lines"]["Insert"];
 type SalesOrderInvoiceLineLinkInsert =
   Database["public"]["Tables"]["sales_order_invoice_line_links"]["Insert"];
+type SalesOrderCustomerDepositInsert =
+  Database["public"]["Tables"]["sales_order_customer_deposits"]["Insert"];
 type AutoPaymentQueueStockChangeInsert =
   Database["public"]["Tables"]["autopayment_queue_stock_change"]["Insert"];
 
@@ -438,10 +479,6 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
-function buildLineKey(soId: number, nsLineId: number | null, lineNo: number) {
-  return `${soId}::${nsLineId != null ? nsLineId : `lineNo:${lineNo}`}`;
-}
-
 function buildSoInvoiceLinkKey(
   soId: number,
   soNsLineId: number,
@@ -466,28 +503,51 @@ async function fetchExistingLinesForSoIds(
   >();
 
   for (const ids of chunk(soIds, 1000)) {
-    const { data, error } = await supabase
-      .from("sales_order_lines")
-      .select("so_id, ns_line_id, line_no, quantity_committed")
-      .in("so_id", ids);
+    let from = 0;
+    const pageSize = 1000;
 
-    if (error) throw error;
+    for (;;) {
+      const { data, error } = await supabase
+        .from("sales_order_lines")
+        .select("so_id, ns_line_id, line_no, quantity_committed")
+        .in("so_id", ids)
+        .range(from, from + pageSize - 1);
 
-    for (const r of data || []) {
-      const soId = Number(r.so_id);
-      const lineNo = Number(r.line_no);
-      const nsLineId = r.ns_line_id != null ? Number(r.ns_line_id) : null;
-      if (!Number.isFinite(soId) || !Number.isFinite(lineNo)) continue;
-      out.set(buildLineKey(soId, nsLineId, lineNo), {
-        so_id: soId,
-        ns_line_id: nsLineId,
-        line_no: lineNo,
-        quantity_committed: toNumOrNull((r as any).quantity_committed),
-      });
+      if (error) throw error;
+
+      for (const r of data || []) {
+        const soId = Number(r.so_id);
+        const lineNo = Number(r.line_no);
+        const nsLineId = r.ns_line_id != null ? Number(r.ns_line_id) : null;
+        if (!Number.isFinite(soId) || !Number.isFinite(lineNo)) continue;
+        out.set(buildSalesOrderLineKey(soId, nsLineId, lineNo), {
+          so_id: soId,
+          ns_line_id: nsLineId,
+          line_no: lineNo,
+          quantity_committed: toNumOrNull((r as any).quantity_committed),
+        });
+      }
+
+      if (!data?.length || data.length < pageSize) break;
+      from += pageSize;
     }
   }
 
   return out;
+}
+
+async function fetchSalesOrderLinesForSoId(
+  supabase: ReturnType<typeof createClient<Database>>,
+  soId: number,
+) {
+  const { data, error } = await supabase
+    .from("sales_order_lines")
+    .select("so_id, line_no, ns_line_id, quantity_committed, is_closed")
+    .eq("so_id", soId)
+    .order("line_no", { ascending: true });
+
+  if (error) throw error;
+  return data || [];
 }
 
 async function fetchExistingPendingQueueKeys(
@@ -497,25 +557,35 @@ async function fetchExistingPendingQueueKeys(
   const out = new Set<string>();
 
   for (const ids of chunk(soIds, 1000)) {
-    const { data, error } = await supabase
-      .from("autopayment_queue_stock_change")
-      .select("so_id, ns_line_id, new_quantity_committed, status")
-      .eq("status", "pending")
-      .in("so_id", ids);
+    let from = 0;
+    const pageSize = 1000;
 
-    if (error) throw error;
+    for (;;) {
+      const { data, error } = await supabase
+        .from("autopayment_queue_stock_change")
+        .select("so_id, ns_line_id, new_quantity_committed, status")
+        .eq("status", "pending")
+        .in("so_id", ids)
+        .range(from, from + pageSize - 1);
 
-    for (const r of data || []) {
-      const soId = Number(r.so_id);
-      const nsLineId = Number(r.ns_line_id);
-      const newQty = Number((r as any).new_quantity_committed);
-      if (
-        !Number.isFinite(soId) ||
-        !Number.isFinite(nsLineId) ||
-        !Number.isFinite(newQty)
-      )
-        continue;
-      out.add(`${soId}::${nsLineId}::${newQty}`);
+      if (error) throw error;
+
+      for (const r of data || []) {
+        const soId = Number(r.so_id);
+        const nsLineId = Number(r.ns_line_id);
+        const newQty = Number((r as any).new_quantity_committed);
+        if (
+          !Number.isFinite(soId) ||
+          !Number.isFinite(nsLineId) ||
+          !Number.isFinite(newQty)
+        ) {
+          continue;
+        }
+        out.add(`${soId}::${nsLineId}::${newQty}`);
+      }
+
+      if (!data?.length || data.length < pageSize) break;
+      from += pageSize;
     }
   }
 
@@ -536,6 +606,8 @@ export async function POST(req: NextRequest) {
 
     const token = await getValidToken();
     const headers = authHeaders(token);
+    const debug = truthyParam(req.nextUrl.searchParams.get("debug"));
+    const debugSoId = toFiniteNumber(req.nextUrl.searchParams.get("soId"));
 
     const manifestId =
       (await getFileIdByNameInFolder(
@@ -570,6 +642,11 @@ export async function POST(req: NextRequest) {
     )
       ? manifest.files.sales_order_invoice_line_links!.parts
       : [];
+    const soCustomerDepositParts = Array.isArray(
+      manifest?.files?.sales_order_customer_deposits?.parts,
+    )
+      ? manifest.files.sales_order_customer_deposits!.parts
+      : [];
 
     if (!soParts.length || !soLineParts.length) {
       return new Response(
@@ -578,17 +655,22 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const [soText, soLinesText, soInvoiceLinksText] = await Promise.all([
-      restletGetJsonlFromParts(token, soParts),
-      restletGetJsonlFromParts(token, soLineParts),
-      soInvoiceLinkParts.length
-        ? restletGetJsonlFromParts(token, soInvoiceLinkParts)
-        : Promise.resolve(""),
-    ]);
+    const [soText, soLinesText, soInvoiceLinksText, soCustomerDepositsText] =
+      await Promise.all([
+        restletGetJsonlFromParts(token, soParts),
+        restletGetJsonlFromParts(token, soLineParts),
+        soInvoiceLinkParts.length
+          ? restletGetJsonlFromParts(token, soInvoiceLinkParts)
+          : Promise.resolve(""),
+        soCustomerDepositParts.length
+          ? restletGetJsonlFromParts(token, soCustomerDepositParts)
+          : Promise.resolve(""),
+      ]);
 
     const salesOrdersRaw = parseJsonl(soText);
     const salesOrderLinesRaw = parseJsonl(soLinesText);
     const salesOrderInvoiceLineLinksRaw = parseJsonl(soInvoiceLinksText);
+    const salesOrderCustomerDepositsRaw = parseJsonl(soCustomerDepositsText);
 
     const fileSoIds = Array.from(
       new Set<number>(
@@ -712,20 +794,24 @@ export async function POST(req: NextRequest) {
         return {
           so_id,
           line_no,
-          item_id: toNumOrNull(r.item_id),
-          item_sku: coerceText(r.item_sku),
+          item_id: toNumOrNull(r.item_id ?? r.itemid),
+          item_sku: coerceText(r.item_sku ?? r.sku),
           item_display_name: coerceText(
-            r.item_display_name ?? r.displayname ?? r.sku,
+            r.item_display_name ?? r.display_name ?? r.displayname ?? r.sku,
           ),
           quantity: toNumOrNull(r.quantity),
-          quantity_committed: toNumOrNull(r.quantity_committed),
+          quantity_committed: toNumOrNull(
+            r.quantity_committed ?? r.quantitycommitted,
+          ),
           rate: toNumOrNull(r.rate),
-          amount: toNumOrNull(r.amount),
+          amount: toNumOrNull(r.amount ?? r.amountfx),
           description: coerceText(r.description),
-          comment: coerceText(r.comment),
-          is_closed: Boolean(r.is_closed),
-          fulfillment_status: coerceText(r.fulfillment_status),
-          ns_line_id: toNumOrNull(r.ns_line_id),
+          comment: coerceText(r.comment ?? r.line_comment ?? r.linecomment),
+          is_closed: parseBool(r.is_closed ?? r.isclosed) ?? false,
+          fulfillment_status: coerceText(
+            r.fulfillment_status ?? r.fulfillmentstatus,
+          ),
+          ns_line_id: toNumOrNull(r.ns_line_id ?? r.nslineid),
         } as SalesOrderLineInsert;
       })
       .filter((x): x is SalesOrderLineInsert => !!x);
@@ -769,60 +855,42 @@ export async function POST(req: NextRequest) {
 
     const soInvoiceLinkRows = Array.from(soInvoiceLinkRowsMap.values());
 
+    const customerDepositRowsMap = new Map<
+      number,
+      SalesOrderCustomerDepositInsert
+    >();
+
+    for (const r of salesOrderCustomerDepositsRaw) {
+      const deposit_id = toNumOrNull(r.deposit_id ?? r.depositid);
+      const so_id = toNumOrNull(r.so_id ?? r.soid);
+
+      if (deposit_id == null || so_id == null) continue;
+
+      customerDepositRowsMap.set(deposit_id, {
+        deposit_id,
+        tran_id: coerceText(r.tran_id ?? r.tranid),
+        trandate: normalizeUsDateToIso(r.trandate),
+        customer_id: toNumOrNull(r.customer_id ?? r.customerid),
+        so_id,
+        amount: toNumOrNull(r.amount ?? r.amountfx),
+        status: coerceText(r.status),
+        memo: coerceText(r.memo),
+        ns_deleted_at: null,
+      });
+    }
+
+    const customerDepositRows = Array.from(customerDepositRowsMap.values());
+
     const existingPendingQueueKeys = fileSoIds.length
       ? await fetchExistingPendingQueueKeys(supabase, fileSoIds)
       : new Set<string>();
 
-    const queueRows: AutoPaymentQueueStockChangeInsert[] = [];
-
-    for (const row of lineRows) {
-      const soId = Number(row.so_id);
-      const lineNo = Number(row.line_no);
-      const nsLineId = row.ns_line_id != null ? Number(row.ns_line_id) : null;
-      const newCommitted = toNumOrNull((row as any).quantity_committed) ?? 0;
-
-      if (!Number.isFinite(soId) || !Number.isFinite(lineNo)) continue;
-      if (nsLineId == null || !Number.isFinite(nsLineId)) continue;
-      if (Boolean(row.is_closed)) continue;
-
-      const existing = existingLinesByKey.get(
-        buildLineKey(soId, nsLineId, lineNo),
-      );
-      if (!existing) continue;
-      if (existing.quantity_committed == null) continue;
-
-      const previousCommitted = Number(existing.quantity_committed);
-      if (!(newCommitted > previousCommitted)) continue;
-
-      const committedDelta = newCommitted - previousCommitted;
-      if (!(committedDelta > 0)) continue;
-
-      const pendingKey = `${soId}::${nsLineId}::${newCommitted}`;
-      if (existingPendingQueueKeys.has(pendingKey)) continue;
-
-      const rate = toNumOrNull(row.rate);
-      const chargeAmount =
-        rate != null ? Number((committedDelta * rate).toFixed(4)) : null;
-
-      queueRows.push({
-        so_id: soId,
-        ns_line_id: nsLineId,
-        line_no: lineNo,
-        item_id: toNumOrNull(row.item_id),
-        item_sku: coerceText(row.item_sku),
-        item_display_name: coerceText(row.item_display_name),
-        quantity: toNumOrNull(row.quantity),
-        rate,
-        line_amount: toNumOrNull(row.amount),
-        previous_quantity_committed: previousCommitted,
-        new_quantity_committed: newCommitted,
-        committed_delta: Number(committedDelta.toFixed(4)),
-        charge_amount: chargeAmount,
-        status: "pending",
-      });
-
-      existingPendingQueueKeys.add(pendingKey);
-    }
+    const queueAnalysis = analyzeAutoPayQueueRowsForCommittedIncrease({
+      lineRows,
+      existingLinesByKey,
+      existingPendingQueueKeys,
+    });
+    const queueRows: AutoPaymentQueueStockChangeInsert[] = queueAnalysis.queueRows;
 
     if (fileSoIds.length) {
       for (const ids of chunk(fileSoIds, 1000)) {
@@ -862,6 +930,25 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    if (fileSoIds.length) {
+      for (const ids of chunk(fileSoIds, 1000)) {
+        const { error } = await supabase
+          .from("sales_order_customer_deposits")
+          .delete()
+          .in("so_id", ids);
+        if (error) throw error;
+      }
+    }
+
+    if (customerDepositRows.length) {
+      for (const batch of chunk(customerDepositRows, 1000)) {
+        const { error } = await supabase
+          .from("sales_order_customer_deposits")
+          .insert(batch);
+        if (error) throw error;
+      }
+    }
+
     if (queueRows.length) {
       for (const batch of chunk(queueRows, 1000)) {
         const { error } = await supabase
@@ -870,6 +957,11 @@ export async function POST(req: NextRequest) {
         if (error) throw error;
       }
     }
+
+    const postWriteDebugLines =
+      debug && debugSoId
+        ? await fetchSalesOrderLinesForSoId(supabase, debugSoId)
+        : undefined;
 
     return new Response(
       JSON.stringify(
@@ -894,14 +986,48 @@ export async function POST(req: NextRequest) {
               rows_parsed: salesOrderInvoiceLineLinksRaw.length,
               rows_inserted: soInvoiceLinkRows.length,
             },
+            sales_order_customer_deposits: {
+              parts: soCustomerDepositParts.length,
+              rows_reported:
+                manifest.files.sales_order_customer_deposits?.total_rows ?? 0,
+              rows_parsed: salesOrderCustomerDepositsRaw.length,
+              rows_inserted: customerDepositRows.length,
+            },
           },
           counts: {
             headers_upserted: headerRows.length,
             lines_inserted: lineRows.length,
             so_invoice_links_inserted: soInvoiceLinkRows.length,
+            so_customer_deposits_inserted: customerDepositRows.length,
             stock_change_queued: queueRows.length,
             soft_deleted: missingInFilesForDelete.length,
           },
+          debug:
+            debug && debugSoId
+              ? {
+                  soId: debugSoId,
+                  supabaseUrl: SUPABASE_URL,
+                  existingBaselineLines: Array.from(existingLinesByKey.values()).filter(
+                    (row) => Number(row.so_id) === debugSoId,
+                  ),
+                  incomingLines: lineRows.filter(
+                    (row) => Number(row.so_id) === debugSoId,
+                  ),
+                  existingPendingQueueKeys: Array.from(existingPendingQueueKeys).filter(
+                    (key) => key.startsWith(`${debugSoId}::`),
+                  ),
+                  queueDecisions: queueAnalysis.decisions.filter(
+                    (decision) => Number(decision.so_id) === debugSoId,
+                  ),
+                  queuedRows: queueRows.filter(
+                    (row) => Number(row.so_id) === debugSoId,
+                  ),
+                  soInvoiceLinks: soInvoiceLinkRows.filter(
+                    (row) => Number(row.so_id) === debugSoId,
+                  ),
+                  postWriteSalesOrderLines: postWriteDebugLines,
+                }
+              : undefined,
         },
         null,
         2,
