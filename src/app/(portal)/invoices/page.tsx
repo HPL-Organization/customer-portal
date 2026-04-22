@@ -817,8 +817,10 @@ export default function InvoicesPage() {
         const rate = Number(l.rate || 0);
         const isDiscount = !(rate > 0);
         const lineAmount = Number(l.amount ?? 0);
+        const details = getLineDetails(l, "");
         return {
           name: l.itemName || String(l.itemId || ""),
+          details: details || "",
           qty: isDiscount ? 0 : qty,
           rate,
           amount: lineAmount,
@@ -843,14 +845,27 @@ export default function InvoicesPage() {
           cursorY += 16;
         }
         const name = r.name || "";
+        const details = r.details || "";
         const maxNameWidth = colX[1] - colX[0] - 8;
         const nameLines = (doc.splitTextToSize(
           name,
           maxNameWidth
         ) as string[]) || [name];
-        const blockHeight = Math.max(lineHeight, nameLines.length * lineHeight);
+        const detailLines =
+          details && details !== name
+            ? ((doc.splitTextToSize(details, maxNameWidth) as string[]) || [
+                details,
+              ])
+            : [];
+        const blockHeight = Math.max(
+          lineHeight,
+          (nameLines.length + detailLines.length) * lineHeight,
+        );
         nameLines.forEach((ln, i) =>
-          doc.text(ln, colX[0], cursorY + i * lineHeight)
+          doc.text(ln, colX[0], cursorY + i * lineHeight),
+        );
+        detailLines.forEach((ln, i) =>
+          doc.text(ln, colX[0], cursorY + (nameLines.length + i) * lineHeight),
         );
         doc.text(String(r.qty), colX[1], cursorY);
         doc.text(fmt(r.rate), colX[2], cursorY);
