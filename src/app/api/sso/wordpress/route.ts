@@ -6,7 +6,7 @@ import { createHmac } from "crypto";
 
 const SHARED_SECRET = process.env.WP_SSO_SECRET!;
 const DEFAULT_WP_SSO_CALLBACK =
-  "https://matta238.sg-host.com/wp-admin/admin-ajax.php?action=hpl_sso_callback";
+  "https://hpl1dev.wpenginepowered.com/wp-admin/admin-ajax.php?action=hpl_sso_callback";
 const WP_SSO_CALLBACK =
   process.env.WP_SSO_CALLBACK?.trim() || DEFAULT_WP_SSO_CALLBACK;
 const PORTAL_BASE_URL =
