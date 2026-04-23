@@ -9,6 +9,58 @@ function clean(s: any) {
   return (s ?? "").toString().trim();
 }
 
+function buildAffiliateHistory(affiliateCode: string) {
+  const code = clean(affiliateCode);
+  if (!code) return undefined;
+  return [
+    {
+      couponCode: code,
+      dateApplied: new Date().toISOString(),
+    },
+  ];
+}
+
+async function postToNSWrites(path: string, payload: Record<string, unknown>) {
+  const idemKey = `cr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  console.log("NS writes request", { path, idemKey });
+
+  const res = await fetch(`${NSW_BASE_URL.replace(/\/$/, "")}${path}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${NSW_AUTH_SECRET}`,
+      "Idempotency-Key": idemKey,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`NS writes ${path} failed: HTTP ${res.status} ${text}`);
+  }
+}
+
+async function syncAffiliateHistoryToCustomer(
+  customerInternalId: string | number,
+  affiliateHistory:
+    | Array<{ couponCode: string; dateApplied: string }>
+    | undefined,
+) {
+  if (!affiliateHistory?.length) return;
+
+  try {
+    await postToNSWrites("/api/netsuite/update-customer", {
+      customerInternalId,
+      affiliateHistory,
+    });
+  } catch (error) {
+    console.log("Error syncing affiliate history to NS writes", {
+      customerInternalId,
+      error,
+    });
+  }
+}
+
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
@@ -35,6 +87,7 @@ export async function POST(req: NextRequest) {
   const firstName = clean(body?.firstName) || clean(meta.first_name);
   const middleName = clean(body?.middleName) || clean(meta.middle_name);
   const lastName = clean(body?.lastName) || clean(meta.last_name);
+  const affiliateHistory = buildAffiliateHistory(body?.affiliateCode);
 
   const emailLC = user.email.toLowerCase();
 
@@ -48,6 +101,10 @@ export async function POST(req: NextRequest) {
     .eq("user_id", user.id)
     .single();
   if (existing?.netsuite_customer_id) {
+    await syncAffiliateHistoryToCustomer(
+      existing.netsuite_customer_id,
+      affiliateHistory,
+    );
     return NextResponse.json({
       nsId: String(existing.netsuite_customer_id),
       mode: "existing",
@@ -81,6 +138,10 @@ export async function POST(req: NextRequest) {
           user_metadata: { ...meta, ...metaUpdates },
         });
       }
+      await syncAffiliateHistoryToCustomer(
+        preloaded.netsuite_customer_id,
+        affiliateHistory,
+      );
       return NextResponse.json({
         nsId: String(preloaded.netsuite_customer_id),
         mode: "claimed",
@@ -124,23 +185,14 @@ export async function POST(req: NextRequest) {
   }
 
   const callbackUrl = `${PORTAL_BASE_URL}/api/callbacks/create-simple-customer-callback`;
-  const idemKey = `cr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  console.log("Idem key", idemKey);
 
   try {
-    await fetch(`${NSW_BASE_URL}/api/netsuite/create-simple-customer`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${NSW_AUTH_SECRET}`,
-        "Idempotency-Key": idemKey,
-      },
-      body: JSON.stringify({
-        name: fullName,
-        email: emailLC,
-        middleName: middleName || undefined,
-        callbackUrl,
-      }),
+    await postToNSWrites("/api/netsuite/create-simple-customer", {
+      name: fullName,
+      email: emailLC,
+      middleName: middleName || undefined,
+      affiliateHistory,
+      callbackUrl,
     });
   } catch (e) {
     console.log("Error in provisioning to NS writes", e);

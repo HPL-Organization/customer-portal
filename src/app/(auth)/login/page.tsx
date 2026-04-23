@@ -37,6 +37,7 @@ function LoginInner() {
   const router = useRouter();
   const sp = useSearchParams();
   const next = sp.get("next") || "/";
+  const affiliateCode = (sp.get("aff_code") || "").trim();
   const maintParam = sp.get("maintenance") === "1";
   const maintOn =
     maintParam ||
@@ -81,7 +82,12 @@ function LoginInner() {
       const r = await fetch("/api/auth/provision", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ firstName, middleName, lastName }),
+        body: JSON.stringify({
+          firstName,
+          middleName,
+          lastName,
+          affiliateCode: affiliateCode || undefined,
+        }),
       });
       const j = await r.json();
       nsId = j?.nsId ?? null;
@@ -229,7 +235,7 @@ function LoginInner() {
       typeof window !== "undefined"
         ? `${window.location.origin}/callback?next=${encodeURIComponent(next)}${
             encodedEmail ? `&e=${encodeURIComponent(encodedEmail)}` : ""
-          }`
+          }${affiliateCode ? `&aff_code=${encodeURIComponent(affiliateCode)}` : ""}`
         : undefined;
 
     const { data, error } = await supabase.auth.signUp({
@@ -289,7 +295,7 @@ function LoginInner() {
       typeof window !== "undefined"
         ? `${window.location.origin}/callback?next=${encodeURIComponent(next)}${
             encodedEmail ? `&e=${encodeURIComponent(encodedEmail)}` : ""
-          }`
+          }${affiliateCode ? `&aff_code=${encodeURIComponent(affiliateCode)}` : ""}`
         : undefined;
 
     const { error } = await supabase.auth.signInWithOtp({
@@ -339,7 +345,7 @@ function LoginInner() {
         options: {
           redirectTo: `${origin}/callback?next=${encodeURIComponent(next)}${
             prefill ? `&prefill=${encodeURIComponent(prefill)}` : ""
-          }`,
+          }${affiliateCode ? `&aff_code=${encodeURIComponent(affiliateCode)}` : ""}`,
         },
       });
     } catch (e: any) {
@@ -353,9 +359,18 @@ function LoginInner() {
     try {
       setResending(true);
       setResendMsg(null);
+      const encodedEmail =
+        typeof window !== "undefined" ? btoa(confirmBannerEmail) : null;
+      const emailRedirectTo =
+        typeof window !== "undefined"
+          ? `${window.location.origin}/callback?next=${encodeURIComponent(next)}${
+              encodedEmail ? `&e=${encodeURIComponent(encodedEmail)}` : ""
+            }${affiliateCode ? `&aff_code=${encodeURIComponent(affiliateCode)}` : ""}`
+          : undefined;
       const { error } = await supabase.auth.resend({
         type: "signup",
         email: confirmBannerEmail,
+        options: { emailRedirectTo },
       } as any);
       setResending(false);
       if (error) return setResendMsg(error.message);
@@ -829,7 +844,7 @@ function AuthForm(props: {
   password: string;
   setPassword: (s: string) => void;
   showPass: boolean;
-  setShowPass: (b: boolean) => void;
+  setShowPass: React.Dispatch<React.SetStateAction<boolean>>;
   firstName: string;
   middleName: string;
   lastName: string;
