@@ -85,6 +85,7 @@ type SalesOrdersRow = {
   hubspot_so_id: string | null;
   sales_channel_id: string | null;
   affiliate_id: string | null;
+  coupon_code: string | null;
   synced_at: string;
   ns_deleted_at: string | null;
   managed_by_console: boolean;
@@ -705,6 +706,7 @@ export async function POST(req: NextRequest) {
           hubspot_so_id: coerceText(r.hubspot_so_id),
           sales_channel_id: coerceText(r.sales_channel_id),
           affiliate_id: coerceText(r.affiliate_id),
+          coupon_code: coerceText(r.coupon_code ?? r.custbody_hpl_cupon_code),
           order_note: coerceText(r.order_note),
           hold_till: normalizeUsDateToIso(r.hold_till),
           ship_complete: parseBool(r.ship_complete),
