@@ -40,6 +40,7 @@ function Inner() {
   const router = useRouter();
   const sp = useSearchParams();
   const next = sp.get("next") || "/";
+  const affiliateCode = (sp.get("aff_code") || "").trim();
   const prefillParam = sp.get("prefill") || "";
   const encodedEmailParam = sp.get("e") || "";
   const forceSessionFail = "1";
@@ -304,7 +305,10 @@ function Inner() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "same-origin",
-          body: JSON.stringify(names),
+          body: JSON.stringify({
+            ...names,
+            affiliateCode: affiliateCode || undefined,
+          }),
         });
         const j: any = await r.json().catch(() => ({}));
 
@@ -386,7 +390,7 @@ function Inner() {
         );
       }
     })();
-  }, [router, next, prefillParam, encodedEmailParam]);
+  }, [router, next, prefillParam, encodedEmailParam, affiliateCode]);
 
   return (
     <main className="min-h-screen grid place-items-center bg-gradient-to-br from-sky-50 via-white to-emerald-50 px-6 py-16">
