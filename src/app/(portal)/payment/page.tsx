@@ -1,9 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "react-toastify";
 import {
   Card,
@@ -52,9 +51,6 @@ declare global {
 const DELETE_DISABLED_MSG =
   "Must keep one payment method on file to remove- +xxxxxxxxxx example@example.com";
 
-/* ---------- Helpers ---------- */
-type PaymentMethod = ReturnType<typeof mapShape> extends infer T ? never : any;
-
 function pmLabel(pm: any) {
   const brand = pm.brand || (pm.type === "ach" ? "Bank" : "Card");
   const last4 = pm.last4 ? `•••• ${pm.last4}` : "";
@@ -68,33 +64,6 @@ function typeIcon(pm: any, className = "w-5 h-5") {
 }
 
 let VP_ACTIVE = { key: 0, sid: null as string | null, handled: false };
-
-function mapShape(it: any, idx: number) {
-  const id = it.id ?? it.internalId ?? it.paymentCardTokenId ?? idx;
-  const pmStr = String(it.paymentMethod ?? it.type ?? "").toLowerCase();
-  const type: "card" | "ach" | "other" =
-    pmStr.includes("ach") || pmStr.includes("bank")
-      ? "ach"
-      : pmStr.includes("card") || pmStr.includes("token")
-      ? "card"
-      : "other";
-  const brand = it.brand ?? it.cardBrand ?? undefined;
-  const last4 =
-    (it.accountNumberLastFour ?? it.last4 ?? it.cardLast4 ?? "").toString() ||
-    undefined;
-  let exp = it.tokenExpirationDate ?? it.exp ?? it.expiry ?? undefined;
-  if (typeof exp === "string") {
-    const m = exp.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-    if (m) exp = `${m[2]}/${m[1].slice(-2)}`;
-    const m2 = exp.match(/^(\d{2})\/(\d{4})$/);
-    if (m2) exp = `${m2[1]}/${m2[2].slice(-2)}`;
-  }
-  const name = it.cardNameOnCard ?? it.name ?? it.accountHolder ?? undefined;
-  const tokenFamilyLabel =
-    it.tokenFamily ?? it.tokenFamilyLabel ?? it.gateway ?? "Versapay";
-  const isDefault = Boolean(it.isDefault ?? it.default ?? it.primary ?? false);
-  return { id, type, brand, last4, exp, name, isDefault, tokenFamilyLabel };
-}
 
 function isProcessing(pm: any) {
   const a = String(pm?.instrument_id ?? "").toLowerCase();
@@ -115,7 +84,7 @@ async function createPaymentMethod(
     tokenExpirationDate?: string;
     accountNumberLastFour?: string;
     accountType?: string;
-  }
+  },
 ) {
   const res = await fetch("/api/netsuite/save-payment-method", {
     method: "POST",
@@ -144,14 +113,14 @@ async function createPaymentMethod(
 
 async function deletePaymentMethod(
   customerInternalId: number,
-  instrumentId: number | string
+  instrumentId: number | string,
 ) {
   const normalizedId =
     typeof instrumentId === "number"
       ? instrumentId
       : /^\d+$/.test(String(instrumentId))
-      ? Number(instrumentId)
-      : instrumentId;
+        ? Number(instrumentId)
+        : instrumentId;
 
   const res = await fetch("/api/netsuite/delete-token", {
     method: "POST",
@@ -179,172 +148,93 @@ async function deletePaymentMethod(
   return data as { success: boolean; action?: string; message?: string };
 }
 
-async function makePaymentDefault(
-  customerInternalId: number,
-  instrumentId: number | string
-) {
-  const normalizedId =
-    typeof instrumentId === "number"
-      ? instrumentId
-      : /^\d+$/.test(String(instrumentId))
-      ? Number(instrumentId)
-      : instrumentId;
-
-  const res = await fetch("/api/netsuite/make-payment-default", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      customerId: Number(customerInternalId),
-      instrumentId: normalizedId,
-    }),
-  });
-
-  const text = await res.text();
-  let data: any = {};
-  try {
-    data = text ? JSON.parse(text) : {};
-  } catch {
-    data = { raw: text };
-  }
-
-  if (!res.ok || data?.success === false || data?.error) {
-    const message =
-      data?.message || data?.error || `HTTP ${res.status}: ${text}`;
-    throw new Error(message);
-  }
-
-  return data as { success: boolean; action?: string };
-}
-
 /* ---------- UI blocks ---------- */
 function PaymentMethodCard({
   pm,
   onDelete,
-  onMakeDefault,
   disableDelete,
   deleteTooltip,
 }: {
   pm: any;
   onDelete: (pm: any) => void;
-  onMakeDefault: (pm: any) => void;
   disableDelete?: boolean;
   deleteTooltip?: string;
 }) {
   return (
     <Card className="rounded-2xl border border-[#BFBFBF]/60 shadow-sm transition-shadow hover:shadow-md">
-      <CardHeader
-        title={
-          <div className="flex flex-wrap items-center gap-2 text-base font-medium text-[#17152A] min-w-0">
-            <span className="inline-flex items-center justify-center rounded-full bg-[#8C0F0F]/10 w-9 h-9 text-[#8C0F0F]">
-              {typeIcon(pm, "w-5 h-5")}
-            </span>
-            <span className="truncate min-w-0">{pmLabel(pm)}</span>
-            {pm.isDefault ? (
-              <Chip
-                size="small"
-                color="success"
-                label="Default"
-                className="ml-1"
-              />
-            ) : null}
+      <CardContent className="p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-3 min-w-0">
+              <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#8C0F0F]/10 text-[#8C0F0F]">
+                {typeIcon(pm, "w-5 h-5")}
+              </span>
+              <div className="min-w-0">
+                <div className="truncate text-[15px] font-semibold text-[#17152A]">
+                  {pmLabel(pm)}
+                </div>
+                {(pm.payerEmail || pm.name || pm.tokenFamilyLabel) && (
+                  <div className="truncate text-sm text-[#17152A]/68">
+                    {pm.payerEmail || pm.name || pm.tokenFamilyLabel}
+                  </div>
+                )}
+              </div>
+            </div>
 
-            {isProcessing(pm) ? (
-              <Chip
-                size="small"
-                color="warning"
-                variant="outlined"
-                className="ml-1"
-                label="processing — will be usable shortly"
-                sx={{
-                  maxWidth: "100%",
-                  "& .MuiChip-label": {
-                    display: "block",
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                  },
-                }}
-              />
-            ) : null}
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              {pm.isDefault ? (
+                <Chip size="small" color="success" label="Default" />
+              ) : null}
+              {pm.preferredAutopayMethod ? (
+                <Chip
+                  size="small"
+                  color="primary"
+                  variant="outlined"
+                  label="Express Pay"
+                />
+              ) : null}
+              {isProcessing(pm) ? (
+                <Chip
+                  size="small"
+                  color="warning"
+                  variant="outlined"
+                  label="Processing"
+                />
+              ) : null}
+            </div>
           </div>
-        }
-        subheader={
-          <span className="text-sm text-[#17152A]/70">
-            {pm.payerEmail || pm.name || pm.tokenFamilyLabel || undefined}
-          </span>
-        }
-      />
 
-      <CardContent className="pt-0">
-        <div className="flex flex-wrap items-center gap-2 text-sm text-[#17152A]/70">
-          {pm.tokenFamilyLabel ? (
-            <Chip size="small" variant="outlined" label={pm.tokenFamilyLabel} />
-          ) : null}
-          {pm.brand ? (
-            <Chip size="small" variant="outlined" label={pm.brand} />
-          ) : null}
-          {pm.type ? (
-            <Chip
-              size="small"
-              variant="outlined"
-              label={pm.type.toUpperCase()}
-            />
-          ) : null}
+          <Tooltip title={disableDelete ? deleteTooltip || "Remove" : "Remove"}>
+            <span
+              className={disableDelete ? "cursor-not-allowed" : undefined}
+              onClick={(e) => {
+                if (disableDelete) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }
+              }}
+            >
+              <IconButton
+                onClick={() => onDelete(pm)}
+                disabled={!!disableDelete}
+                aria-label="Remove payment method"
+                tabIndex={disableDelete ? -1 : 0}
+                sx={{
+                  mt: "-4px",
+                  mr: "-4px",
+                  color: "#8C0F0F",
+                  "&:hover": { backgroundColor: "rgba(140,15,15,0.08)" },
+                  "&.Mui-disabled": { color: "rgba(140,15,15,0.35)" },
+                }}
+              >
+                <Trash2 className="w-5 h-5" />
+              </IconButton>
+            </span>
+          </Tooltip>
         </div>
       </CardContent>
       <Divider />
-      <CardActions className="flex justify-between">
-        <Tooltip
-          title={pm.isDefault ? "This is already the default" : "Make Default"}
-        >
-          <span className="hidden">
-            <MUIButton
-              size="small"
-              variant="outlined"
-              onClick={() => onMakeDefault(pm)}
-              disabled={pm.isDefault}
-              sx={{
-                textTransform: "none",
-                borderColor: "#BFBFBF",
-                color: "#17152A",
-                "&:hover": {
-                  backgroundColor: "#FFFFEC",
-                  borderColor: "#BFBFBF",
-                },
-                "&.Mui-disabled": { color: "rgba(23,21,42,0.4)" },
-              }}
-            >
-              Make Default
-            </MUIButton>
-          </span>
-        </Tooltip>
-
-        <Tooltip title={disableDelete ? deleteTooltip || "Remove" : "Remove"}>
-          <span
-            className={disableDelete ? "cursor-not-allowed" : undefined}
-            onClick={(e) => {
-              if (disableDelete) {
-                e.preventDefault();
-                e.stopPropagation();
-              }
-            }}
-          >
-            <IconButton
-              onClick={() => onDelete(pm)}
-              disabled={!!disableDelete}
-              aria-label="Remove payment method"
-              tabIndex={disableDelete ? -1 : 0}
-              sx={{
-                color: "#8C0F0F",
-                "&:hover": { backgroundColor: "rgba(140,15,15,0.08)" },
-                "&.Mui-disabled": { color: "rgba(140,15,15,0.35)" },
-              }}
-            >
-              <Trash2 className="w-5 h-5" />
-            </IconButton>
-          </span>
-        </Tooltip>
-      </CardActions>
+      <CardActions className="px-4 py-2" />
     </Card>
   );
 }
@@ -469,13 +359,13 @@ function AddMethodDialog({
             }
 
             const l4 = String(
-              result?.last4 || result?.accountLast4 || ""
+              result?.last4 || result?.accountLast4 || "",
             ).trim();
             const br = String(result?.brand || result?.cardBrand || "").trim();
             const ex =
               result?.expMonth && result?.expYear
                 ? `${String(result.expMonth).padStart(2, "0")}/${String(
-                    result.expYear
+                    result.expYear,
                   ).slice(-2)}`
                 : "";
 
@@ -498,7 +388,7 @@ function AddMethodDialog({
                 if (meta.brand) setBrand(meta.brand);
               } catch (e: any) {
                 toast.warn(
-                  e?.message || "Card metadata unavailable; saving token only."
+                  e?.message || "Card metadata unavailable; saving token only.",
                 );
               } finally {
                 if (!pendingSaveRef.current) setProcessing(false);
@@ -511,7 +401,7 @@ function AddMethodDialog({
                 tok,
                 meta.last4 || last4 || l4 || "",
                 exp || ex || "",
-                meta.brand || brand || br || ""
+                meta.brand || brand || br || "",
               );
             }
           },
@@ -519,7 +409,7 @@ function AddMethodDialog({
             setPendingSaveSafe(false);
             setProcessing(false);
             toast.error(err?.error || "Payment method rejected");
-          }
+          },
         );
 
         await client.initFrame(containerRef.current!, "100%", "100%");
@@ -568,7 +458,7 @@ function AddMethodDialog({
   async function enrichFromSale(
     sid: string,
     tok: string,
-    contactId?: string | null
+    contactId?: string | null,
   ) {
     const res = await fetch("/api/versapay/process-sale", {
       method: "POST",
@@ -610,7 +500,7 @@ function AddMethodDialog({
     tok: string,
     l4: string,
     ex: string,
-    brandOrType: string
+    brandOrType: string,
   ) {
     try {
       const last4 = l4;
@@ -717,10 +607,10 @@ function AddMethodDialog({
               token
                 ? "Token ready"
                 : processing
-                ? "Complete verification in the frame…"
-                : frameLoading
-                ? "Loading frame…"
-                : "Iframe inititalized"
+                  ? "Complete verification in the frame…"
+                  : frameLoading
+                    ? "Loading frame…"
+                    : "Iframe inititalized"
             }
             InputProps={{ readOnly: true }}
           />
@@ -775,6 +665,7 @@ function AddMethodDialog({
 /* ---------- Page ---------- */
 export default function PaymentMethodsPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const bootstrap = useCustomerBootstrap?.();
   const contactId = (bootstrap as any)?.hsId ?? null;
 
@@ -787,6 +678,11 @@ export default function PaymentMethodsPage() {
   const [addPaypalOpen, setAddPaypalOpen] = useState(false);
 
   const hasCustomerId = Boolean(customerId);
+
+  useEffect(() => {
+    if (searchParams.get("highlightAutopay") !== "1") return;
+    router.replace("/express-pay");
+  }, [router, searchParams]);
 
   function handleCreated(pm: any | null) {
     if (!pm) return;
@@ -804,8 +700,8 @@ export default function PaymentMethodsPage() {
       typeof pm.id === "number"
         ? pm.id
         : /^\d+$/.test(idStr)
-        ? Number(idStr)
-        : null;
+          ? Number(idStr)
+          : null;
     if (idNumeric == null) {
       toast.error("Can't delete: missing NetSuite token ID.");
       return;
@@ -827,51 +723,21 @@ export default function PaymentMethodsPage() {
     }
   }
 
-  async function handleMakeDefault(pm: any) {
-    if (!customerId || pm.isDefault) return;
-    const idStr = String(pm.id);
-    const idNumeric =
-      typeof pm.id === "number"
-        ? pm.id
-        : /^\d+$/.test(idStr)
-        ? Number(idStr)
-        : null;
-    if (idNumeric == null) {
-      toast.error("Can't set default: missing NetSuite token ID.");
-      return;
-    }
-    setBusyText("Updating Default");
-    setBusy(true);
-    const prev = methods;
-    setMethods(prev.map((x) => ({ ...x, isDefault: x.id === pm.id })));
-    try {
-      await makePaymentDefault(Number(customerId), idNumeric);
-      toast.success("Default updated");
-      await refresh();
-    } catch (e: any) {
-      setMethods(prev);
-      toast.error(e?.message || "Failed to update default");
-    } finally {
-      setBusy(false);
-      setBusyText("");
-    }
-  }
-
   async function handleAddMethodClick() {
     if (!hasCustomerId) return;
 
     try {
       const res = await fetch(
         `/api/supabase/has-billing?customerId=${encodeURIComponent(
-          String(customerId)
+          String(customerId),
         )}`,
-        { cache: "no-store" }
+        { cache: "no-store" },
       );
       const data = await res.json();
 
       if (!res.ok || data?.hasBilling === false) {
         toast.warn(
-          "Please add your billing address before adding a payment method"
+          "Please add your billing address before adding a payment method",
         );
         router.push("/profile?missing=billing");
         return;
@@ -888,15 +754,14 @@ export default function PaymentMethodsPage() {
     try {
       const res = await fetch(
         `/api/supabase/has-billing?customerId=${encodeURIComponent(
-          String(customerId)
+          String(customerId),
         )}`,
-        { cache: "no-store" }
+        { cache: "no-store" },
       );
-      const data = await res.json();
       if (!res.ok) {
         //|| data?.hasBilling === false
         toast.warn(
-          "Please add your billing address before adding a payment method"
+          "Please add your billing address before adding a payment method",
         );
         router.push("/profile?missing=billing");
         return;
@@ -999,7 +864,6 @@ export default function PaymentMethodsPage() {
                   key={String(pm.id)}
                   pm={pm}
                   onDelete={handleDelete}
-                  onMakeDefault={handleMakeDefault}
                   disableDelete={methods.length <= 1 || isProcessing(pm)}
                   deleteTooltip={DELETE_DISABLED_MSG}
                 />

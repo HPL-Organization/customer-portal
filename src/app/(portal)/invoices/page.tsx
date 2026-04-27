@@ -13,20 +13,24 @@ import {
   Tabs,
   Tab,
   Chip,
+  Button as MUIButton,
   Backdrop,
   CircularProgress,
   LinearProgress,
   Portal,
   Typography,
   Box,
+  Card,
+  CardContent,
+  Tooltip,
 } from "@mui/material";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowUp, ArrowDown, Search as SearchIcon } from "lucide-react";
+import { ArrowUp, ArrowDown, Search as SearchIcon, Zap } from "lucide-react";
 
 import { createBrowserClient } from "@supabase/ssr";
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
 );
 
 type SortKey = "trandate" | "tranId" | "amountRemaining" | "total";
@@ -163,11 +167,11 @@ function buildInvoicesCsv(allInvoices: Invoice[]) {
     const status = processing
       ? "Processing"
       : remaining > 0
-      ? "Unpaid"
-      : "Paid";
+        ? "Unpaid"
+        : "Paid";
 
     const invMemo = String(
-      (inv as any).memo ?? (inv as any).message ?? (inv as any).comments ?? ""
+      (inv as any).memo ?? (inv as any).message ?? (inv as any).comments ?? "",
     ).trim();
     const lineItems = inv.lines && inv.lines.length ? inv.lines : [null as any];
     let idx = 0;
@@ -199,7 +203,7 @@ function buildInvoicesCsv(allInvoices: Invoice[]) {
           l ? String(isDiscount ? 0 : qty || 0) : "",
           l ? String(rate != null ? rate.toFixed(2) : "") : "",
           l ? String(lineAmount != null ? lineAmount.toFixed(2) : "") : "",
-        ].join(",")
+        ].join(","),
       );
     }
   }
@@ -257,7 +261,7 @@ function buildAddressBlocks(info: CustomerInfo | null) {
 
 function mergeAddress(
   primary: AddressBlock | null | undefined,
-  fallback: AddressBlock | null | undefined
+  fallback: AddressBlock | null | undefined,
 ) {
   const merged: AddressBlock = { ...(fallback ?? {}) };
   if (primary) {
@@ -307,7 +311,7 @@ export default function InvoicesPage() {
   const [sortDir, setSortDir] = React.useState<"asc" | "desc">("desc");
 
   const [customerInfo, setCustomerInfo] = React.useState<CustomerInfo | null>(
-    null
+    null,
   );
 
   React.useEffect(() => {
@@ -317,7 +321,7 @@ export default function InvoicesPage() {
       try {
         const url = providerNsId
           ? `/api/supabase/get-customer-info?nsId=${encodeURIComponent(
-              providerNsId
+              providerNsId,
             )}`
           : "/api/supabase/get-customer-info";
         const res = await fetch(url, { cache: "no-store", signal: ac.signal });
@@ -338,15 +342,15 @@ export default function InvoicesPage() {
 
   const data = React.useMemo(
     () => ({ invoices: cachedInvoices ?? [], deposits: cachedDeposits ?? [] }),
-    [cachedInvoices, cachedDeposits]
+    [cachedInvoices, cachedDeposits],
   );
 
   const processingInvoices = React.useMemo(
     () =>
       data.invoices.filter((i) =>
-        Boolean((i as any).paymentProcessing === true)
+        Boolean((i as any).paymentProcessing === true),
       ),
-    [data.invoices]
+    [data.invoices],
   );
 
   const openInvoices = React.useMemo(
@@ -354,14 +358,14 @@ export default function InvoicesPage() {
       data.invoices.filter(
         (i) =>
           Number(i.amountRemaining) > 0 &&
-          !Boolean((i as any).paymentProcessing === true)
+          !Boolean((i as any).paymentProcessing === true),
       ),
-    [data.invoices]
+    [data.invoices],
   );
 
   const closedInvoices = React.useMemo(
     () => data.invoices.filter((i) => Number(i.amountRemaining) <= 0),
-    [data.invoices]
+    [data.invoices],
   );
 
   const LOADING_STEPS = [
@@ -384,7 +388,10 @@ export default function InvoicesPage() {
       const invSo = (inv.createdFromSoTranId || "").toLowerCase();
       const invId = String(inv.invoiceId ?? "").toLowerCase();
       const invMemo = String(
-        (inv as any).memo ?? (inv as any).message ?? (inv as any).comments ?? ""
+        (inv as any).memo ??
+          (inv as any).message ??
+          (inv as any).comments ??
+          "",
       ).toLowerCase();
 
       if (
@@ -400,10 +407,10 @@ export default function InvoicesPage() {
         const name = (l.itemName || "").toLowerCase();
         const disp = String((l as any).itemDisplayName ?? "").toLowerCase();
         const desc = String(
-          l.description ?? (l as any).details ?? ""
+          l.description ?? (l as any).details ?? "",
         ).toLowerCase();
         const cmt = String(
-          (l as any).comment ?? (l as any).comments ?? (l as any).memo ?? ""
+          (l as any).comment ?? (l as any).comments ?? (l as any).memo ?? "",
         ).toLowerCase();
         const idStr = String(l.itemId ?? "").toLowerCase();
 
@@ -450,10 +457,10 @@ export default function InvoicesPage() {
     tab === TAB.UNPAID
       ? filterSort(openInvoices)
       : tab === TAB.PROCESSING
-      ? filterSort(processingInvoices)
-      : tab === TAB.PAID
-      ? filterSort(closedInvoices)
-      : [];
+        ? filterSort(processingInvoices)
+        : tab === TAB.PAID
+          ? filterSort(closedInvoices)
+          : [];
 
   const [payOpen, setPayOpen] = React.useState(false);
   const [payInvoice, setPayInvoice] = React.useState<Invoice | null>(null);
@@ -472,7 +479,7 @@ export default function InvoicesPage() {
     const params = new URLSearchParams(sp.toString());
     params.delete("autopay");
     router.replace(
-      `/invoices${params.toString() ? `?${params.toString()}` : ""}`
+      `/invoices${params.toString() ? `?${params.toString()}` : ""}`,
     );
   }, [router, sp]);
 
@@ -511,7 +518,7 @@ export default function InvoicesPage() {
       } else {
         toast.success("All open invoices are paid. Thank you!");
         router.replace(
-          `/invoices${params.toString() ? `?${params.toString()}` : ""}`
+          `/invoices${params.toString() ? `?${params.toString()}` : ""}`,
         );
       }
     }
@@ -549,7 +556,7 @@ export default function InvoicesPage() {
   const submitPayment = async (
     invoice: Invoice,
     amount: number,
-    methodId: string
+    methodId: string,
   ) => {
     try {
       const numericInvoiceId = Number(invoice.invoiceId);
@@ -574,7 +581,7 @@ export default function InvoicesPage() {
       const json = await res.json().catch(() => ({}));
       if (!res.ok || json?.success === false) {
         throw new Error(
-          json?.details || json?.error || "Failed to record payment"
+          json?.details || json?.error || "Failed to record payment",
         );
       }
 
@@ -593,7 +600,7 @@ export default function InvoicesPage() {
       toast.success(
         `Payment Processing: ${fmt(Number(amount))} applied to ${
           invoice.tranId
-        }`
+        }`,
       );
       setPayOpen(false);
       setPayInvoice(null);
@@ -617,7 +624,7 @@ export default function InvoicesPage() {
 
   const openBalance = openInvoices.reduce(
     (s, i) => s + Number(i.amountRemaining || 0),
-    0
+    0,
   );
   const uiLoading = billingLoading || !initialized;
 
@@ -657,15 +664,15 @@ export default function InvoicesPage() {
 
   const decoratedOpen = React.useMemo(
     () => decorateInvoices(filterSort(openInvoices)),
-    [openInvoices, query, sortBy, sortDir]
+    [openInvoices, query, sortBy, sortDir],
   );
   const decoratedProcessing = React.useMemo(
     () => decorateInvoices(filterSort(processingInvoices)),
-    [processingInvoices, query, sortBy, sortDir]
+    [processingInvoices, query, sortBy, sortDir],
   );
   const decoratedClosed = React.useMemo(
     () => decorateInvoices(filterSort(closedInvoices)),
-    [closedInvoices, query, sortBy, sortDir]
+    [closedInvoices, query, sortBy, sortDir],
   );
 
   const [logoMeta, setLogoMeta] = React.useState<{
@@ -750,11 +757,11 @@ export default function InvoicesPage() {
       const { billTo: customerBill } = buildAddressBlocks(customerInfo);
       const bill = mergeAddress(
         customerBill,
-        ((inv as any).billTo || {}) as AddressBlock
+        ((inv as any).billTo || {}) as AddressBlock,
       );
       const ship = mergeAddress(
         null,
-        ((inv as any).shipTo || {}) as AddressBlock
+        ((inv as any).shipTo || {}) as AddressBlock,
       );
       const shipAddressText =
         (inv as any).shipAddress ??
@@ -849,7 +856,7 @@ export default function InvoicesPage() {
         const maxNameWidth = colX[1] - colX[0] - 8;
         const nameLines = (doc.splitTextToSize(
           name,
-          maxNameWidth
+          maxNameWidth,
         ) as string[]) || [name];
         const detailLines =
           details && details !== name
@@ -879,7 +886,7 @@ export default function InvoicesPage() {
       const subtotal =
         rows.reduce(
           (s, r) => s + (Number.isFinite(r.amount) ? r.amount : 0),
-          0
+          0,
         ) || 0;
       const tax = Number((inv as any).taxTotal || 0);
       const total = subtotal + tax;
@@ -919,11 +926,11 @@ export default function InvoicesPage() {
       doc.text(
         "Thank you for your business! Please contact us if you have any questions regarding this invoice.",
         marginX,
-        cursorY
+        cursorY,
       );
       const safeName = String(inv.tranId || inv.invoiceId || "invoice").replace(
         /[^\w\-]+/g,
-        "_"
+        "_",
       );
       doc.save(`${safeName}.pdf`);
     } catch (e) {
@@ -1031,6 +1038,104 @@ export default function InvoicesPage() {
           ))}
         </div>
       </div>
+
+      <Card className="mb-5 overflow-hidden rounded-2xl border border-[#F2C66D] bg-gradient-to-r from-[#FFF8DD] via-[#FFFCEB] to-[#FFF3D1] shadow-sm">
+        <CardContent className="flex flex-col gap-4 p-5 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 inline-flex h-10 w-10 items-center justify-center rounded-full bg-[#8C0F0F]/10 text-[#8C0F0F]">
+              <Zap className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="text-base font-semibold text-[#17152A]">
+                Avoid the delays
+              </h2>
+              <p className="mt-1 text-sm leading-6 text-[#17152A]/75">
+                Get your items as soon as they are available by enabling{" "}
+                <Tooltip
+                  arrow
+                  enterTouchDelay={0}
+                  leaveTouchDelay={5000}
+                  placement="bottom-start"
+                  title={
+                    <div className="space-y-3">
+                      <p>
+                        Enabling <strong>Express Pay</strong> allows us to
+                        process your order and{" "}
+                        <strong>ship it to you quickly</strong>.
+                      </p>
+                      <p>
+                        It <strong>eliminates verification calls</strong> for
+                        balance payments and helps get your order
+                        <strong> shipped immediately</strong>.
+                      </p>
+                      <p>
+                        You can <strong>update or remove</strong> your payment
+                        method at any time.
+                      </p>
+                      <p>
+                        You will be <strong>notified in advance</strong> of
+                        upcoming charges before processing.
+                      </p>
+                    </div>
+                  }
+                  slotProps={{
+                    tooltip: {
+                      sx: {
+                        backgroundColor: "#FFFFFF",
+                        color: "#17152A",
+                        border: "1px solid #E7D9D9",
+                        borderRadius: "16px",
+                        boxShadow: "0 18px 50px rgba(23,21,42,0.16)",
+                        fontSize: { xs: "0.8125rem", sm: "0.875rem" },
+                        lineHeight: 1.7,
+                        fontWeight: 400,
+                        maxWidth: {
+                          xs: "min(320px, calc(100vw - 24px))",
+                          sm: 360,
+                        },
+                        mx: { xs: 1, sm: 0 },
+                        p: { xs: 1.5, sm: 2 },
+                        "& strong": {
+                          color: "#8C0F0F",
+                          fontWeight: 700,
+                        },
+                      },
+                    },
+                    arrow: {
+                      sx: {
+                        color: "#FFFFFF",
+                        "&:before": {
+                          border: "1px solid #E7D9D9",
+                        },
+                      },
+                    },
+                  }}
+                >
+                  <span className="inline-flex cursor-help font-semibold text-[#8C0F0F] underline decoration-[#E01C24]/60 underline-offset-4 transition-colors duration-200 hover:text-[#E01C24]">
+                    Express Pay
+                  </span>
+                </Tooltip>
+                .
+              </p>
+            </div>
+          </div>
+
+          <MUIButton
+            variant="contained"
+            onClick={() => router.push("/express-pay")}
+            sx={{
+              alignSelf: { xs: "flex-start", md: "center" },
+              textTransform: "none",
+              backgroundColor: "#8C0F0F",
+              "&:hover": { backgroundColor: "#E01C24" },
+              borderRadius: "0.75rem",
+              boxShadow: "none",
+            }}
+          >
+            Express Pay
+          </MUIButton>
+        </CardContent>
+      </Card>
 
       <div className="mb-5 flex flex-col gap-2">
         <div className="xl:hidden w-full">

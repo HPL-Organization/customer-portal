@@ -75,6 +75,7 @@ export type CustomerInfoRow = {
   first_name: string | null;
   company_name: string | null;
   express_pay: string | null;
+  express_pay_updated_at?: string | null;
 };
 
 export type ProfileRow = {

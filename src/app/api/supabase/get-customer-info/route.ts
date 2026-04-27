@@ -50,6 +50,8 @@ export async function GET(req: NextRequest) {
           billing_verified,
           terms_compliance,
           terms_agreed_at,
+          express_pay,
+          express_pay_updated_at,
           user_id,
           hubspot_id
         `
@@ -96,6 +98,8 @@ export async function GET(req: NextRequest) {
           billing_verified,
           terms_compliance,
           terms_agreed_at,
+          express_pay,
+          express_pay_updated_at,
           user_id,
           hubspot_id
         `
@@ -143,6 +147,8 @@ export async function GET(req: NextRequest) {
           billing_verified,
           terms_compliance,
           terms_agreed_at,
+          express_pay,
+          express_pay_updated_at,
           user_id,
           hubspot_id
         `

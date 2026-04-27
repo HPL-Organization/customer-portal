@@ -60,7 +60,7 @@ export function AddPaypalMethodDialog({
 
         if (!tokRes.ok || !tokData?.clientToken) {
           throw new Error(
-            tokData?.error || "Failed to get Braintree client token"
+            tokData?.error || "Failed to get Braintree client token",
           );
         }
 
@@ -187,8 +187,8 @@ export function AddPaypalMethodDialog({
             "& .MuiAlert-icon": { color: "#8C0F0F" },
           }}
         >
-          You’ll approve PayPal once. We store a Braintree token (not your
-          PayPal login).
+          Your PayPal login information is never stored, keeping your account
+          secure
         </Alert>
 
         <div className="mt-4 rounded-xl border border-[#BFBFBF]/60 bg-white p-4 shadow-sm">
