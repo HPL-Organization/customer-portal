@@ -122,6 +122,21 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const { error: invoiceError } = await supa
+    .from("invoices")
+    .update({
+      payment_processing: false,
+      payment_processing_started_at: null,
+    })
+    .eq("invoice_id", invoiceId);
+
+  if (invoiceError) {
+    return NextResponse.json(
+      { ok: false, error: invoiceError.message, job: payload.job_id },
+      { status: 500 },
+    );
+  }
+
   return NextResponse.json({
     ok: true,
     invoiceId,

@@ -4,13 +4,15 @@ import {
   Home,
   ReceiptText,
   UserCircle,
-  Users
+  Users,
+  Zap,
 } from "lucide-react";
 
 export const NAV_ITEMS = [
   { href: "/", label: "Home", icon: Home },
   { href: "/profile", label: "My Information", icon: UserCircle },
   { href: "/payment", label: "Payment Methods", icon: CreditCard },
+  { href: "/express-pay", label: "Express Pay", icon: Zap },
   { href: "/invoices", label: "View & Pay Invoices", icon: ReceiptText },
   // { href: "/events", label: "Subscribed Events", icon: CalendarDays },
   // { href: "/communication", label: "Communication Preferences", icon: Mail },

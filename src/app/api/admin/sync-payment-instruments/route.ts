@@ -318,10 +318,36 @@ export async function POST(req: NextRequest) {
         if (!dry && missing.length) {
           const { error: delErr } = await supabase
             .from("payment_instruments")
-            .update({ ns_deleted_at: nowIso, synced_at: nowIso })
+            .update({
+              ns_deleted_at: nowIso,
+              synced_at: nowIso,
+            })
             .eq("customer_id", cid)
             .in("instrument_id", missing);
           if (delErr) throw delErr;
+
+          const { data: customerInfo, error: customerInfoErr } = await supabase
+            .from("customer_information")
+            .select("express_pay")
+            .eq("customer_id", cid)
+            .limit(1)
+            .maybeSingle();
+          if (customerInfoErr) throw customerInfoErr;
+
+          if (
+            customerInfo?.express_pay &&
+            missing.includes(String(customerInfo.express_pay))
+          ) {
+            const { error: clearErr } = await supabase
+              .from("customer_information")
+              .update({
+                express_pay: null,
+                express_pay_updated_at: nowIso,
+              })
+              .eq("customer_id", cid);
+            if (clearErr) throw clearErr;
+          }
+
           softDeleted += missing.length;
         }
       }

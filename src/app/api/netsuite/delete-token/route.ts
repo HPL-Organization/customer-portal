@@ -50,13 +50,42 @@ export async function POST(req: NextRequest) {
     try {
       const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
       const nowIso = new Date().toISOString();
-      const { error: delErr } = await supabase
-        .from("payment_instruments")
-        .update({ ns_deleted_at: nowIso, synced_at: nowIso })
-        .eq("customer_id", Number(customerId))
-        .eq("instrument_id", String(instrumentId));
+      const [{ error: delErr }, { data: customerInfo, error: customerInfoErr }] =
+        await Promise.all([
+          supabase
+            .from("payment_instruments")
+            .update({
+              ns_deleted_at: nowIso,
+              synced_at: nowIso,
+            })
+            .eq("customer_id", Number(customerId))
+            .eq("instrument_id", String(instrumentId)),
+          supabase
+            .from("customer_information")
+            .select("express_pay")
+            .eq("customer_id", Number(customerId))
+            .limit(1)
+            .maybeSingle(),
+        ]);
+
+      if (customerInfoErr) {
+        console.error("Supabase customer information read failed", customerInfoErr);
+      }
       if (delErr) {
         console.error("Supabase tombstone failed", delErr);
+      }
+
+      if (String(customerInfo?.express_pay ?? "") === String(instrumentId)) {
+        const { error: clearErr } = await supabase
+          .from("customer_information")
+          .update({
+            express_pay: null,
+            express_pay_updated_at: nowIso,
+          })
+          .eq("customer_id", Number(customerId));
+        if (clearErr) {
+          console.error("Supabase express pay clear failed", clearErr);
+        }
       }
     } catch (e) {
       console.error("Supabase tombstone error", e);
