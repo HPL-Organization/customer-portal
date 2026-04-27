@@ -64,6 +64,8 @@ type CustomerInformationRow = {
   updated_at: string;
   terms_compliance: boolean;
   terms_agreed_at: string | null;
+  express_pay: string | null;
+  express_pay_updated_at: string | null;
   user_id: string | null;
   hubspot_id: number | null;
   check_invoice: boolean;
@@ -102,6 +104,8 @@ type CustomerInformationInsert = {
   updated_at?: string;
   terms_compliance?: boolean;
   terms_agreed_at?: string | null;
+  express_pay?: string | null;
+  express_pay_updated_at?: string | null;
   user_id?: string | null;
   hubspot_id?: number | null;
   check_invoice?: boolean;
@@ -140,6 +144,8 @@ type CustomerInformationUpdate = {
   updated_at?: string;
   terms_compliance?: boolean;
   terms_agreed_at?: string | null;
+  express_pay?: string | null;
+  express_pay_updated_at?: string | null;
   user_id?: string | null;
   hubspot_id?: number | null;
   check_invoice?: boolean;
@@ -173,9 +179,9 @@ type CustomerInsert = Omit<
 >;
 
 const SELECT_EXISTING_CUSTOMERS =
-  "info_id,customer_id,email,first_name,middle_name,last_name,company_name,phone,mobile,shipping_carrier,shipping_address1,shipping_address2,shipping_city,shipping_state,shipping_zip,shipping_country,billing_address1,billing_address2,billing_city,billing_state,billing_zip,billing_country,shipping_verified,billing_verified,terms_compliance,terms_agreed_at,user_id,hubspot_id,check_invoice,check_invoice_range,check_invoice_result,ns_deleted_at" as const;
+  "info_id,customer_id,email,first_name,middle_name,last_name,company_name,phone,mobile,shipping_carrier,shipping_address1,shipping_address2,shipping_city,shipping_state,shipping_zip,shipping_country,billing_address1,billing_address2,billing_city,billing_state,billing_zip,billing_country,shipping_verified,billing_verified,terms_compliance,terms_agreed_at,express_pay,express_pay_updated_at,user_id,hubspot_id,check_invoice,check_invoice_range,check_invoice_result,ns_deleted_at,created_at,updated_at,created_by" as const;
 const SELECT_ALL_MINIMAL =
-  "customer_id,email,user_id,shipping_verified,billing_verified,terms_compliance,terms_agreed_at,check_invoice,check_invoice_range,check_invoice_result,ns_deleted_at,created_at,created_by" as const;
+  "customer_id,email,user_id,shipping_verified,billing_verified,terms_compliance,terms_agreed_at,express_pay,express_pay_updated_at,check_invoice,check_invoice_range,check_invoice_result,ns_deleted_at,created_at,created_by" as const;
 
 const SELECT_TARGET_USER = "customer_id,user_id" as const;
 
@@ -392,6 +398,8 @@ async function fetchAllCustomersMinimal(
     | "billing_verified"
     | "terms_compliance"
     | "terms_agreed_at"
+    | "express_pay"
+    | "express_pay_updated_at"
     | "check_invoice"
     | "check_invoice_range"
     | "check_invoice_result"
@@ -409,6 +417,8 @@ async function fetchAllCustomersMinimal(
     | "billing_verified"
     | "terms_compliance"
     | "terms_agreed_at"
+    | "express_pay"
+    | "express_pay_updated_at"
     | "check_invoice"
     | "check_invoice_range"
     | "check_invoice_result"
@@ -447,6 +457,7 @@ type Incoming = {
   phone?: string | null;
   mobilephone?: string | null;
   shippingcarrier?: string | null;
+  express_pay?: string | number | null;
   addresses?: Array<{
     default_billing?: boolean | string;
     default_shipping?: boolean | string;
@@ -507,9 +518,64 @@ function normalizeEmail(v: any): string | null {
   return s ? s.toLowerCase() : null;
 }
 
-function buildRow(inc: Incoming, existing?: CustomerRow): CustomerInsert {
+function resolveExpressPayFields(
+  incoming: Incoming,
+  existing?: CustomerRow,
+  manifestGeneratedAtMs?: number | null,
+): Pick<CustomerInsert, "express_pay" | "express_pay_updated_at"> {
+  const localUpdatedAtMs = existing?.express_pay_updated_at
+    ? Date.parse(existing.express_pay_updated_at)
+    : NaN;
+  const protectLocalExpressPay =
+    Boolean(existing?.express_pay_updated_at) &&
+    (!Number.isFinite(manifestGeneratedAtMs ?? NaN) ||
+      (Number.isFinite(localUpdatedAtMs) &&
+        localUpdatedAtMs > Number(manifestGeneratedAtMs)));
+
+  if (protectLocalExpressPay) {
+    return {
+      express_pay: existing.express_pay,
+      express_pay_updated_at: existing.express_pay_updated_at,
+    };
+  }
+
+  const hasIncomingExpressPay = Object.prototype.hasOwnProperty.call(
+    incoming,
+    "express_pay",
+  );
+
+  if (hasIncomingExpressPay) {
+    return {
+      express_pay: coerceStr(incoming.express_pay),
+      express_pay_updated_at: null,
+    };
+  }
+
+  if (Number.isFinite(manifestGeneratedAtMs ?? NaN)) {
+    return {
+      express_pay: null,
+      express_pay_updated_at: null,
+    };
+  }
+
+  return {
+    express_pay: existing ? existing.express_pay : null,
+    express_pay_updated_at: existing ? existing.express_pay_updated_at : null,
+  };
+}
+
+function buildRow(
+  inc: Incoming,
+  existing?: CustomerRow,
+  manifestGeneratedAtMs?: number | null,
+): CustomerInsert {
   const bill = pickAddress(inc, "billing");
   const ship = pickAddress(inc, "shipping");
+  const expressPayFields = resolveExpressPayFields(
+    inc,
+    existing,
+    manifestGeneratedAtMs,
+  );
   return {
     customer_id: Number(inc.customer_id),
     email: coerceStr(inc.email),
@@ -537,12 +603,15 @@ function buildRow(inc: Incoming, existing?: CustomerRow): CustomerInsert {
     billing_verified: existing ? existing.billing_verified : false,
     terms_compliance: existing ? existing.terms_compliance : false,
     terms_agreed_at: existing ? existing.terms_agreed_at : null,
+    express_pay: expressPayFields.express_pay,
+    express_pay_updated_at: expressPayFields.express_pay_updated_at,
     user_id: existing ? existing.user_id : null,
     check_invoice: existing ? existing.check_invoice : false,
     check_invoice_range: existing ? existing.check_invoice_range : null,
     check_invoice_result: existing ? existing.check_invoice_result : null,
 
     ns_deleted_at: null,
+    created_by: existing ? existing.created_by : null,
 
     hubspot_id:
       inc.hubspot_id != null
@@ -659,6 +728,7 @@ export async function POST(req: NextRequest) {
     const headers = authHeaders(token);
 
     let fileId: number | null = null;
+    let manifestGeneratedAt: string | null = null;
     const manifestId =
       (await getFileIdByNameInFolder(
         headers,
@@ -686,9 +756,14 @@ export async function POST(req: NextRequest) {
       const body = asJson(r.data);
       if (!body?.ok) throw new Error("RestletFetchFailed 400");
       const parsed = JSON.parse(stripBom(String(body.data || "")));
+      manifestGeneratedAt =
+        typeof parsed?.generated_at === "string" ? parsed.generated_at : null;
       const maybeId = Number(parsed?.file?.id);
       fileId = Number.isFinite(maybeId) && maybeId > 0 ? maybeId : null;
     }
+    const manifestGeneratedAtMs = manifestGeneratedAt
+      ? Date.parse(manifestGeneratedAt)
+      : NaN;
 
     const sourceOpts =
       fileId != null
@@ -742,7 +817,11 @@ export async function POST(req: NextRequest) {
         existingMap.set(Number(row.customer_id), row);
 
       const upserts: CustomerInsert[] = (page as Incoming[]).map((inc) =>
-        buildRow(inc, existingMap.get(Number(inc.customer_id))),
+        buildRow(
+          inc,
+          existingMap.get(Number(inc.customer_id)),
+          manifestGeneratedAtMs,
+        ),
       );
 
       for (const b of chunk(upserts, 1000)) {
