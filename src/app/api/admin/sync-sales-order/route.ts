@@ -74,6 +74,7 @@ type SalesOrdersRow = {
   trandate: string | null;
   status: string | null;
   total: number | null;
+  rr_total: number | null;
   tax_total: number | null;
   hold_till: string | null;
   customer_id: number;
@@ -696,6 +697,7 @@ export async function POST(req: NextRequest) {
           trandate: normalizeUsDateToIso(r.trandate),
           status: coerceText(r.status),
           total: toNumOrNull(r.total),
+          rr_total: toNumOrNull(r.rr_total),
           tax_total: toNumOrNull(r.tax_total),
           customer_id,
           netsuite_url: null,
