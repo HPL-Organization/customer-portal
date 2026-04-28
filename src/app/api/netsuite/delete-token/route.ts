@@ -18,6 +18,40 @@ const RESTLET_URL =
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const NS_WRITES_URL =
+  process.env.NS_WRITES_URL || "https://netsuite-writes.onrender.com";
+const NS_WRITES_ADMIN_BEARER = process.env.NS_WRITES_ADMIN_BEARER || "test";
+
+async function clearExpressPayInNetSuite(customerId: number) {
+  const res = await fetch(
+    `${NS_WRITES_URL.replace(/\/$/, "")}/api/netsuite/update-customer`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${NS_WRITES_ADMIN_BEARER}`,
+      },
+      body: JSON.stringify({
+        customerInternalId: customerId,
+        custentity_hpl_express_pay: "",
+      }),
+    }
+  );
+
+  const text = await res.text();
+  let json: any = {};
+  try {
+    json = text ? JSON.parse(text) : {};
+  } catch {
+    json = { raw: text };
+  }
+
+  if (!res.ok || json?.error) {
+    const message =
+      json?.message || json?.error || `HTTP ${res.status}: ${text}`;
+    throw new Error(message);
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -76,6 +110,7 @@ export async function POST(req: NextRequest) {
       }
 
       if (String(customerInfo?.express_pay ?? "") === String(instrumentId)) {
+        await clearExpressPayInNetSuite(Number(customerId));
         const { error: clearErr } = await supabase
           .from("customer_information")
           .update({
@@ -89,6 +124,15 @@ export async function POST(req: NextRequest) {
       }
     } catch (e) {
       console.error("Supabase tombstone error", e);
+      return new Response(
+        JSON.stringify({
+          error:
+            e instanceof Error
+              ? e.message
+              : "Payment method deleted but failed to clear Express Pay",
+        }),
+        { status: 502 }
+      );
     }
 
     return new Response(JSON.stringify(data), { status: 200 });
