@@ -101,6 +101,7 @@ type SalesOrdersRow = {
   order_note: string | null;
   ship_complete: boolean | null;
   billing_terms_id: string | null;
+  class_totals: any | null;
   sales_team: any | null;
   partners: any | null;
   giveaway: boolean | null;
@@ -713,6 +714,7 @@ export async function POST(req: NextRequest) {
           hold_till: normalizeUsDateToIso(r.hold_till),
           ship_complete: parseBool(r.ship_complete),
           billing_terms_id: coerceText(r.billing_terms_id),
+          class_totals: Array.isArray(r.class_totals) ? r.class_totals : null,
           sales_team: Array.isArray(r.sales_team) ? r.sales_team : null,
           partners: Array.isArray(r.partners) ? r.partners : null,
           giveaway: parseBool(r.giveaway ?? r.custbody_hpl_giveaway),
