@@ -172,6 +172,30 @@ describe("groupStockChanges", () => {
     });
   });
 
+  it("review path: moves row to needs_review when the linked invoice is already paid", async () => {
+    const row = makeQueueRow({ id: 14, so_id: 224, ns_line_id: 8 });
+    const { client, updates } = createUpdateSupabaseMock();
+
+    mockFetchQueueRows.mockResolvedValue([row]);
+    mockFetchLinksForRows.mockResolvedValue(
+      new Map([["224:8", [makeLink({ so_id: 224, so_ns_line_id: 8, invoice_id: 9005 })]]]),
+    );
+    mockFetchInvoicesByIds.mockResolvedValue(
+      new Map([[9005, makeInvoice({ invoice_id: 9005, amount_remaining: 0 })]]),
+    );
+
+    const result = await groupStockChanges({
+      supabase: client as never,
+    });
+
+    expect(result.failures).toEqual([{ id: 14, reason: "invoice_already_paid" }]);
+    expect(updates[0]?.values).toEqual({
+      status: "needs_review",
+      last_error: "invoice_already_paid",
+      notes: "Linked invoice amount_remaining was <= 0",
+    });
+  });
+
   it("review path: moves row to needs_review when queue and invoice customers differ", async () => {
     const row = makeQueueRow({ id: 13, so_id: 223, ns_line_id: 7, customer_id: 4001 });
     const { client, updates } = createUpdateSupabaseMock();

@@ -117,6 +117,20 @@ export async function groupStockChanges(
         continue;
       }
 
+      const amountRemaining = Number(invoice.amount_remaining);
+      if (Number.isFinite(amountRemaining) && amountRemaining <= 0) {
+        failures.push({ id: row.id, reason: "invoice_already_paid" });
+        updates.push({
+          id: row.id,
+          values: {
+            status: "needs_review",
+            last_error: "invoice_already_paid",
+            notes: "Linked invoice amount_remaining was <= 0",
+          },
+        });
+        continue;
+      }
+
       const invoiceCustomerId = Number(invoice.customer_id);
       if (!Number.isFinite(invoiceCustomerId) || invoiceCustomerId <= 0) {
         failures.push({ id: row.id, reason: "missing_invoice_customer" });
