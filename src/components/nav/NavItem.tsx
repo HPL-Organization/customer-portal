@@ -25,7 +25,7 @@ export default function NavItem({
   const active = pathname === href || pathname.startsWith(href + "/");
 
   return (
-    <li>
+    <div>
       <motion.div
         whileHover={{ x: 2 }}
         whileTap={{ scale: 0.98 }}
@@ -112,6 +112,6 @@ export default function NavItem({
           />
         </Link>
       </motion.div>
-    </li>
+    </div>
   );
 }
