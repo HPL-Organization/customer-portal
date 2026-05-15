@@ -136,6 +136,19 @@ export async function POST(req: NextRequest) {
     if (customerId) row.customer_id = customerId
     if (userId)     row.user_id     = userId
 
+    // Update HubSpot first. If this fails, we do not update Supabase.
+    try {
+      await syncToHubSpot(userId, customerId, section, prefs)
+      // If successful, mark it as synced so the background job skips it
+      row.hs_synced_at = new Date().toISOString()
+    } catch (hsErr: any) {
+      logger.error({ message: 'comm-prefs HubSpot sync failed (fatal)', error: hsErr?.message })
+      return NextResponse.json(
+        { error: 'Failed to process your request. Please try again in 30 seconds.' },
+        { status: 502 }
+      )
+    }
+
     const { data: saved, error: upsertErr } = await supabase
       .from('communication_preferences')
       .upsert(row, { onConflict: conflictTarget })
@@ -146,11 +159,6 @@ export async function POST(req: NextRequest) {
       logger.error({ message: 'comm-prefs upsert failed', error: upsertErr.message })
       return NextResponse.json({ error: upsertErr.message }, { status: 500 })
     }
-
-    // Fire-and-forget HubSpot sync — never blocks the user response
-    syncToHubSpot(userId, customerId, section, prefs).catch((err) => {
-      logger.error({ message: 'comm-prefs HubSpot sync failed (non-fatal)', error: err?.message })
-    })
 
     return NextResponse.json({ ok: true, data: saved })
 
@@ -166,10 +174,9 @@ function buildPatch(section: PostBody['section'], prefs: Record<string, any>) {
   switch (section) {
     case 'liveEvents':
       return {
-        live_events_general:       prefs.general   ?? 'none',
-        live_events_reminders:     prefs.reminders ?? 'none',
-        live_events_channel_email: !!prefs.email,
-        live_events_channel_sms:   !!prefs.sms,
+        live_events_general:         prefs.general        ?? 'none',
+        live_events_reminders_email: prefs.remindersEmail ?? 'none',
+        live_events_reminders_sms:   prefs.remindersSms   ?? 'none',
       }
     case 'newsletters':
       return { newsletters_frequency: prefs.frequency ?? 'none' }
@@ -228,11 +235,4 @@ async function syncToHubSpot(
   if (!res.ok) {
     throw new Error(`HubSpot ${res.status}: ${await res.text().catch(() => '')}`)
   }
-
-  // Mark as synced
-  const filter = customerId
-    ? supabase.from('communication_preferences').update({ hs_synced_at: new Date().toISOString() }).eq('customer_id', customerId)
-    : supabase.from('communication_preferences').update({ hs_synced_at: new Date().toISOString() }).eq('user_id', userId!)
-
-  await filter
 }

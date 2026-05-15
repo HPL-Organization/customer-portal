@@ -77,35 +77,33 @@ export function LiveEventsView({ prefs, setPrefs, onBack }: {
         </div>
 
         <div className="bg-[#d1d5db]/60 rounded-xl overflow-hidden mb-8 border border-zinc-300">
-          <div className="py-3 px-6 bg-[#bfc5d1]">
+          <div className="flex justify-between items-center py-3 px-6 bg-[#bfc5d1]">
             <h3 className="font-bold text-zinc-900">Reminders</h3>
-          </div>
-          {reminderOptions.map((opt, idx) => (
-            <div key={opt.id} className={`flex justify-between items-center py-4 px-6 ${idx !== reminderOptions.length - 1 ? 'border-b border-zinc-300' : ''}`}>
-              <span className="text-zinc-800 text-[15px] font-medium">{opt.label}</span>
-              <Checkbox checked={prefs.reminders === opt.id} onChange={() => setPrefs({ ...prefs, reminders: opt.id })} />
+            <div className="flex gap-12 px-6">
+              <span className="font-bold text-zinc-900">Email</span>
+              <span className="font-bold text-zinc-900">SMS</span>
             </div>
-          ))}
+          </div>
+          <div className="divide-y divide-zinc-300">
+            {reminderOptions.map((opt) => (
+              <div key={opt.id} className="flex justify-between items-center py-4 px-6">
+                <span className="text-zinc-800 text-[15px] font-medium">{opt.label}</span>
+                <div className="flex gap-[68px] pt-1">
+                  <Checkbox 
+                    checked={prefs.remindersEmail === opt.id} 
+                    onChange={() => setPrefs({ ...prefs, remindersEmail: opt.id })} 
+                  />
+                  <Checkbox 
+                    checked={prefs.remindersSms === opt.id} 
+                    onChange={() => setPrefs({ ...prefs, remindersSms: opt.id })} 
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
 
-        <div className="flex flex-col md:flex-row justify-between items-center gap-6">
-          <div className="flex bg-[#bfc5d1] p-1.5 rounded-xl shadow-inner w-fit">
-            <button 
-              type="button"
-              onClick={() => setPrefs({ ...prefs, email: !prefs.email })}
-              className={`px-6 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 ${prefs.email ? 'bg-[#10b981] text-white shadow-sm' : 'text-zinc-600 hover:text-zinc-800'}`}
-            >
-              Email {prefs.email && <Check className="w-3.5 h-3.5" strokeWidth={4} />}
-            </button>
-            <button 
-              type="button"
-              onClick={() => setPrefs({ ...prefs, sms: !prefs.sms })}
-              className={`px-6 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 ${prefs.sms ? 'bg-[#10b981] text-white shadow-sm' : 'text-zinc-600 hover:text-zinc-800'}`}
-            >
-              SMS {prefs.sms && <Check className="w-3.5 h-3.5" strokeWidth={4} />}
-            </button>
-          </div>
-
+        <div className="flex justify-end">
           <ActionButtons onCancel={onBack} onSave={handleSave} saving={saving} />
         </div>
       </div>

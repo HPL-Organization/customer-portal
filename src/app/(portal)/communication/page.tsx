@@ -15,9 +15,8 @@ type View = "landing" | "live-events" | "newsletters" | "promotions" | "support"
 export interface Preferences {
   liveEvents: {
     general: string;
-    reminders: string;
-    email: boolean;
-    sms: boolean;
+    remindersEmail: string;
+    remindersSms: string;
   };
   newsletters: {
     frequency: string;
@@ -38,7 +37,7 @@ export interface Preferences {
 }
 
 const DEFAULTS: Preferences = {
-  liveEvents:  { general: 'all', reminders: 'none', email: true,  sms: false },
+  liveEvents:  { general: 'all', remindersEmail: 'none', remindersSms: 'none' },
   newsletters: { frequency: 'all', email: true },
   promotions:  { general: 'all', discounts: 'all', newProducts: 'all', email: true },
   support:     { ticketsEmail: true, ticketsSms: false, orderUpdatesEmail: true, orderUpdatesSms: true },
@@ -48,10 +47,9 @@ const DEFAULTS: Preferences = {
 function rowToPreferences(row: any): Preferences {
   return {
     liveEvents: {
-      general:   row.live_events_general   ?? 'all',
-      reminders: row.live_events_reminders ?? 'none',
-      email:     !!row.live_events_channel_email,
-      sms:       !!row.live_events_channel_sms,
+      general:        row.live_events_general         ?? 'all',
+      remindersEmail: row.live_events_reminders_email ?? 'none',
+      remindersSms:   row.live_events_reminders_sms   ?? 'none',
     },
     newsletters: {
       frequency: row.newsletters_frequency ?? 'all',

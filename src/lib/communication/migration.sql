@@ -37,9 +37,8 @@ create table if not exists communication_preferences (
 
   -- ── Live Events ──────────────────────────────────────────
   live_events_general         comm_frequency  not null default 'none',
-  live_events_reminders       comm_reminder   not null default 'none',
-  live_events_channel_email   boolean         not null default false,
-  live_events_channel_sms     boolean         not null default false,
+  live_events_reminders_email comm_reminder   not null default 'none',
+  live_events_reminders_sms   comm_reminder   not null default 'none',
 
   -- ── Educational Newsletters & Guides ─────────────────────
   newsletters_frequency       comm_frequency  not null default 'none',

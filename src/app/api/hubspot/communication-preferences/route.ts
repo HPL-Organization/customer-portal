@@ -49,12 +49,8 @@ export async function POST(req: NextRequest) {
     case "liveEvents":
       properties = {
         live_events_general: FREQ_LABEL[prefs.general] ?? prefs.general,
-        live_events_reminders_email: prefs.email
-          ? (REMINDER_LABEL[prefs.reminders] ?? prefs.reminders)
-          : "I don't need reminders.",
-        live_events_reminders_sms: prefs.sms
-          ? (REMINDER_LABEL[prefs.reminders] ?? prefs.reminders)
-          : "I don't need reminders.",
+        live_events_reminders_email: REMINDER_LABEL[prefs.remindersEmail] ?? prefs.remindersEmail,
+        live_events_reminders_sms:   REMINDER_LABEL[prefs.remindersSms]   ?? prefs.remindersSms,
       };
       break;
 
